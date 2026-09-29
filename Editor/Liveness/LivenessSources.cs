@@ -54,7 +54,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 var full = mesh.GetBlendShapeFrameWeight(k, mesh.GetBlendShapeFrameCount(k) - 1);
                 keys[k] = new ShapeKeyInput(mesh.GetBlendShapeName(k), renderer.GetBlendShapeWeight(k), full);
             }
-            return new RendererShapeKeys(PathOf(root, renderer.transform), keys);
+            return new RendererShapeKeys(PathOf(root, renderer.transform), keys, renderer.transform);
         }
 
         /// <summary>Every shape-key curve in every controller NDMF holds; see <see cref="AnimatedCurves.FromAnimatorServices"/>.</summary>
@@ -67,7 +67,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         static ShapeKeyBinding Binding(Transform root, AnimatedCurve c) =>
             new ShapeKeyBinding(PathOf(root, c.Target), c.Binding.propertyName.Substring(BlendShapePrefix.Length),
-                ShapeKeyClassifier.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip, c.Layer, c.Order, c.Masked);
+                ShapeKeyClassifier.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip, c.Layer, c.Order, c.Masked, c.Target);
 
         /// <summary>The descriptor's visemes, jaw flap and eyelids, which VRChat drives without a clip.</summary>
         public static IEnumerable<DrivenKey> FromDescriptor(Transform root)
@@ -81,9 +81,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 var path = PathOf(root, viseme.transform);
                 if (descriptor.lipSync == VRC_AvatarDescriptor.LipSyncStyle.VisemeBlendShape && descriptor.VisemeBlendShapes != null)
                     foreach (var name in descriptor.VisemeBlendShapes)
-                        if (!string.IsNullOrEmpty(name)) yield return new DrivenKey(path, name);
+                        if (!string.IsNullOrEmpty(name)) yield return new DrivenKey(path, name, viseme.transform);
                 if (descriptor.lipSync == VRC_AvatarDescriptor.LipSyncStyle.JawFlapBlendShape && !string.IsNullOrEmpty(descriptor.MouthOpenBlendShapeName))
-                    yield return new DrivenKey(path, descriptor.MouthOpenBlendShapeName);
+                    yield return new DrivenKey(path, descriptor.MouthOpenBlendShapeName, viseme.transform);
             }
 
             // Eyelids are indices into the mesh, not names. They count whether or not eye look is enabled,
@@ -95,7 +95,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 var path = PathOf(root, eyelids.transform);
                 var mesh = eyelids.sharedMesh;
                 foreach (var index in eyes.eyelidsBlendshapes)
-                    if (index >= 0 && index < mesh.blendShapeCount) yield return new DrivenKey(path, mesh.GetBlendShapeName(index));
+                    if (index >= 0 && index < mesh.blendShapeCount) yield return new DrivenKey(path, mesh.GetBlendShapeName(index), eyelids.transform);
             }
         }
 
@@ -111,7 +111,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             for (var k = 0; k < mesh.blendShapeCount; k++)
             {
                 var name = mesh.GetBlendShapeName(k);
-                if (MmdMorphs.Names.Contains(name)) yield return new DrivenKey("Body", name);
+                if (MmdMorphs.Names.Contains(name)) yield return new DrivenKey("Body", name, body);
             }
         }
 
