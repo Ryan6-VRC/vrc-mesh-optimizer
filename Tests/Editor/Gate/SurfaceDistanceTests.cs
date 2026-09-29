@@ -235,6 +235,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         }
 
         [Test]
+        public void OneUnmatchedTriangleInThousands_ReadsInfinityInEveryStatistic()
+        {
+            // One flipped triangle among 3200: its samples face away from everything on the source, and its area is
+            // under a thousandth of the whole, below every percentile's cut.
+            var grid = Fixtures.Grid(40, 40, 0.4f, 0.4f, out _);
+            var p = grid.Positions.ToArray();
+            var t = grid.Triangles.ToArray();
+            var folded = (int3[])t.Clone();
+            folded[1234] = new int3(t[1234].x, t[1234].z, t[1234].y);
+
+            var r = Measure(p, t, p, folded);
+
+            Assert.That(r.BToA.Stats.Unmatched, Is.GreaterThan(0));
+            AssertAll(r.BToA.Stats, float.PositiveInfinity, 0f, "B to A");
+            AssertAll(r.Combined, float.PositiveInfinity, 0f, "combined");
+        }
+
+        [Test]
         public void NothingFacingTheSampleWay_IsUnmatched_AndReadsInfinity()
         {
             var grid = Fixtures.Grid(2, 2, 0.1f, 0.1f, out _);

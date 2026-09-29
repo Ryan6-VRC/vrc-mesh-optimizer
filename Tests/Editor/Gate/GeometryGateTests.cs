@@ -64,13 +64,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(report.Skipped, Is.Empty);
         }
 
-        (Transform root, SkinnedMeshRenderer renderer, Mesh source, Mesh optimized) SheetRig(float rootScale = 1f, float rendererScale = 1f)
+        (Transform root, SkinnedMeshRenderer renderer, Mesh source, Mesh optimized) SheetRig(float rootScale = 1f, float rendererScale = 1f,
+            Action<Transform, Transform> place = null)
         {
             var root = _scene.Node("Avatar", null, Vector3.zero);
             root.localScale = Vector3.one * rootScale;
             var bone = _scene.Node("Bone", root, new Vector3(0.1f, 0.2f, 0.3f));
-            var at = _scene.Node("Sheet", root, Vector3.zero);
+            var holder = _scene.Node("Holder", root, new Vector3(0f, 0.5f, 0f));
+            var at = _scene.Node("Sheet", holder, Vector3.zero);
             at.localScale = Vector3.one * rendererScale;
+            place?.Invoke(holder, at);
             var source = _scene.Track(Sheet.Mesh("sheet"));
             Sheet.AddKey(source, "bump", new Vector3(0, 0, 0.01f));
             Sheet.AddKey(source, "held", new Vector3(0, 0, 0.004f));
@@ -145,6 +148,48 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         }
 
         [Test]
+        public void LiveKeyHeldAtFullWeight_ReadsItsErrorAsItStands_AndNotAtRest()
+        {
+            var (root, renderer, source, optimized) = SheetRig();
+            // The avatar stands with the bump on; only then does the removed middle vertex show.
+            renderer.SetBlendShapeWeight(0, 100f);
+            var liveness = new[] { ShapeKeyLiveness.Live(1f), ShapeKeyLiveness.Dead, ShapeKeyLiveness.Dead };
+            var tilted = new BoneRotationPose("tilted", ("Bone", Quaternion.Euler(40, 0, 0)));
+
+            var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, new[] { tilted }, Settings);
+
+            var names = report.Configurations.Select(c => c.Configuration.ToString()).ToArray();
+            Assert.That(names, Is.EqualTo(new[]
+            {
+                "rest", "as it stands, live keys at the weights the renderer holds", "shape key 'bump' at 100", "pose 'tilted'", "pose 'tilted' as it stands",
+            }));
+            Assert.That(report.Configurations[1].Configuration.Kind, Is.EqualTo(ConfigurationKind.AsItStands));
+            float Lost(int c) => report.Stats(c, GateDirection.SourceToOptimized).Max;
+            Assert.That(Lost(0), Is.LessThan(1e-6f), "rest");
+            Assert.That(Lost(1), Is.EqualTo(0.01f).Within(1e-5f), "as it stands");
+            Assert.That(Lost(3), Is.LessThan(1e-6f), "posed at rest weights");
+            Assert.That(Lost(4), Is.EqualTo(0.01f).Within(1e-5f), "posed as it stands");
+            Assert.That(renderer.GetBlendShapeWeight(0), Is.EqualTo(100f), "the held weight is left as found");
+        }
+
+        [Test]
+        public void NoLiveKeyHeldOffZero_AddsNoAsItStands()
+        {
+            var (root, renderer, source, optimized) = SheetRig();
+            // A frozen key held off zero is rest, not a standing state of its own.
+            renderer.SetBlendShapeWeight(1, 50f);
+            var liveness = new[] { ShapeKeyLiveness.Live(1f), ShapeKeyLiveness.Frozen(50f), ShapeKeyLiveness.Dead };
+
+            var tilted = new BoneRotationPose("tilted", ("Bone", Quaternion.Euler(40, 0, 0)));
+
+            var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, new[] { tilted }, Settings);
+
+            Assert.That(report.Configurations.Select(c => c.Configuration.ToString()),
+                Is.EqualTo(new[] { "rest", "shape key 'bump' at 100", "pose 'tilted'" }));
+            Assert.That(report.Skipped, Is.Empty);
+        }
+
+        [Test]
         public void RendererOnAnInactiveObject_IsBakedAsWhenActive()
         {
             // A toggled-off outfit sits under an inactive object, and it is optimized all the same.
@@ -187,6 +232,38 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
             Assert.That(report.Stats(0, GateDirection.Combined).Max, Is.LessThan(1e-5f));
             Assert.That(report.Stats(1, GateDirection.SourceToOptimized).Max, Is.EqualTo(6f * 0.006f).Within(1e-4f));
+        }
+
+        // Mirrored, non-uniform, and skewed by a rotated renderer under a non-uniformly scaled parent.
+        static readonly Action<Transform, Transform>[] Placements =
+        {
+            (holder, at) => at.localScale = new Vector3(-2f, 3f, 1.5f),
+            (holder, at) => holder.localScale = new Vector3(1f, 1f, -1f),
+            (holder, at) =>
+            {
+                holder.localScale = new Vector3(1f, 2f, 3f);
+                at.localRotation = Quaternion.Euler(30f, 20f, 0f);
+            },
+        };
+
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(2)]
+        public void MirroredNonUniformOrSkewedRenderer_ReadsTheDistanceTheRendererDraws(int placement)
+        {
+            var (root, renderer, source, optimized) = SheetRig(place: Placements[placement]);
+            var liveness = new[] { ShapeKeyLiveness.Live(0.6f), ShapeKeyLiveness.Dead, ShapeKeyLiveness.Dead };
+            // The sheet is drawn through the renderer's matrix; the bump stands off the drawn plane by the part of its
+            // drawn displacement along the drawn plane's normal.
+            var m = renderer.transform.localToWorldMatrix;
+            var normal = Vector3.Cross(m.MultiplyVector(Vector3.right), m.MultiplyVector(Vector3.up)).normalized;
+            var expected = Mathf.Abs(Vector3.Dot(normal, m.MultiplyVector(new Vector3(0, 0, 0.006f))));
+
+            var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, null, Settings);
+
+            Assert.That(report.Stats(0, GateDirection.Combined).Max, Is.LessThan(1e-5f));
+            Assert.That(report.Stats(1, GateDirection.SourceToOptimized).Unmatched, Is.Zero);
+            Assert.That(report.Stats(1, GateDirection.SourceToOptimized).Max, Is.EqualTo(expected).Within(1e-4f * expected));
         }
 
         [Test]
@@ -269,6 +346,34 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             }
         }
 
+        sealed class DestroyingPose : GatePose
+        {
+            public DestroyingPose() : base("destroys") { }
+            internal override bool NeedsHumanoid => false;
+
+            internal override void Apply(Transform root, HumanPoseHandler humanoid)
+            {
+                root.Find("Armature/Lower").localRotation *= Quaternion.Euler(30, 0, 0);
+                UnityEngine.Object.DestroyImmediate(root.GetComponentInChildren<SkinnedMeshRenderer>());
+                throw new InvalidOperationException("forced failure after the renderer is gone");
+            }
+        }
+
+        [Test]
+        public void RendererDestroyedMidRun_StillRestoresTransforms_FreesTheBakes_AndKeepsTheFailure()
+        {
+            var (root, renderer, source, optimized) = TwoBoneTube();
+            string[] Transforms() => State.Of(root, renderer).Where(l => !l.StartsWith("mesh ") && !l.StartsWith("weight ")).ToArray();
+            var before = Transforms();
+
+            var e = Assert.Throws<InvalidOperationException>(() =>
+                GeometryGate.Measure(renderer, root, source, optimized, null, new[] { ShapeKeyLiveness.Dead }, new GatePose[] { new DestroyingPose() }, Settings));
+
+            StringAssert.Contains("renderer is gone", e.Message);
+            Assert.That(renderer == null, "the pose destroyed it");
+            Assert.That(Transforms(), Is.EqualTo(before));
+        }
+
         [Test]
         public void AvatarIsLeftAsFound_AfterARun_AndAfterAFailureMidRun()
         {
@@ -280,7 +385,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             var before = State.Of(root, renderer);
 
             var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, new[] { Bent }, Settings);
-            Assert.That(report.Configurations.Count, Is.EqualTo(3), "rest, the key, the pose");
+            Assert.That(report.Configurations.Select(c => c.Configuration.ToString()), Is.EqualTo(new[]
+            {
+                "rest", "as it stands, live keys at the weights the renderer holds", "shape key 'flare' at 100", "pose 'bent'", "pose 'bent' as it stands",
+            }));
             Assert.That(State.Of(root, renderer), Is.EqualTo(before), "after a run");
 
             // The failure comes after the key's bake left the optimized mesh on the renderer, as the pose turns a bone.
@@ -303,8 +411,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
                     var r = t.localRotation;
                     lines.Add($"{t.name} p {F(p.x)} {F(p.y)} {F(p.z)} r {F(r.x)} {F(r.y)} {F(r.z)} {F(r.w)} s {F(s.x)} {F(s.y)} {F(s.z)}");
                 }
-                lines.Add($"mesh {renderer.sharedMesh.GetInstanceID()}");
-                for (var k = 0; k < renderer.sharedMesh.blendShapeCount; k++) lines.Add($"weight {k} {F(renderer.GetBlendShapeWeight(k))}");
+                if (renderer != null)
+                {
+                    lines.Add($"mesh {renderer.sharedMesh.GetInstanceID()}");
+                    for (var k = 0; k < renderer.sharedMesh.blendShapeCount; k++) lines.Add($"weight {k} {F(renderer.GetBlendShapeWeight(k))}");
+                }
                 lines.Add($"meshes {Resources.FindObjectsOfTypeAll<Mesh>().Length}");
                 lines.Add($"objects {Resources.FindObjectsOfTypeAll<GameObject>().Length}");
                 return lines.ToArray();

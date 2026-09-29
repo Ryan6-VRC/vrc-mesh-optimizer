@@ -81,7 +81,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// that surface, so it counts once, at distance zero, for its whole area.
         /// </summary>
         public int Samples;
-        /// <summary>Samples that found no triangle to match: the other side is empty, or nothing on it faces their way. They read infinity.</summary>
+        /// <summary>
+        /// Samples that found no triangle to match: the other side is empty, or nothing on it faces their way. One is
+        /// enough to make every statistic here infinity, whatever share of the area it stands for.
+        /// </summary>
         public int Unmatched;
 
         public float Get(Statistic statistic) => statistic switch

@@ -243,7 +243,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// <summary>
         /// Statistics over the union of two runs of (distance, weight), each ascending by distance. A percentile is
         /// the least distance at which the weight at or below it reaches that fraction of the whole. Sums are in
-        /// double, in ascending order.
+        /// double, in ascending order. One unmatched sample makes every statistic infinity.
         /// </summary>
         public static DistanceStats Stats(NativeArray<float2> a, NativeArray<float2> b)
         {
@@ -276,6 +276,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             }
             // Rounding can leave the last fraction a hair short of its target; the largest distance answers it.
             while (next < 4) p[next++] = last;
+            // An unmatched sample is ground the other surface does not cover, however little area it has, so no
+            // statistic of a run holding one may read as a pass.
+            if (float.IsPositiveInfinity(last))
+            {
+                p = new float4(float.PositiveInfinity);
+                sum = sumSq = double.PositiveInfinity;
+            }
             s.Mean = (float)(sum / total);
             s.Rms = (float)math.sqrt(sumSq / total);
             s.P50 = p.x;

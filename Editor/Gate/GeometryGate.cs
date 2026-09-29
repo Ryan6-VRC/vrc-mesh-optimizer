@@ -14,33 +14,45 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     {
         /// <summary>Frozen keys at their frozen weights, every other key at zero, bones where the avatar stands.</summary>
         Rest,
+        /// <summary>
+        /// Rest, with every live key at the weight the renderer held when the gate was called: the shapes the avatar is
+        /// seen in by default. Present only when some live key is held off zero.
+        /// </summary>
+        AsItStands,
         /// <summary>Rest, with one live key at one authored frame weight under its driven maximum, or at that maximum.</summary>
         ShapeKey,
-        /// <summary>Rest, with the bones posed.</summary>
+        /// <summary>Rest, or as it stands when <see cref="GateConfiguration.AtHeldWeights"/>, with the bones posed.</summary>
         Pose,
     }
 
     internal readonly struct GateConfiguration
     {
         public readonly ConfigurationKind Kind;
-        /// <summary>"rest", the shape key's name, or the pose's name.</summary>
+        /// <summary>"rest", "as it stands", the shape key's name, or the pose's name.</summary>
         public readonly string Name;
         /// <summary>For a shape key configuration, the key's index; otherwise -1.</summary>
         public readonly int ShapeKey;
         /// <summary>For a shape key configuration, the weight it is driven to, in the renderer's units; otherwise 0.</summary>
         public readonly float Weight;
+        /// <summary>For a pose, whether its live keys are at the weights the renderer held rather than at rest.</summary>
+        public readonly bool AtHeldWeights;
 
-        public GateConfiguration(ConfigurationKind kind, string name, int shapeKey = -1, float weight = 0f)
+        public GateConfiguration(ConfigurationKind kind, string name, int shapeKey = -1, float weight = 0f, bool atHeldWeights = false)
         {
             Kind = kind;
             Name = name;
             ShapeKey = shapeKey;
             Weight = weight;
+            AtHeldWeights = atHeldWeights;
         }
 
-        public override string ToString() => Kind == ConfigurationKind.ShapeKey
-            ? $"shape key '{Name}' at {Weight.ToString("0.###", CultureInfo.InvariantCulture)}"
-            : Kind == ConfigurationKind.Pose ? $"pose '{Name}'" : Name;
+        public override string ToString() => Kind switch
+        {
+            ConfigurationKind.ShapeKey => $"shape key '{Name}' at {Weight.ToString("0.###", CultureInfo.InvariantCulture)}",
+            ConfigurationKind.Pose => AtHeldWeights ? $"pose '{Name}' as it stands" : $"pose '{Name}'",
+            ConfigurationKind.AsItStands => "as it stands, live keys at the weights the renderer holds",
+            _ => Name,
+        };
     }
 
     /// <summary>Source is surface A, the optimized mesh surface B, in the renderer's avatar-root space.</summary>
@@ -155,8 +167,9 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <param name="liveness">One entry per shape key of <paramref name="source"/>; may be null only for a mesh without shape keys.</param>
         /// <param name="poses">Poses to bake in, usually <see cref="PoseBank.Default"/>.</param>
         /// <remarks>
-        /// Configurations, in order: rest; each live key alone at each authored frame weight under its driven maximum and at
-        /// that maximum; each pose, at rest weights. A
+        /// Configurations, in order: rest; as it stands, when a live key is held off zero; each live key alone at each
+        /// authored frame weight under its driven maximum and at that maximum; each pose at rest weights, and again as it
+        /// stands. A
         /// MeshRenderer is measured at rest only: it never applies shape keys, and a pose moves it rigidly, which moves
         /// no distance. A muscle pose on an avatar with no humanoid Avatar is skipped and named in the report. The avatar
         /// is left as it was found, every blendshape weight, every transform and the renderer's mesh, when this throws too.
@@ -245,6 +258,17 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             };
             for (var k = 0; k < keyCount; k++)
                 if (liveness[k].State == ShapeKeyState.Frozen) restWeights[k] = liveness[k].FrozenWeight;
+            // Read before any weight is set. A renderer holding a mesh with fewer keys holds the rest at zero.
+            var heldCount = renderer.sharedMesh != null ? Math.Min(renderer.sharedMesh.blendShapeCount, keyCount) : 0;
+            var standingWeights = (float[])restWeights.Clone();
+            var standing = false;
+            for (var k = 0; k < heldCount; k++)
+            {
+                if (liveness[k].State != ShapeKeyState.Live) continue;
+                standingWeights[k] = renderer.GetBlendShapeWeight(k);
+                standing |= standingWeights[k] != 0f;
+            }
+            if (standing) configurations.Add((new GateConfiguration(ConfigurationKind.AsItStands, "as it stands"), null, standingWeights));
             for (var k = 0; k < keyCount; k++)
             {
                 if (liveness[k].State != ShapeKeyState.Live) continue;
@@ -271,6 +295,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 pose.Check(root);
                 needsHumanoid |= pose.NeedsHumanoid;
                 configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name), pose, restWeights));
+                if (standing) configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name, atHeldWeights: true), pose, standingWeights));
             }
 
             var measured = new List<ConfigurationDistance>(configurations.Count);
@@ -296,10 +321,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             }
             finally
             {
-                state.Restore();
-                handler?.Dispose();
-                UnityEngine.Object.DestroyImmediate(bakedA);
-                UnityEngine.Object.DestroyImmediate(bakedB);
+                try
+                {
+                    state.Restore();
+                }
+                finally
+                {
+                    handler?.Dispose();
+                    UnityEngine.Object.DestroyImmediate(bakedA);
+                    UnityEngine.Object.DestroyImmediate(bakedB);
+                }
             }
             return new GeometryReport(renderer, measured, skipped);
         }
@@ -398,12 +429,14 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 }
             }
 
+            /// <summary>Transforms first, so they come back even when the renderer is gone.</summary>
             public void Restore()
             {
+                RestoreTransforms();
+                if (_renderer == null) return;
                 if (_renderer.sharedMesh != _mesh) _renderer.sharedMesh = _mesh;
                 for (var k = 0; k < _weights.Length; k++)
                     if (!_renderer.GetBlendShapeWeight(k).Equals(_weights[k])) _renderer.SetBlendShapeWeight(k, _weights[k]);
-                RestoreTransforms();
             }
         }
     }
