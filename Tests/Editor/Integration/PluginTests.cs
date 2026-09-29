@@ -115,6 +115,42 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(string.CompareOrdinal("nadena.dev.modular_avatar.core.editor.plugin.PluginDefinition", ours), Is.GreaterThan(0));
         }
 
+        // The scale source reads the descriptor's merged layers through NDMF's animator services, resolving the clip's
+        // path from the avatar root: an FX clip that can collapse the garment's bone stops it covering, one that only
+        // grows it does not.
+        [TestCase(0f, false)]
+        [TestCase(1.2f, true)]
+        public void AnFxClipScalingTheGarmentsBone_DecidesWhetherItCovers(float scale, bool covers)
+        {
+            var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
+            var skirt = a.Bone("Armature/Hips/Chest/Skirt");
+            var source = a.Sphere(0.1f, 16, 32, name: "body");
+            var body = a.Skinned("Body", source, new[] { a.Bone("Armature/Hips/Chest") });
+            var garment = a.Skinned("Garment", a.Sphere(0.105f, 24, 48, 60f, 180f, name: "garment"), new[] { skirt });
+            a.Optimizer().alwaysOn.Add(garment);
+
+            var clip = a.Made(new AnimationClip { name = "skirt scale" });
+            var curve = new AnimationCurve();
+            curve.AddKey(new Keyframe(0, 1));
+            curve.AddKey(new Keyframe(1, scale));
+            clip.SetCurve("Armature/Hips/Chest/Skirt", typeof(Transform), "m_LocalScale.x", curve);
+            var controller = a.Made(new UnityEditor.Animations.AnimatorController { name = "fx" });
+            controller.AddLayer("skirt");
+            controller.layers[0].stateMachine.AddState("scale").motion = clip;
+            descriptor.customizeAnimationLayers = true;
+            descriptor.baseAnimationLayers = new[]
+            {
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, animatorController = controller, isDefault = false },
+            };
+            descriptor.specialAnimationLayers = new VRCAvatarDescriptor.CustomAnimLayer[0];
+
+            Process();
+
+            Assert.That(errors, Is.Empty, "the build logs no error");
+            Assert.That(body.sharedMesh != source, Is.EqualTo(covers));
+            Assert.That(OptimizationReports.Latest.VanishingBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
+        }
+
         [Test]
         public void WithoutTheComponent_ThePassChangesNothing()
         {
