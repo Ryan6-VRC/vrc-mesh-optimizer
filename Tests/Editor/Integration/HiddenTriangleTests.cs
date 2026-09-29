@@ -197,14 +197,18 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Of(report, traced).HiddenRemoved > 0, Is.EqualTo(!scaled));
         }
 
-        // An override names the material the user sees; an NDMF plugin that cloned it and recorded the clone as its
-        // replacement still gets the override. An unrecorded clone does not, and the report names the idle override.
-        [TestCase(true)]
-        [TestCase(false)]
-        public void MaterialOverride_FollowsARecordedClone(bool recorded)
+        // An override names the material the user sees; the build may put a clone in its place. An NDMF plugin that
+        // records its clone leads back to the original. VRCFury records nothing but keeps the original's name, so a
+        // never-occludes override also takes a same-named build-time clone: a wrong match there only keeps triangles.
+        // A clone under another name matches nothing, and the idle safety setting is raised as a warning.
+        [TestCase(true, true, false, TestName = "{m}(recorded)")]
+        [TestCase(false, true, false, TestName = "{m}(unrecorded, same name)")]
+        [TestCase(false, false, true, TestName = "{m}(unrecorded, renamed)")]
+        public void NeverOccludesOverride_FollowsAClone(bool recorded, bool sameName, bool hides)
         {
             var original = a.Opaque();
-            var clone = a.Made(new Material(original));
+            original.name = "Garment";
+            var clone = a.Made(new Material(original) { name = sameName ? original.name : "Garment Variant" });
             Garment(chest, material: clone);
             a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = original, mode = Runtime.OcclusionMode.NeverOccludes });
 
@@ -215,8 +219,47 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 report = a.Run();
             }
 
-            Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(!recorded), "NeverOccludes applies only when the clone traces back");
-            Assert.That(report.UnmatchedMaterialOverrides.Contains(original), Is.EqualTo(!recorded));
+            Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(hides), "never-occludes applies to the clone");
+            Assert.That(report.UnmatchedMaterialOverrides.Contains(original), Is.EqualTo(hides));
+            Assert.That(report.Diagnostics.Count(d => d.Key == DiagnosticKeys.NeverOccludesUnmatched && d.Warning && ReferenceEquals(d.Args[0], original)),
+                Is.EqualTo(hides ? 1 : 0), "an idle never-occludes override is a warning");
+        }
+
+        // An always-opaque override makes a surface hide what is behind it, so a wrong match deletes triangles: it keeps
+        // matching strictly. A same-named clone of a see-through material stays see-through, against the same override
+        // set on the clone itself, which hides.
+        [TestCase(false, false)]
+        [TestCase(true, true)]
+        public void ForceOpaqueOverride_DoesNotFollowAnUnrecordedClone(bool onTheClone, bool hides)
+        {
+            var original = a.Made(new Material(CullShader()) { name = "Veil", renderQueue = 3000 });
+            var clone = a.Made(new Material(original) { name = original.name });
+            Garment(chest, material: clone);
+            a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = onTheClone ? clone : original, mode = Runtime.OcclusionMode.ForceOpaque });
+
+            var report = a.Run();
+
+            Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(hides));
+            Assert.That(report.UnmatchedMaterialOverrides.Count, Is.EqualTo(hides ? 0 : 1));
+            Assert.That(report.Diagnostics.Any(d => d.Key == DiagnosticKeys.NeverOccludesUnmatched), Is.False, "only a never-occludes override is warned about");
+        }
+
+        // A name two overrides share cannot say whose clone a material is. The never-occludes override on the other
+        // material must not count as matched through it, or its warning goes quiet while nothing honours it.
+        [Test]
+        public void NeverOccludesOverride_IsNotCreditedThroughANameAnotherOverrideShares()
+        {
+            var never = a.Made(new Material(CullShader()) { name = "Veil" });
+            var opaque = a.Made(new Material(CullShader()) { name = "Veil", renderQueue = 3000 });
+            var clone = a.Made(new Material(opaque) { name = opaque.name });
+            Garment(chest, material: clone);
+            a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = never, mode = Runtime.OcclusionMode.NeverOccludes });
+            a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = opaque, mode = Runtime.OcclusionMode.ForceOpaque });
+
+            var report = a.Run();
+
+            Assert.That(HiddenOnBody(report), Is.Zero, "the clone is judged by its own see-through material");
+            Assert.That(report.Diagnostics.Count(d => d.Key == DiagnosticKeys.NeverOccludesUnmatched && ReferenceEquals(d.Args[0], never)), Is.EqualTo(1));
         }
 
         // Occlusion reads the front of a face by Unity's winding, and a back-culled material draws only its front.

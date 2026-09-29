@@ -1,3 +1,5 @@
+using Ryan6Vrc.MeshOptimizer.Core.Clearance;
+using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Topology;
 using Unity.Burst;
@@ -41,9 +43,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public int LiveTriangles;
         public DecimationSettings Settings;
 
+        /// <summary>The other layers, empty when the clearance rule is off. See <see cref="ClearanceSurface"/>.</summary>
+        [ReadOnly] public NativeArray<TreeNode> ClearNodes;
+        [ReadOnly] public NativeArray<TreePrim> ClearPrims;
+        [ReadOnly] public NativeArray<int> ClearPrimLayer;
+        [ReadOnly] public NativeArray<int> ClearNodeLayer;
+        [ReadOnly] public NativeArray<float> ClearPrimClearance;
+        [ReadOnly] public NativeArray<float> ClearNodeClearance;
+        /// <summary>Per triangle, its layer; per source vertex, its clearance before decimation.</summary>
+        [ReadOnly] public NativeArray<int> TriangleLayer;
+        [ReadOnly] public NativeArray<float> VertexClearance;
+        [ReadOnly] public NativeArray<float> StarClearance;
+        /// <summary>Per triangle, the least clearance of the source surface it covers; updated as collapses replace triangles.</summary>
+        public NativeArray<float> TriangleClearance;
+
         public NativeList<CollapseStep> Steps;
         public NativeList<int2> Records;
-        /// <summary>[0] peak frame-quadric pool entries, [1] clusters left blocked by validity.</summary>
+        /// <summary>[0] peak frame-quadric pool entries, [1] clusters left blocked by validity, [2] collapses the clearance rule refused.</summary>
         public NativeArray<long> Stats;
 
         public void Execute()
@@ -84,6 +100,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         NativeArray<int> _normalStart;
         NativeArray<int> _normalCount;
         NativeArray<FrameNormal> _normalFrames;
+        NativeArray<TreeNode> _clearNodes;
+        NativeArray<TreePrim> _clearPrims;
+        NativeArray<int> _clearPrimLayer;
+        NativeArray<int> _clearNodeLayer;
+        NativeArray<float> _clearPrimClearance;
+        NativeArray<float> _clearNodeClearance;
+        NativeArray<int> _triLayer;
+        NativeArray<float> _vertexClearance;
+        NativeArray<float> _star;
+        NativeArray<float> _triClearance;
+        bool _clearance;
+        long _refused;
         DecimationSettings _s;
 
         // Working state.
@@ -120,6 +148,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         const double TinyWeight = 1e-30;
         const float TieBreak = 1e-4f;
+        /// <summary>The fraction of its crossing a collapse may add without counting as lengthening it: above the float
+        /// rounding of a sum of segment lengths, and relative, so ten thousand collapses on one crossing lengthen it by
+        /// at most a hundredth, where an absolute allowance would add up without bound.</summary>
+        const float CrossingSlack = 1e-6f;
+        /// <summary>
+        /// Metres a new triangle may stand off its own layer's source where it crosses another layer. A total length
+        /// that does not grow could still move: shortened against one place, lengthened against another, or wandering
+        /// across one large triangle. Held to its own source, a crossing stays where the source crossed, give or take
+        /// this over the sine of the angle the layers meet at: within the gate's 5 mm for any angle over 6 degrees.
+        /// </summary>
+        const float CrossingDrift = 0.0005f;
 
         public CollapseEngine(ref CollapseJob job)
         {
@@ -144,6 +183,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _normalStart = job.NormalStart;
             _normalCount = job.NormalCount;
             _normalFrames = job.NormalFrames;
+            _clearNodes = job.ClearNodes;
+            _clearPrims = job.ClearPrims;
+            _clearPrimLayer = job.ClearPrimLayer;
+            _clearNodeLayer = job.ClearNodeLayer;
+            _clearPrimClearance = job.ClearPrimClearance;
+            _clearNodeClearance = job.ClearNodeClearance;
+            _triLayer = job.TriangleLayer;
+            _vertexClearance = job.VertexClearance;
+            _star = job.StarClearance;
+            _triClearance = job.TriangleClearance;
+            _clearance = job.ClearNodes.Length > 0 && job.TriangleClearance.Length == job.Triangles.Length;
+            _refused = 0;
             _s = job.Settings;
             _live = job.LiveTriangles;
             _level = 0f;
@@ -248,6 +299,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 Apply(c, ref job);
             }
             job.Stats[0] = _peak;
+            job.Stats[2] = _refused;
         }
 
         // ---------------------------------------------------------------- candidates and cost
@@ -490,7 +542,97 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             if (c.U2 >= 0 && !Survives(c.U2, c.V2)) return false;
             if (!NoFlip(c.U1, c.V1)) return false;
             if (c.U2 >= 0 && !NoFlip(c.U2, c.V2)) return false;
+            if (_clearance && (!ClearanceHolds(c.U1, c.V1) || c.U2 >= 0 && !ClearanceHolds(c.U2, c.V2)))
+            {
+                _refused++;
+                return false;
+            }
             return true;
+        }
+
+        // ---------------------------------------------------------------- clearance
+
+        /// <summary>The least clearance of the source surface under u's live triangles: what the fan that replaces them covers. 0 where it touches or crosses another layer.</summary>
+        float FanClearance(int u)
+        {
+            var least = float.PositiveInfinity;
+            for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
+            {
+                var t = c / 3;
+                if (_alive[t] != 0) least = math.min(least, _triClearance[t]);
+            }
+            return least;
+        }
+
+        /// <summary>
+        /// The clearance rule (see <see cref="ClearanceSettings"/>): no triangle the collapse of u onto v makes may come
+        /// nearer a source triangle of another layer than (1 - Share) of the gap there, and, where the surface under u's
+        /// triangles or around a new triangle's corners touches or crosses another layer, no collapse may lengthen the
+        /// crossing either. The gap is kept even beside a crossing, since a little way off there is one, and a layer
+        /// judged only by the crossing could reach the other's source there and meet it. The corners' own clearances
+        /// settle most triangles without a search.
+        /// </summary>
+        bool ClearanceHolds(int u, int v)
+        {
+            var touches = !(FanClearance(u) > 0f);
+            var keep = 1f - _s.Clearance.Share;
+            var pv = _positions[_origin[v]];
+            var cv = _vertexClearance[_origin[v]];
+            for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
+            {
+                var t = c / 3;
+                if (_alive[t] == 0) continue;
+                var tri = _tri[t];
+                if (tri.x == v || tri.y == v || tri.z == v) continue;
+                var k = c - t * 3;
+                var x = _origin[tri[(k + 1) % 3]];
+                var y = _origin[tri[(k + 2) % 3]];
+                var px = _positions[x];
+                var py = _positions[y];
+                // A source triangle P of another layer is held to keep * its gap, which is no more than the reach, and no
+                // more than P's distance to a corner (the corners lie on this layer's source): d + the longest edge. So
+                // nothing nearer than keep * min(Reach, edge / (1 - keep)) can be refused, and the corner bound often
+                // proves that.
+                var least = math.min(_star[_origin[v]], math.min(_star[x], _star[y]));
+                // A source triangle that touches or crosses a layer has no gap to hold a new triangle to; where a corner's
+                // surroundings touch too, the search below cannot see it, and the crossing check must.
+                if (!(least > 0f)) touches = true;
+                var edge = math.max(math.distance(pv, px), math.max(math.distance(px, py), math.distance(py, pv)));
+                var most = keep * math.min(_s.Clearance.Reach, edge / (1f - keep));
+                if (ClearanceBound.Of(pv, px, py, cv, _vertexClearance[x], _vertexClearance[y]) >= most) continue;
+                if (ClearanceSurface.AnyWithin(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, _clearPrimClearance, _clearNodeClearance,
+                        pv, px, py, _triLayer[t], keep, least)) return false;
+            }
+            return !touches || CrossingHolds(u, v);
+        }
+
+        /// <summary>
+        /// Where the surface already touches or crosses another layer there is no clearance to keep, and the rule
+        /// instead forbids lengthening or moving the crossing: the triangles the collapse makes may pass through the
+        /// other layers along no longer a line than the triangles they replace did, and only where they stand within
+        /// <see cref="CrossingDrift"/> of their own source. Touching and not crossing, they may not cross.
+        /// </summary>
+        bool CrossingHolds(int u, int v)
+        {
+            var before = 0f;
+            var after = 0f;
+            var pv = _positions[_origin[v]];
+            for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
+            {
+                var t = c / 3;
+                if (_alive[t] == 0) continue;
+                var tri = _tri[t];
+                var layer = _triLayer[t];
+                float3 a = _positions[_origin[tri.x]], b = _positions[_origin[tri.y]], d = _positions[_origin[tri.z]];
+                before += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, a, b, d, layer);
+                if (tri.x == v || tri.y == v || tri.z == v) continue;
+                var k = c - t * 3;
+                var px = _positions[_origin[tri[(k + 1) % 3]]];
+                var py = _positions[_origin[tri[(k + 2) % 3]]];
+                after += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, pv, px, py, layer, CrossingDrift, out var strays);
+                if (strays) return false;
+            }
+            return after <= before * (1f + CrossingSlack) + 1e-9f;
         }
 
         /// <summary>
@@ -716,6 +858,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         int CollapseWedge(int u, int v)
         {
+            // The fan that replaces u's triangles covers what they covered, so it inherits their least clearance.
+            var clearance = _clearance ? FanClearance(u) : 0f;
             var killed = 0;
             var head = -1;
             var tail = -1;
@@ -735,6 +879,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     {
                         tri[c - t * 3] = v;
                         _tri[t] = tri;
+                        if (_clearance) _triClearance[t] = clearance;
                         if (tail == -1) head = c;
                         else _cornerNext[tail] = c;
                         tail = c;

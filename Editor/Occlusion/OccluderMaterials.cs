@@ -5,6 +5,7 @@ using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using Unity.Mathematics;
+using UnityEditor;
 using UnityEngine;
 using CoreAlphaMap = Ryan6Vrc.MeshOptimizer.Core.Occlusion.AlphaMap;
 using EditorAlphaMap = Ryan6Vrc.MeshOptimizer.Extraction.AlphaMap;
@@ -26,6 +27,8 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
 
         /// <summary>Overrides by the material the user named, resolved to its original.</summary>
         readonly Dictionary<Object, (Material named, OcclusionMode mode)> _overrides = new Dictionary<Object, (Material, OcclusionMode)>();
+        /// <summary>Never-occludes overrides by their material's name, for <see cref="PlausibleClone"/>.</summary>
+        readonly Dictionary<string, List<Object>> _neverByName = new Dictionary<string, List<Object>>();
         readonly HashSet<Object> _matched = new HashSet<Object>();
         readonly Dictionary<(Material, OcclusionMode), OccluderSubmesh> _read = new Dictionary<(Material, OcclusionMode), OccluderSubmesh>();
 
@@ -34,14 +37,24 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
             if (overrides == null) return;
             foreach (var o in overrides)
                 if (o != null && o.material != null) _overrides[Original(o.material)] = (o.material, o.mode);
+            foreach (var kv in _overrides)
+            {
+                if (kv.Value.mode != OcclusionMode.NeverOccludes) continue;
+                var name = CloneName(kv.Value.named.name);
+                if (!_neverByName.TryGetValue(name, out var list)) _neverByName[name] = list = new List<Object>();
+                list.Add(kv.Key);
+            }
+            // A name another kind of override also carries cannot say whose clone a material is, so it matches nothing.
+            foreach (var kv in _overrides)
+                if (kv.Value.mode != OcclusionMode.NeverOccludes) _neverByName.Remove(CloneName(kv.Value.named.name));
         }
 
         /// <summary>
         /// The material an NDMF plugin replaced this one from, following the chain back to the first, or the material
         /// itself. A plugin that clones a material and records the clone with <c>ObjectRegistry.RegisterReplacedObject</c>
-        /// makes the clone's reference resolve to the original's, which is what the user named. VRCFury is not an NDMF
-        /// plugin and records nothing, so a material it cloned does not match an override on the original. The lookup
-        /// does not create a reference, so it changes nothing for plugins that register replacements later.
+        /// makes the clone's reference resolve to the original's, which is what the user named. VRCFury records nothing;
+        /// <see cref="PlausibleClone"/> covers what it clones. The lookup does not create a reference, so it changes
+        /// nothing for plugins that register replacements later.
         /// </summary>
         internal static Object Original(Material material)
         {
@@ -49,13 +62,40 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
             return reference?.Object != null ? reference.Object : material;
         }
 
-        /// <summary>The override for a material by its original, noting that it matched.</summary>
+        /// <summary>The override for a material by its original, or a never-occludes one it is plausibly a clone of, noting that it matched.</summary>
         OcclusionMode ModeOf(Material material)
         {
             var original = Original(material);
-            if (!_overrides.TryGetValue(original, out var o)) return OcclusionMode.Automatic;
-            _matched.Add(original);
-            return o.mode;
+            if (_overrides.TryGetValue(original, out var o))
+            {
+                _matched.Add(original);
+                return o.mode;
+            }
+            if (!PlausibleClone(material, out var named)) return OcclusionMode.Automatic;
+            // Several never-occludes overrides on one name all apply, but none can be said to have matched.
+            if (named.Count == 1) _matched.Add(named[0]);
+            return OcclusionMode.NeverOccludes;
+        }
+
+        /// <summary>
+        /// Whether the material is plausibly a build-time clone of one a never-occludes override names. VRCFury clones a
+        /// material with <c>Object.Instantiate</c>, gives the clone the original's name, records it nowhere, and may
+        /// then change its shader (SPS, a Poiyomi lock) and its properties, so what survives is the name and that the
+        /// clone is no asset. A wrong match here only keeps triangles, so it matches on exactly that, and also past
+        /// Unity's " (Clone)" suffix. An always-opaque override never matches this way, since a wrong match there
+        /// hides triangles.
+        /// </summary>
+        bool PlausibleClone(Material material, out List<Object> named)
+        {
+            named = null;
+            return !EditorUtility.IsPersistent(material) && _neverByName.TryGetValue(CloneName(material.name), out named);
+        }
+
+        static string CloneName(string name)
+        {
+            const string suffix = " (Clone)";
+            while (name.EndsWith(suffix)) name = name.Substring(0, name.Length - suffix.Length);
+            return name;
         }
 
         /// <summary>The overrides that match no material of any of <paramref name="renderers"/>.</summary>

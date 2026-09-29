@@ -166,3 +166,12 @@ msgstr "アバターは変更していません: {0}"
 
 msgid "MeshOptimizer:diag:pass-failed:hint"
 msgstr "詳しいエラーはコンソールにあります。"
+
+msgid "MeshOptimizer:diag:never-occludes-unmatched"
+msgstr "「遮蔽しない」に設定したマテリアルがどれにも一致しません"
+
+msgid "MeshOptimizer:diag:never-occludes-unmatched:description"
+msgstr "{0}は「遮蔽しない」に設定されていますが、アバターのどのレンダラーもこのマテリアルや同名の複製を使っていないため、この設定は効いていません。置き換わったマテリアルが背後のポリゴンを隠すことがあります。"
+
+msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
+msgstr "ビルド時にレンダラーが使うマテリアルに設定し直すか、マテリアルがもう無ければ設定を削除してください。"
