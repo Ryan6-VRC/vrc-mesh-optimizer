@@ -12,12 +12,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// <summary>
     /// Every working vertex's error quadrics: one for the rest state, one per live frame that moves any vertex
     /// of its one-ring (stored sparsely, since elsewhere a frame's quadric equals the rest one), and one for
-    /// UV0. Plane quadrics are area-weighted; open edges add a perpendicular plane weighted by squared length.
+    /// UV0, and one for the vertex normals when the normal term is on. Plane quadrics are area-weighted; open edges add a
+    /// perpendicular plane weighted by squared length.
     /// </summary>
     internal struct QuadricBank : IDisposable
     {
         public NativeArray<Quadric> Rest;
         public NativeArray<UvQuadric> Uv;
+        /// <summary>Per working vertex, the vertex normal fields of the source triangles it stands for; empty when the normal
+        /// term is off (see <see cref="NormalSettings"/>). Not to be confused with <see cref="NormalRest"/>, the geometric normal.</summary>
+        public NativeArray<NormalQuadric> NormalField;
         public NativeArray<int> SparseStart;
         public NativeArray<int> SparseCount;
         /// <summary>Vertex w's frame quadrics are Sparse[SparseStart[w] .. + SparseCount[w]), frame ascending.</summary>
@@ -35,6 +39,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         public long ByteSize =>
             (long)Rest.Length * UnsafeUtility.SizeOf<Quadric>() + (long)Uv.Length * UnsafeUtility.SizeOf<UvQuadric>() +
+            (long)NormalField.Length * UnsafeUtility.SizeOf<NormalQuadric>() +
             (long)SparseStart.Length * 8 + (long)Sparse.Length * UnsafeUtility.SizeOf<FrameQuadric>() +
             (long)NormalRest.Length * 20 + (long)NormalFrames.Length * UnsafeUtility.SizeOf<FrameNormal>();
 
@@ -42,6 +47,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             if (Rest.IsCreated) Rest.Dispose();
             if (Uv.IsCreated) Uv.Dispose();
+            if (NormalField.IsCreated) NormalField.Dispose();
             if (SparseStart.IsCreated) SparseStart.Dispose();
             if (SparseCount.IsCreated) SparseCount.Dispose();
             if (Sparse.IsCreated) Sparse.Dispose();
@@ -77,8 +83,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             var w = topo.WorkingVertexCount;
             using var uv0 = new OptionalArray<float2>(mesh.Uv0);
+            var normalsOn = NormalTermOn(mesh, settings);
+            using var normals = new OptionalArray<float3>(normalsOn ? mesh.Normals : default);
             bank.Rest = new NativeArray<Quadric>(w, allocator);
             bank.Uv = new NativeArray<UvQuadric>(w, allocator);
+            bank.NormalField = new NativeArray<NormalQuadric>(normalsOn ? w : 0, allocator);
             bank.SparseStart = new NativeArray<int>(w, allocator);
             bank.SparseCount = new NativeArray<int>(w, allocator);
             bank.NormalRest = new NativeArray<float3>(w, allocator);
@@ -91,6 +100,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 Positions = mesh.Positions,
                 Uv0 = uv0.Array,
+                Normals = normals.Array,
                 Origin = topo.Origin,
                 Triangles = topo.Triangles,
                 EdgeFlags = topo.EdgeFlags,
@@ -115,12 +125,28 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 SparseStart = bank.SparseStart,
                 Rest = bank.Rest,
                 Uv = bank.Uv,
+                NormalField = bank.NormalField,
                 Sparse = bank.Sparse,
                 NormalRest = bank.NormalRest,
                 NormalFrames = bank.NormalFrames,
             }.ScheduleBatch(w, 64).Complete();
             bank.NormalStart = new NativeArray<int>(bank.SparseStart, allocator);
             bank.NormalCount = new NativeArray<int>(bank.SparseCount, allocator);
+        }
+
+        /// <summary>
+        /// Whether a mesh is priced for its normals: the term's weight is above 0 and the mesh carries normals. A mesh with
+        /// none has no shading of its own to keep. Throws on a weight under 0, NaN or infinite, or normals that do not match the positions.
+        /// </summary>
+        public static bool NormalTermOn(in EvalMesh mesh, in DecimationSettings settings)
+        {
+            var weight = settings.Normal.Weight;
+            if (!(weight >= 0f) || float.IsPositiveInfinity(weight))
+                throw new ArgumentException($"normal weight {weight} must be finite and 0 or above; 0 turns the term off");
+            if (weight == 0f || !mesh.Normals.IsCreated) return false;
+            if (mesh.Normals.Length != mesh.VertexCount)
+                throw new ArgumentException($"the mesh carries {mesh.Normals.Length} normals for {mesh.VertexCount} vertices; the normal term reads one per vertex");
+            return true;
         }
 
         /// <summary>Working vertex to incident live triangles, as offsets into a flat list.</summary>
@@ -159,6 +185,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             [ReadOnly] public NativeArray<float3> Positions;
             [ReadOnly] public NativeArray<float2> Uv0;
+            /// <summary>Per source vertex, empty when the normal term is off.</summary>
+            [ReadOnly] public NativeArray<float3> Normals;
             [ReadOnly] public NativeArray<int> Origin;
             [ReadOnly] public NativeArray<int3> Triangles;
             [ReadOnly] public NativeArray<byte> EdgeFlags;
@@ -300,6 +328,40 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 }
                 return q;
             }
+
+            /// <summary>
+            /// w's normal error: each incident triangle's vertex normals, interpolated linearly across it and extended over
+            /// its plane, weighted by its area. A target normal that differs from a field where the target stands is a
+            /// shading change over that triangle's surface.
+            /// </summary>
+            public NormalQuadric NormalQuadricOf(int w)
+            {
+                var q = default(NormalQuadric);
+                for (var i = TriStart[w]; i < TriStart[w + 1]; i++)
+                {
+                    var tri = Triangles[Tris[i]];
+                    var p0 = PositionIn(tri.x, -1, w);
+                    var e1 = PositionIn(tri.y, -1, w) - p0;
+                    var e2 = PositionIn(tri.z, -1, w) - p0;
+                    var a = math.dot(e1, e1);
+                    var b = math.dot(e1, e2);
+                    var c = math.dot(e2, e2);
+                    var det = a * c - b * b;
+                    if (det <= 1e-40) continue;
+                    var n0 = NormalQuadric.Readable(Normals[Origin[tri.x]]);
+                    var d1 = NormalQuadric.Readable(Normals[Origin[tri.y]]) - n0;
+                    var d2 = NormalQuadric.Readable(Normals[Origin[tri.z]]) - n0;
+                    // Channel ch's gradient is alpha[ch] e1 + beta[ch] e2, solving g . e1 = d1[ch] and g . e2 = d2[ch].
+                    var alpha = (c * d1 - b * d2) / det;
+                    var beta = (a * d2 - b * d1) / det;
+                    var gx = alpha.x * e1 + beta.x * e2;
+                    var gy = alpha.y * e1 + beta.y * e2;
+                    var gz = alpha.z * e1 + beta.z * e2;
+                    var d = n0 - new double3(math.dot(gx, p0), math.dot(gy, p0), math.dot(gz, p0));
+                    q.Add(NormalQuadric.FromField(gx, gy, gz, d, 0.5 * math.sqrt(det)));
+                }
+                return q;
+            }
         }
 
         [BurstCompile(CompileSynchronously = true)]
@@ -345,6 +407,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             [ReadOnly] public NativeArray<int> SparseStart;
             [NativeDisableParallelForRestriction] public NativeArray<Quadric> Rest;
             [NativeDisableParallelForRestriction] public NativeArray<UvQuadric> Uv;
+            [NativeDisableParallelForRestriction] public NativeArray<NormalQuadric> NormalField;
             [NativeDisableParallelForRestriction] public NativeArray<FrameQuadric> Sparse;
             [NativeDisableParallelForRestriction] public NativeArray<float3> NormalRest;
             [NativeDisableParallelForRestriction] public NativeArray<FrameNormal> NormalFrames;
@@ -357,6 +420,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     Rest[w] = C.ConfigurationQuadric(w, -1, out var restNormal);
                     NormalRest[w] = restNormal;
                     Uv[w] = C.UvQuadricOf(w);
+                    if (NormalField.Length > 0) NormalField[w] = C.NormalQuadricOf(w);
                     C.GatherFrames(w, ref frames);
                     var at = SparseStart[w];
                     for (var i = 0; i < frames.Length; i++)
