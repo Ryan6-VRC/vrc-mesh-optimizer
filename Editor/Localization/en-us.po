@@ -137,6 +137,15 @@ msgstr "Removing hidden triangles failed, so no triangle was removed for being h
 msgid "MeshOptimizer:diag:occlusion-failed:hint"
 msgstr "The console holds the full error. Decimation still ran."
 
+msgid "MeshOptimizer:diag:rejudge-failed"
+msgstr "Mesh Optimizer could not check hidden triangles against the decimated meshes"
+
+msgid "MeshOptimizer:diag:rejudge-failed:description"
+msgstr "Checking whether decimation uncovered any removed hidden triangle failed, so they stay removed as first found: {0}"
+
+msgid "MeshOptimizer:diag:rejudge-failed:hint"
+msgstr "The console holds the full error. Where decimation coarsened an always-on mesh, a hole may show through it; a looser budget or tolerance makes one less likely."
+
 msgid "MeshOptimizer:diag:budget-not-met"
 msgstr "Mesh Optimizer did not reach the triangle count"
 
