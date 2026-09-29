@@ -72,7 +72,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public void Execute()
         {
             var engine = new CollapseEngine(ref this);
-            engine.Run(ref this);
+            engine.Run();
         }
     }
 
@@ -87,46 +87,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
     internal struct CollapseEngine
     {
-        // Inputs (views).
-        NativeArray<float3> _positions;
-        NativeArray<float2> _uv0;
-        NativeArray<int> _weightStart;
-        NativeArray<BoneInfluence> _weights;
-        NativeArray<int> _origin;
-        NativeArray<int> _positionId;
-        NativeArray<int> _partner;
-        NativeArray<VertexKind> _kind;
-        NativeArray<int> _deltaStart;
-        NativeArray<int> _deltaFrame;
-        NativeArray<float3> _deltaValue;
-        NativeArray<int3> _tri;
-        NativeArray<Quadric> _rest;
-        NativeArray<UvQuadric> _uv;
-        NativeArray<NormalQuadric> _field;
-        NativeArray<float3> _vertexNormals;
+        /// <summary>
+        /// The job, whose arrays and lists this reads and writes in place: a copy of a native container shares its storage,
+        /// so the triangles, quadrics and pool the job holds are the ones the collapses change, and the steps and records it
+        /// holds are the ones they append to.
+        /// </summary>
+        CollapseJob _in;
         bool _shading;
-        NativeArray<int> _sparseStart;
-        NativeArray<int> _sparseCount;
-        NativeList<FrameQuadric> _sparse;
-        NativeArray<float3> _normalRest;
-        NativeArray<int> _normalStart;
-        NativeArray<int> _normalCount;
-        NativeArray<FrameNormal> _normalFrames;
-        NativeArray<TreeNode> _clearNodes;
-        NativeArray<TreePrim> _clearPrims;
-        NativeArray<int> _clearPrimLayer;
-        NativeArray<int> _clearNodeLayer;
-        NativeArray<float> _clearPrimClearance;
-        NativeArray<float> _clearNodeClearance;
-        NativeArray<int> _triLayer;
-        NativeArray<float> _vertexClearance;
-        NativeArray<float> _star;
-        NativeArray<float> _triClearance;
         bool _clearance;
-        Bends _bends;
         bool _bent;
         long _refused;
-        DecimationSettings _s;
 
         // Working state.
         NativeArray<double3> _p;
@@ -179,53 +149,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         public CollapseEngine(ref CollapseJob job)
         {
-            _positions = job.Positions;
-            _uv0 = job.Uv0;
-            _weightStart = job.WeightStart;
-            _weights = job.Weights;
-            _origin = job.Origin;
-            _positionId = job.PositionId;
-            _partner = job.Partner;
-            _kind = job.Kind;
-            _deltaStart = job.DeltaStart;
-            _deltaFrame = job.DeltaFrame;
-            _deltaValue = job.DeltaValue;
-            _tri = job.Triangles;
-            _rest = job.Rest;
-            _uv = job.Uv;
-            _field = job.NormalField;
-            _vertexNormals = job.VertexNormals;
+            _in = job;
             _shading = job.NormalField.Length > 0;
-            _sparseStart = job.SparseStart;
-            _sparseCount = job.SparseCount;
-            _sparse = job.Sparse;
-            _normalRest = job.NormalRest;
-            _normalStart = job.NormalStart;
-            _normalCount = job.NormalCount;
-            _normalFrames = job.NormalFrames;
-            _clearNodes = job.ClearNodes;
-            _clearPrims = job.ClearPrims;
-            _clearPrimLayer = job.ClearPrimLayer;
-            _clearNodeLayer = job.ClearNodeLayer;
-            _clearPrimClearance = job.ClearPrimClearance;
-            _clearNodeClearance = job.ClearNodeClearance;
-            _triLayer = job.TriangleLayer;
-            _vertexClearance = job.VertexClearance;
-            _star = job.StarClearance;
-            _triClearance = job.TriangleClearance;
             _clearance = job.ClearNodes.Length > 0 && job.TriangleClearance.Length == job.Triangles.Length;
-            _bends = job.Bends;
             _bent = job.Bends.Active;
             _refused = 0;
-            _s = job.Settings;
             _live = job.LiveTriangles;
             _level = 0f;
             _stampValue = 0;
             _wasted = 0;
-            _peak = _sparse.Length;
+            _peak = _in.Sparse.Length;
 
-            var w = _origin.Length;
-            var t = _tri.Length;
+            var w = _in.Origin.Length;
+            var t = _in.Triangles.Length;
             _p = new NativeArray<double3>(w, Allocator.Temp);
             _alive = new NativeArray<byte>(t, Allocator.Temp);
             _cornerNext = new NativeArray<int>(t * 3, Allocator.Temp);
@@ -251,17 +187,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
             for (var i = 0; i < w; i++)
             {
-                _p[i] = (double3)_positions[_origin[i]];
+                _p[i] = (double3)_in.Positions[_in.Origin[i]];
                 _firstCorner[i] = -1;
                 _heapPos[i] = -1;
-                _sparseCap[i] = _sparseCount[i];
-                var e = _sparseStart[i] + _sparseCount[i];
-                while (e > _sparseStart[i] && _sparse[e - 1].Frame >= Bends.FrameBase) e--;
-                _shapeCount[i] = e - _sparseStart[i];
+                _sparseCap[i] = _in.SparseCount[i];
+                var e = _in.SparseStart[i] + _in.SparseCount[i];
+                while (e > _in.SparseStart[i] && _in.Sparse[e - 1].Frame >= Bends.FrameBase) e--;
+                _shapeCount[i] = e - _in.SparseStart[i];
             }
             for (var i = 0; i < t; i++)
             {
-                var tri = _tri[i];
+                var tri = _in.Triangles[i];
                 if (tri.x < 0) continue;
                 _alive[i] = 1;
                 for (var k = 0; k < 3; k++)
@@ -273,23 +209,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
             for (var i = 0; i < w; i++)
             {
-                var p = _partner[i];
-                var locked = _kind[i] == VertexKind.Locked || IsProtected(job.ProtectLocked, i) || IsProtected(job.ProtectLocked, p);
+                var p = _in.Partner[i];
+                var locked = _in.Kind[i] == VertexKind.Locked || IsProtected(job.ProtectLocked, i) || IsProtected(job.ProtectLocked, p);
                 _removable[i] = (byte)(locked ? 0 : 1);
                 _multiplier[i] = math.max(MultiplierOf(job.ProtectMultiplier, i), MultiplierOf(job.ProtectMultiplier, p));
             }
         }
 
-        bool IsProtected(NativeArray<byte> locked, int w) => locked.Length > 0 && locked[_origin[w]] != 0;
+        bool IsProtected(NativeArray<byte> locked, int w) => locked.Length > 0 && locked[_in.Origin[w]] != 0;
 
         /// <summary>A vertex's cost multiplier, never under 1: a multiplier only keeps a vertex longer. NaN reads as 1.</summary>
-        float MultiplierOf(NativeArray<float> mult, int w) => mult.Length > 0 ? math.max(mult[_origin[w]], 1f) : 1f;
+        float MultiplierOf(NativeArray<float> mult, int w) => mult.Length > 0 ? math.max(mult[_in.Origin[w]], 1f) : 1f;
 
-        int Rep(int w) => math.min(w, _partner[w]);
+        int Rep(int w) => math.min(w, _in.Partner[w]);
 
-        public void Run(ref CollapseJob job)
+        public void Run()
         {
-            for (var w = 0; w < _origin.Length; w++)
+            for (var w = 0; w < _in.Origin.Length; w++)
             {
                 if (Rep(w) != w || _removable[w] == 0) continue;
                 if (BestKey(w, out var key)) HeapSet(w, key);
@@ -297,7 +233,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
             while (_heap.Length > 0)
             {
-                if (_live <= _s.TargetTriangleCount) break;
+                if (_live <= _in.Settings.TargetTriangleCount) break;
                 var r = HeapPop();
                 Candidates(r);
                 SortCandidates();
@@ -312,7 +248,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 }
                 if (found < 0)
                 {
-                    job.Stats[1]++;
+                    _in.Stats[1]++;
                     continue; // blocked until its neighbourhood changes
                 }
                 var c = _cand[found];
@@ -323,11 +259,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 }
                 // The heap orders by key, which carries a length tie-break, so one cost over the limit does not
                 // prove every remaining cost is: drop this cluster and keep going.
-                if (c.Cost > _s.MaxError) continue;
-                Apply(c, ref job);
+                if (c.Cost > _in.Settings.MaxError) continue;
+                Apply(c);
             }
-            job.Stats[0] = _peak;
-            job.Stats[2] = _refused;
+            _in.Stats[0] = _peak;
+            _in.Stats[2] = _refused;
         }
 
         // ---------------------------------------------------------------- candidates and cost
@@ -336,10 +272,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             _cand.Clear();
             var u1 = r;
-            var u2 = _partner[r] != r ? _partner[r] : -1;
+            var u2 = _in.Partner[r] != r ? _in.Partner[r] : -1;
             if (u2 < 0)
             {
-                if (_kind[r] == VertexKind.Interior)
+                if (_in.Kind[r] == VertexKind.Interior)
                 {
                     Neighbours(u1);
                     for (var i = 0; i < _nexts.Length; i++) AddCandidate(u1, _nexts[i], -1, -1);
@@ -355,8 +291,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             // The partner's side runs the other way: u1's outward neighbour pairs with u2's inward one.
             OpenEdges(u1, out var a1, out var b1);
             OpenEdges(u2, out var a2, out var b2);
-            if (a1 >= 0 && b2 >= 0 && _positionId[a1] == _positionId[b2]) AddCandidate(u1, a1, u2, b2);
-            if (b1 >= 0 && a2 >= 0 && _positionId[b1] == _positionId[a2]) AddCandidate(u1, b1, u2, a2);
+            if (a1 >= 0 && b2 >= 0 && _in.PositionId[a1] == _in.PositionId[b2]) AddCandidate(u1, a1, u2, b2);
+            if (b1 >= 0 && a2 >= 0 && _in.PositionId[b1] == _in.PositionId[a2]) AddCandidate(u1, b1, u2, a2);
         }
 
         void AddCandidate(int u1, int v1, int u2, int v2)
@@ -388,39 +324,39 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        float3 Delta(int w, int frame) => DeltaLookup.Find(_deltaStart, _deltaFrame, _deltaValue, _origin[w], frame);
+        float3 Delta(int w, int frame) => DeltaLookup.Find(_in.DeltaStart, _in.DeltaFrame, _in.DeltaValue, _in.Origin[w], frame);
 
         float Cost(int u1, int v1, int u2, int v2, out float length, out float bend)
         {
             bend = 0f;
-            var restE = _rest[u1].Evaluate(_p[v1]);
-            var restW = _rest[u1].W;
-            var uvE = _uv[u1].Evaluate(_p[v1], Uv(v1));
+            var restE = _in.Rest[u1].Evaluate(_p[v1]);
+            var restW = _in.Rest[u1].W;
+            var uvE = _in.Uv[u1].Evaluate(_p[v1], Uv(v1));
             if (u2 >= 0)
             {
-                restE += _rest[u2].Evaluate(_p[v2]);
-                restW += _rest[u2].W;
-                uvE += _uv[u2].Evaluate(_p[v2], Uv(v2));
+                restE += _in.Rest[u2].Evaluate(_p[v2]);
+                restW += _in.Rest[u2].W;
+                uvE += _in.Uv[u2].Evaluate(_p[v2], Uv(v2));
             }
             var eRest2 = restW > TinyWeight ? restE / restW : 0.0;
             var max2 = eRest2;
             var excess = 0.0;
 
-            var i = _sparseStart[u1];
+            var i = _in.SparseStart[u1];
             var ie = ShapeEnd(u1);
-            var j = u2 >= 0 ? _sparseStart[u2] : 0;
+            var j = u2 >= 0 ? _in.SparseStart[u2] : 0;
             var je = u2 >= 0 ? ShapeEnd(u2) : 0;
             while (i < ie || j < je)
             {
-                var fi = i < ie ? _sparse[i].Frame : int.MaxValue;
-                var fj = j < je ? _sparse[j].Frame : int.MaxValue;
+                var fi = i < ie ? _in.Sparse[i].Frame : int.MaxValue;
+                var fj = j < je ? _in.Sparse[j].Frame : int.MaxValue;
                 var f = math.min(fi, fj);
-                var q1 = fi == f ? _sparse[i].Q : _rest[u1];
+                var q1 = fi == f ? _in.Sparse[i].Q : _in.Rest[u1];
                 var e = q1.Evaluate(_p[v1] + (double3)Delta(v1, f));
                 var wsum = q1.W;
                 if (u2 >= 0)
                 {
-                    var q2 = fj == f ? _sparse[j].Q : _rest[u2];
+                    var q2 = fj == f ? _in.Sparse[j].Q : _in.Rest[u2];
                     e += q2.Evaluate(_p[v2] + (double3)Delta(v2, f));
                     wsum += q2.W;
                 }
@@ -438,13 +374,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
 
             double agg2;
-            switch (_s.Aggregation)
+            switch (_in.Settings.Aggregation)
             {
                 case ShapeAggregation.Sum:
                     agg2 = eRest2 + excess;
                     break;
                 case ShapeAggregation.Blend:
-                    var b = math.saturate((double)_s.AggregationBlend);
+                    var b = math.saturate((double)_in.Settings.AggregationBlend);
                     agg2 = (1.0 - b) * max2 + b * (eRest2 + excess);
                     break;
                 default:
@@ -452,7 +388,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     break;
             }
 
-            var uvw = (double)_s.UvWeight;
+            var uvw = (double)_in.Settings.UvWeight;
             var uv2 = restW > TinyWeight ? uvw * uvw * uvE / restW : 0.0;
 
             var len = math.distance(_p[u1], _p[v1]);
@@ -462,7 +398,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 len = math.max(len, math.distance(_p[u2], _p[v2]));
                 d = math.max(d, SkinDistance(u2, v2));
             }
-            var skin = (double)_s.SkinWeightPenalty * d * len;
+            var skin = (double)_in.Settings.SkinWeightPenalty * d * len;
             length = (float)len;
             // The removed vertex's triangles move onto the target and ride its bones afterwards, so the collapse is priced
             // at the larger growth of the two, and of both pairs for a seam or border pair.
@@ -474,7 +410,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             return (float)(math.sqrt(sum2) * mult);
         }
 
-        float2 Uv(int w) => _uv0.Length > 0 ? _uv0[_origin[w]] : float2.zero;
+        float2 Uv(int w) => _in.Uv0.Length > 0 ? _in.Uv0[_in.Origin[w]] : float2.zero;
 
         /// <summary>
         /// The normal term's error squared, in metres squared (see <see cref="NormalSettings"/>): how far each target's
@@ -483,25 +419,25 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// </summary>
         double Shading2(int u1, int v1, int u2, int v2)
         {
-            var e = _field[u1].Evaluate(_p[v1], NormalQuadric.Readable(_vertexNormals[_origin[v1]]));
-            if (u2 >= 0) e += _field[u2].Evaluate(_p[v2], NormalQuadric.Readable(_vertexNormals[_origin[v2]]));
-            var w = (double)_s.Normal.Weight;
+            var e = _in.NormalField[u1].Evaluate(_p[v1], NormalQuadric.Readable(_in.VertexNormals[_in.Origin[v1]]));
+            if (u2 >= 0) e += _in.NormalField[u2].Evaluate(_p[v2], NormalQuadric.Readable(_in.VertexNormals[_in.Origin[v2]]));
+            var w = (double)_in.Settings.Normal.Weight;
             return w * w * e;
         }
 
         /// <summary>Half the L1 distance between two vertices' influence distributions: 0 alike, 1 disjoint.</summary>
         double SkinDistance(int a, int b)
         {
-            var oa = _origin[a];
-            var ob = _origin[b];
-            if (oa == ob || _weightStart.Length == 0) return 0;
+            var oa = _in.Origin[a];
+            var ob = _in.Origin[b];
+            if (oa == ob || _in.WeightStart.Length == 0) return 0;
             var sum = 0.0;
-            for (var i = _weightStart[oa]; i < _weightStart[oa + 1]; i++)
-                sum += math.abs(_weights[i].Weight - WeightOf(ob, _weights[i].Bone, out _));
-            for (var i = _weightStart[ob]; i < _weightStart[ob + 1]; i++)
+            for (var i = _in.WeightStart[oa]; i < _in.WeightStart[oa + 1]; i++)
+                sum += math.abs(_in.Weights[i].Weight - WeightOf(ob, _in.Weights[i].Bone, out _));
+            for (var i = _in.WeightStart[ob]; i < _in.WeightStart[ob + 1]; i++)
             {
-                WeightOf(oa, _weights[i].Bone, out var present);
-                if (!present) sum += math.abs(_weights[i].Weight);
+                WeightOf(oa, _in.Weights[i].Bone, out var present);
+                if (!present) sum += math.abs(_in.Weights[i].Weight);
             }
             return 0.5 * sum;
         }
@@ -510,10 +446,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             present = false;
             var sum = 0f;
-            for (var i = _weightStart[o]; i < _weightStart[o + 1]; i++)
+            for (var i = _in.WeightStart[o]; i < _in.WeightStart[o + 1]; i++)
             {
-                if (_weights[i].Bone != bone) continue;
-                sum += _weights[i].Weight;
+                if (_in.Weights[i].Bone != bone) continue;
+                sum += _in.Weights[i].Weight;
                 present = true;
             }
             return sum;
@@ -522,9 +458,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         // ---------------------------------------------------------------- bends
 
         /// <summary>The end of w's shape frames in the pool: its bends follow them, to the end of its list.</summary>
-        int ShapeEnd(int w) => _sparseStart[w] + _shapeCount[w];
+        int ShapeEnd(int w) => _in.SparseStart[w] + _shapeCount[w];
 
-        int ListEnd(int w) => _sparseStart[w] + _sparseCount[w];
+        int ListEnd(int w) => _in.SparseStart[w] + _in.SparseCount[w];
 
         /// <summary>
         /// w's quadric in a bend, in its own home: the one it holds, or else its rest quadric, since then everything it
@@ -534,11 +470,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         Quadric BendQuadric(int w, int frame, ref int cursor)
         {
             var end = ListEnd(w);
-            while (cursor < end && _sparse[cursor].Frame < frame) cursor++;
-            return cursor < end && _sparse[cursor].Frame == frame ? _sparse[cursor].Q : _rest[w];
+            while (cursor < end && _in.Sparse[cursor].Frame < frame) cursor++;
+            return cursor < end && _in.Sparse[cursor].Frame == frame ? _in.Sparse[cursor].Q : _in.Rest[w];
         }
 
-        bool HomeOf(int w, int k) => _bends.HomeIn(_origin[w], _bends.BoneOf(k));
+        bool HomeOf(int w, int k) => _in.Bends.HomeIn(_in.Origin[w], _in.Bends.BoneOf(k));
 
         /// <summary>
         /// Adds to _frames the bends a collapse of u onto v can move: those u holds a quadric for, those that bend v's own
@@ -547,9 +483,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// </summary>
         void BendFrames(int u, int v)
         {
-            for (var i = ShapeEnd(u); i < ListEnd(u); i++) _frames.Add(_sparse[i].Frame);
-            _bends.AddMixed(_origin[v], ref _frames);
-            _bends.AddApart(_origin[u], _origin[v], ref _frames);
+            for (var i = ShapeEnd(u); i < ListEnd(u); i++) _frames.Add(_in.Sparse[i].Frame);
+            _in.Bends.AddMixed(_in.Origin[v], ref _frames);
+            _in.Bends.AddApart(_in.Origin[u], _in.Origin[v], ref _frames);
         }
 
         /// <summary>u's error in bend k with v standing where the bend puts it, both read in u's home.</summary>
@@ -557,7 +493,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             var q = BendQuadric(u, Bends.FrameBase + k, ref cursor);
             weight = q.W;
-            return q.Evaluate(_bends.InHome(_origin[v], _p[v], k, HomeOf(u, k)));
+            return q.Evaluate(_in.Bends.InHome(_in.Origin[v], _p[v], k, HomeOf(u, k)));
         }
 
         /// <summary>Joins each bend's error to the rest and shape errors, as a shape frame's is joined.</summary>
@@ -593,10 +529,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// </summary>
         bool BendClearanceHolds(in Candidate c)
         {
-            var gap = math.min(FanClearance(c.U1), _star[_origin[c.V1]]);
-            if (c.U2 >= 0) gap = math.min(gap, math.min(FanClearance(c.U2), _star[_origin[c.V2]]));
-            if (!(gap > 0f) || gap >= _s.Clearance.Reach) return true;
-            return c.Bend <= _s.Bend.ClearanceShare * gap;
+            var gap = math.min(FanClearance(c.U1), _in.StarClearance[_in.Origin[c.V1]]);
+            if (c.U2 >= 0) gap = math.min(gap, math.min(FanClearance(c.U2), _in.StarClearance[_in.Origin[c.V2]]));
+            if (!(gap > 0f) || gap >= _in.Settings.Clearance.Reach) return true;
+            return c.Bend <= _in.Settings.Bend.ClearanceShare * gap;
         }
 
         /// <summary>
@@ -607,9 +543,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         void MergeBends(int u, int v)
         {
             _frames.Clear();
-            for (var i = ShapeEnd(u); i < ListEnd(u); i++) _frames.Add(_sparse[i].Frame);
-            for (var i = ShapeEnd(v); i < ListEnd(v); i++) _frames.Add(_sparse[i].Frame);
-            _bends.AddApart(_origin[u], _origin[v], ref _frames);
+            for (var i = ShapeEnd(u); i < ListEnd(u); i++) _frames.Add(_in.Sparse[i].Frame);
+            for (var i = ShapeEnd(v); i < ListEnd(v); i++) _frames.Add(_in.Sparse[i].Frame);
+            _in.Bends.AddApart(_in.Origin[u], _in.Origin[v], ref _frames);
             SortUnique(ref _frames);
             var cu = ShapeEnd(u);
             var cv = ShapeEnd(v);
@@ -617,7 +553,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var f = _frames[i];
                 var k = f - Bends.FrameBase;
-                var qu = _bends.Carry(BendQuadric(u, f, ref cu), k, HomeOf(u, k), HomeOf(v, k));
+                var qu = _in.Bends.Carry(BendQuadric(u, f, ref cu), k, HomeOf(u, k), HomeOf(v, k));
                 _merged.Add(new FrameQuadric { Frame = f, Q = Quadric.Sum(BendQuadric(v, f, ref cv), qu) });
             }
         }
@@ -632,7 +568,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 var k = c - t * 3;
                 AddUnique(ref _nexts, tri[(k + 1) % 3]);
                 AddUnique(ref _nexts, tri[(k + 2) % 3]);
@@ -662,7 +598,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 var k = c - t * 3;
                 _nexts.Add(tri[(k + 1) % 3]);
                 _prevs.Add(tri[(k + 2) % 3]);
@@ -687,7 +623,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         bool Valid(in Candidate c)
         {
-            if (c.U2 >= 0 && _kind[c.U1] == VertexKind.Seam)
+            if (c.U2 >= 0 && _in.Kind[c.U1] == VertexKind.Seam)
             {
                 if (!LinkHolds(c.U1, c.V1, c.U2, c.V2)) return false;
             }
@@ -705,7 +641,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 _refused++;
                 return false;
             }
-            if (_clearance && _bent && _s.Bend.ClearanceShare > 0f && c.Bend > 0f && !BendClearanceHolds(c))
+            if (_clearance && _bent && _in.Settings.Bend.ClearanceShare > 0f && c.Bend > 0f && !BendClearanceHolds(c))
             {
                 _refused++;
                 return false;
@@ -722,7 +658,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
             {
                 var t = c / 3;
-                if (_alive[t] != 0) least = math.min(least, _triClearance[t]);
+                if (_alive[t] != 0) least = math.min(least, _in.TriangleClearance[t]);
             }
             return least;
         }
@@ -738,33 +674,33 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         bool ClearanceHolds(int u, int v)
         {
             var touches = !(FanClearance(u) > 0f);
-            var keep = 1f - _s.Clearance.Share;
-            var pv = _positions[_origin[v]];
-            var cv = _vertexClearance[_origin[v]];
+            var keep = 1f - _in.Settings.Clearance.Share;
+            var pv = _in.Positions[_in.Origin[v]];
+            var cv = _in.VertexClearance[_in.Origin[v]];
             for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 if (tri.x == v || tri.y == v || tri.z == v) continue;
                 var k = c - t * 3;
-                var x = _origin[tri[(k + 1) % 3]];
-                var y = _origin[tri[(k + 2) % 3]];
-                var px = _positions[x];
-                var py = _positions[y];
+                var x = _in.Origin[tri[(k + 1) % 3]];
+                var y = _in.Origin[tri[(k + 2) % 3]];
+                var px = _in.Positions[x];
+                var py = _in.Positions[y];
                 // A source triangle P of another layer is held to keep * its gap, which is no more than the reach, and no
                 // more than P's distance to a corner (the corners lie on this layer's source): d + the longest edge. So
                 // nothing nearer than keep * min(Reach, edge / (1 - keep)) can be refused, and the corner bound often
                 // proves that.
-                var least = math.min(_star[_origin[v]], math.min(_star[x], _star[y]));
+                var least = math.min(_in.StarClearance[_in.Origin[v]], math.min(_in.StarClearance[x], _in.StarClearance[y]));
                 // A source triangle that touches or crosses a layer has no gap to hold a new triangle to; where a corner's
                 // surroundings touch too, the search below cannot see it, and the crossing check must.
                 if (!(least > 0f)) touches = true;
                 var edge = math.max(math.distance(pv, px), math.max(math.distance(px, py), math.distance(py, pv)));
-                var most = keep * math.min(_s.Clearance.Reach, edge / (1f - keep));
-                if (ClearanceBound.Of(pv, px, py, cv, _vertexClearance[x], _vertexClearance[y]) >= most) continue;
-                if (ClearanceSurface.AnyWithin(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, _clearPrimClearance, _clearNodeClearance,
-                        pv, px, py, _triLayer[t], keep, least)) return false;
+                var most = keep * math.min(_in.Settings.Clearance.Reach, edge / (1f - keep));
+                if (ClearanceBound.Of(pv, px, py, cv, _in.VertexClearance[x], _in.VertexClearance[y]) >= most) continue;
+                if (ClearanceSurface.AnyWithin(_in.ClearNodes, _in.ClearPrims, _in.ClearPrimLayer, _in.ClearNodeLayer, _in.ClearPrimClearance, _in.ClearNodeClearance,
+                        pv, px, py, _in.TriangleLayer[t], keep, least)) return false;
             }
             return !touches || CrossingHolds(u, v);
         }
@@ -779,20 +715,20 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             var before = 0f;
             var after = 0f;
-            var pv = _positions[_origin[v]];
+            var pv = _in.Positions[_in.Origin[v]];
             for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
-                var layer = _triLayer[t];
-                float3 a = _positions[_origin[tri.x]], b = _positions[_origin[tri.y]], d = _positions[_origin[tri.z]];
-                before += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, a, b, d, layer);
+                var tri = _in.Triangles[t];
+                var layer = _in.TriangleLayer[t];
+                float3 a = _in.Positions[_in.Origin[tri.x]], b = _in.Positions[_in.Origin[tri.y]], d = _in.Positions[_in.Origin[tri.z]];
+                before += ClearanceSurface.CrossingLength(_in.ClearNodes, _in.ClearPrims, _in.ClearPrimLayer, _in.ClearNodeLayer, a, b, d, layer);
                 if (tri.x == v || tri.y == v || tri.z == v) continue;
                 var k = c - t * 3;
-                var px = _positions[_origin[tri[(k + 1) % 3]]];
-                var py = _positions[_origin[tri[(k + 2) % 3]]];
-                after += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, pv, px, py, layer, CrossingDrift, out var strays);
+                var px = _in.Positions[_in.Origin[tri[(k + 1) % 3]]];
+                var py = _in.Positions[_in.Origin[tri[(k + 2) % 3]]];
+                after += ClearanceSurface.CrossingLength(_in.ClearNodes, _in.ClearPrims, _in.ClearPrimLayer, _in.ClearNodeLayer, pv, px, py, layer, CrossingDrift, out var strays);
                 if (strays) return false;
             }
             return after <= before * (1f + CrossingSlack) + 1e-9f;
@@ -814,7 +750,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 if (tri.x != other && tri.y != other && tri.z != other) return true;
             }
             return false;
@@ -830,8 +766,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _nu.Clear();
             _nv.Clear();
             _opp.Clear();
-            var pu = _positionId[u1];
-            var pv = _positionId[v1];
+            var pu = _in.PositionId[u1];
+            var pv = _in.PositionId[v1];
             NeighbourPositions(u1, pu, pv, ref _nu);
             if (u2 >= 0) NeighbourPositions(u2, pu, pv, ref _nu);
             NeighbourPositions(v1, pu, pv, ref _nv);
@@ -872,18 +808,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 if (tri.x == v || tri.y == v || tri.z == v) continue;
                 var k = c - t * 3;
-                var px = _positionId[tri[(k + 1) % 3]];
-                var py = _positionId[tri[(k + 2) % 3]];
+                var px = _in.PositionId[tri[(k + 1) % 3]];
+                var py = _in.PositionId[tri[(k + 2) % 3]];
                 for (var d = _firstCorner[v]; d != -1; d = _cornerNext[d])
                 {
                     var s = d / 3;
                     if (_alive[s] == 0) continue;
-                    var other = _tri[s];
-                    var hasX = _positionId[other.x] == px || _positionId[other.y] == px || _positionId[other.z] == px;
-                    var hasY = _positionId[other.x] == py || _positionId[other.y] == py || _positionId[other.z] == py;
+                    var other = _in.Triangles[s];
+                    var hasX = _in.PositionId[other.x] == px || _in.PositionId[other.y] == px || _in.PositionId[other.z] == px;
+                    var hasY = _in.PositionId[other.x] == py || _in.PositionId[other.y] == py || _in.PositionId[other.z] == py;
                     if (hasX && hasY) return false;
                 }
             }
@@ -892,8 +828,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         void AddSeamPartner(int v, int other, int pu, int pv)
         {
-            if (v < 0 || _kind[v] != VertexKind.Seam) return;
-            var p = _partner[v];
+            if (v < 0 || _in.Kind[v] != VertexKind.Seam) return;
+            var p = _in.Partner[v];
             if (p == v || p == other) return;
             NeighbourPositions(p, pu, pv, ref _nv);
         }
@@ -904,10 +840,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 for (var k = 0; k < 3; k++)
                 {
-                    var pid = _positionId[tri[k]];
+                    var pid = _in.PositionId[tri[k]];
                     if (pid != pu && pid != pv) into.Add(pid);
                 }
             }
@@ -919,10 +855,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 if (tri.x != v && tri.y != v && tri.z != v) continue;
                 for (var k = 0; k < 3; k++)
-                    if (tri[k] != u && tri[k] != v) into.Add(_positionId[tri[k]]);
+                    if (tri[k] != u && tri[k] != v) into.Add(_in.PositionId[tri[k]]);
             }
         }
 
@@ -944,21 +880,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// </summary>
         bool NoFlip(int u, int v)
         {
-            var fs = _sparseStart[u];
+            var fs = _in.SparseStart[u];
             var fe = ShapeEnd(u);
             for (var c = _firstCorner[u]; c != -1; c = _cornerNext[c])
             {
                 var t = c / 3;
                 if (_alive[t] == 0) continue;
-                var tri = _tri[t];
+                var tri = _in.Triangles[t];
                 if (tri.x == v || tri.y == v || tri.z == v) continue;
                 var k = c - t * 3;
                 var x = tri[(k + 1) % 3];
                 var y = tri[(k + 2) % 3];
-                var reference = _normalRest[v] + _normalRest[x] + _normalRest[y];
+                var reference = _in.NormalRest[v] + _in.NormalRest[x] + _in.NormalRest[y];
                 if (!TriangleHolds(_p[u], _p[v], _p[x], _p[y], reference)) return false;
                 for (var i = fs; i < fe; i++)
-                    if (!HoldsIn(u, v, x, y, _sparse[i].Frame)) return false;
+                    if (!HoldsIn(u, v, x, y, _in.Sparse[i].Frame)) return false;
                 if (!HoldsInFramesOf(v, u, v, x, y, fs, fe)) return false;
                 if (!HoldsInFramesOf(x, u, v, x, y, fs, fe)) return false;
                 if (!HoldsInFramesOf(y, u, v, x, y, fs, fe)) return false;
@@ -978,10 +914,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>The moved triangle holds in every frame that moves corner w and is not among u's frames, Sparse[fs .. fe).</summary>
         bool HoldsInFramesOf(int w, int u, int v, int x, int y, int fs, int fe)
         {
-            var o = _origin[w];
-            for (var j = _deltaStart[o]; j < _deltaStart[o + 1]; j++)
+            var o = _in.Origin[w];
+            for (var j = _in.DeltaStart[o]; j < _in.DeltaStart[o + 1]; j++)
             {
-                var f = _deltaFrame[j];
+                var f = _in.DeltaFrame[j];
                 if (HasFrame(fs, fe, f)) continue;
                 if (!HoldsIn(u, v, x, y, f)) return false;
             }
@@ -995,7 +931,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             while (lo <= hi)
             {
                 var mid = (lo + hi) >> 1;
-                var m = _sparse[mid].Frame;
+                var m = _in.Sparse[mid].Frame;
                 if (m == f) return true;
                 if (m < f) lo = mid + 1;
                 else hi = mid - 1;
@@ -1006,17 +942,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>The source surface's normal at w in a frame: as at rest unless the frame moves w's ring.</summary>
         float3 NormalIn(int w, int frame)
         {
-            var lo = _normalStart[w];
-            var hi = lo + _normalCount[w] - 1;
+            var lo = _in.NormalStart[w];
+            var hi = lo + _in.NormalCount[w] - 1;
             while (lo <= hi)
             {
                 var mid = (lo + hi) >> 1;
-                var m = _normalFrames[mid].Frame;
-                if (m == frame) return _normalFrames[mid].N;
+                var m = _in.NormalFrames[mid].Frame;
+                if (m == frame) return _in.NormalFrames[mid].N;
                 if (m < frame) lo = mid + 1;
                 else hi = mid - 1;
             }
-            return _normalRest[w];
+            return _in.NormalRest[w];
         }
 
         /// <summary>
@@ -1031,24 +967,24 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             if (nb2 <= 1e-36) return true; // already degenerate in this configuration: nothing to protect
             var na = math.cross(px - pv, py - pv);
             var na2 = math.lengthsq(na);
-            var ratio = (double)_s.DegenerateRatio;
+            var ratio = (double)_in.Settings.DegenerateRatio;
             if (na2 <= ratio * ratio * nb2) return false;
-            if (math.dot(nb, na) <= _s.FlipCosine * math.sqrt(nb2 * na2)) return false;
+            if (math.dot(nb, na) <= _in.Settings.FlipCosine * math.sqrt(nb2 * na2)) return false;
             return math.lengthsq(reference) < 1e-6f || math.dot(na, (double3)reference) > 0.0;
         }
 
         // ---------------------------------------------------------------- applying
 
-        void Apply(in Candidate c, ref CollapseJob job)
+        void Apply(in Candidate c)
         {
             var killed = CollapseWedge(c.U1, c.V1);
             if (c.U2 >= 0) killed += CollapseWedge(c.U2, c.V2);
             _live -= killed;
             _level = math.max(_level, c.Cost);
-            var start = job.Records.Length;
-            job.Records.Add(new int2(c.U1, c.V1));
-            if (c.U2 >= 0) job.Records.Add(new int2(c.U2, c.V2));
-            job.Steps.Add(new CollapseStep { Error = _level, TriangleCount = _live, RecordStart = start, RecordCount = job.Records.Length - start });
+            var start = _in.Records.Length;
+            _in.Records.Add(new int2(c.U1, c.V1));
+            if (c.U2 >= 0) _in.Records.Add(new int2(c.U2, c.V2));
+            _in.Steps.Add(new CollapseStep { Error = _level, TriangleCount = _live, RecordStart = start, RecordCount = _in.Records.Length - start });
             _dead[c.U1] = 1;
             if (c.U2 >= 0) _dead[c.U2] = 1;
             UpdateAround(c.V1, c.V2);
@@ -1067,7 +1003,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var t = c / 3;
                 if (_alive[t] != 0)
                 {
-                    var tri = _tri[t];
+                    var tri = _in.Triangles[t];
                     if (tri.x == v || tri.y == v || tri.z == v)
                     {
                         _alive[t] = 0;
@@ -1076,8 +1012,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     else
                     {
                         tri[c - t * 3] = v;
-                        _tri[t] = tri;
-                        if (_clearance) _triClearance[t] = clearance;
+                        _in.Triangles[t] = tri;
+                        if (_clearance) _in.TriangleClearance[t] = clearance;
                         if (tail == -1) head = c;
                         else _cornerNext[tail] = c;
                         tail = c;
@@ -1099,47 +1035,47 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// stands in for it, since that side's ring does not move in that frame.</summary>
         void MergeQuadrics(int u, int v)
         {
-            var ru = _rest[u];
-            var rv = _rest[v];
+            var ru = _in.Rest[u];
+            var rv = _in.Rest[v];
             _merged.Clear();
-            var i = _sparseStart[u];
+            var i = _in.SparseStart[u];
             var ie = ShapeEnd(u);
-            var j = _sparseStart[v];
+            var j = _in.SparseStart[v];
             var je = ShapeEnd(v);
             while (i < ie || j < je)
             {
-                var fu = i < ie ? _sparse[i].Frame : int.MaxValue;
-                var fv = j < je ? _sparse[j].Frame : int.MaxValue;
+                var fu = i < ie ? _in.Sparse[i].Frame : int.MaxValue;
+                var fv = j < je ? _in.Sparse[j].Frame : int.MaxValue;
                 if (fu < fv)
                 {
-                    _merged.Add(new FrameQuadric { Frame = fu, Q = Quadric.Sum(rv, _sparse[i].Q) });
+                    _merged.Add(new FrameQuadric { Frame = fu, Q = Quadric.Sum(rv, _in.Sparse[i].Q) });
                     i++;
                 }
                 else if (fv < fu)
                 {
-                    _merged.Add(new FrameQuadric { Frame = fv, Q = Quadric.Sum(_sparse[j].Q, ru) });
+                    _merged.Add(new FrameQuadric { Frame = fv, Q = Quadric.Sum(_in.Sparse[j].Q, ru) });
                     j++;
                 }
                 else
                 {
-                    _merged.Add(new FrameQuadric { Frame = fu, Q = Quadric.Sum(_sparse[i].Q, _sparse[j].Q) });
+                    _merged.Add(new FrameQuadric { Frame = fu, Q = Quadric.Sum(_in.Sparse[i].Q, _in.Sparse[j].Q) });
                     i++;
                     j++;
                 }
             }
             var shapes = _merged.Length;
             if (_bent) MergeBends(u, v);
-            _rest[v] = Quadric.Sum(rv, ru);
+            _in.Rest[v] = Quadric.Sum(rv, ru);
             // v's quadrics now stand for u's surface too, so v's removal is priced at the size either can be shown at.
             _multiplier[v] = math.max(_multiplier[v], _multiplier[u]);
-            var uv = _uv[v];
-            uv.Add(_uv[u]);
-            _uv[v] = uv;
+            var uv = _in.Uv[v];
+            uv.Add(_in.Uv[u]);
+            _in.Uv[v] = uv;
             if (_shading)
             {
-                var field = _field[v];
-                field.Add(_field[u]);
-                _field[v] = field;
+                var field = _in.NormalField[v];
+                field.Add(_in.NormalField[u]);
+                _in.NormalField[v] = field;
             }
 
             var n = _merged.Length;
@@ -1147,26 +1083,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 _wasted += _sparseCap[v];
                 var cap = n + n / 2;
-                _sparseStart[v] = _sparse.Length;
+                _in.SparseStart[v] = _in.Sparse.Length;
                 _sparseCap[v] = cap;
-                _sparse.Resize(_sparse.Length + cap, NativeArrayOptions.UninitializedMemory);
-                _peak = math.max(_peak, _sparse.Length);
+                _in.Sparse.Resize(_in.Sparse.Length + cap, NativeArrayOptions.UninitializedMemory);
+                _peak = math.max(_peak, _in.Sparse.Length);
             }
-            var at = _sparseStart[v];
-            for (var k = 0; k < n; k++) _sparse[at + k] = _merged[k];
-            _sparseCount[v] = n;
+            var at = _in.SparseStart[v];
+            for (var k = 0; k < n; k++) _in.Sparse[at + k] = _merged[k];
+            _in.SparseCount[v] = n;
             _shapeCount[v] = shapes;
             _wasted += _sparseCap[u];
-            _sparseCount[u] = 0;
+            _in.SparseCount[u] = 0;
             _shapeCount[u] = 0;
             _sparseCap[u] = 0;
-            if (_wasted > 4096 && _wasted * 2 > _sparse.Length) CompactPool();
+            if (_wasted > 4096 && _wasted * 2 > _in.Sparse.Length) CompactPool();
         }
 
         void CompactPool()
         {
-            var copy = new NativeList<FrameQuadric>(_sparse.Length - (int)_wasted, Allocator.Temp);
-            for (var w = 0; w < _sparseStart.Length; w++)
+            var copy = new NativeList<FrameQuadric>(_in.Sparse.Length - (int)_wasted, Allocator.Temp);
+            for (var w = 0; w < _in.SparseStart.Length; w++)
             {
                 if (_dead[w] != 0 || _sparseCap[w] == 0)
                 {
@@ -1174,13 +1110,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     continue;
                 }
                 var start = copy.Length;
-                var count = _sparseCount[w];
-                for (var k = 0; k < count; k++) copy.Add(_sparse[_sparseStart[w] + k]);
-                _sparseStart[w] = start;
+                var count = _in.SparseCount[w];
+                for (var k = 0; k < count; k++) copy.Add(_in.Sparse[_in.SparseStart[w] + k]);
+                _in.SparseStart[w] = start;
                 _sparseCap[w] = count;
             }
-            _sparse.Clear();
-            _sparse.AddRange(copy.AsArray());
+            _in.Sparse.Clear();
+            _in.Sparse.AddRange(copy.AsArray());
             _wasted = 0;
             copy.Dispose();
         }
@@ -1216,7 +1152,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 }
                 else
                 {
-                    var tri = _tri[t];
+                    var tri = _in.Triangles[t];
                     Mark(Rep(tri.x));
                     Mark(Rep(tri.y));
                     Mark(Rep(tri.z));
