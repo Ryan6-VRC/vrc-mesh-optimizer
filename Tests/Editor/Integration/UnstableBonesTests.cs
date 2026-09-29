@@ -2,9 +2,12 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
+using Ryan6Vrc.MeshOptimizer.Tests.Occlusion;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
@@ -27,6 +30,38 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         public void Moves_WhenACurveCanTakeTheScaleAwayFromRest(float rest, float[] values, bool moves)
         {
             Assert.That(UnstableBones.Moves(rest, values), Is.EqualTo(moves));
+        }
+
+        // A hidden triangle with any weight on an unstable bone, however small, is kept; one whose only tie to it is a zero
+        // weight is not, nor is one wholly on a stable bone.
+        [Test]
+        public void Keep_ClearsEveryHiddenTriangleWithAnyWeightOnAnUnstableBone()
+        {
+            var b = new MeshBuilder();
+            var stable = MeshBuilder.On(0);
+            var faint = new[] { new BoneInfluence { Bone = 0, Weight = 0.999f }, new BoneInfluence { Bone = 1, Weight = 0.001f } };
+            var zero = new[] { new BoneInfluence { Bone = 0, Weight = 1f }, new BoneInfluence { Bone = 1, Weight = 0f } };
+            foreach (var corner in new[] { stable, faint, zero })
+            {
+                var v0 = b.AddVertex(new float3(0, 0, 0), new float3(0, 0, 1), float2.zero, stable);
+                var v1 = b.AddVertex(new float3(1, 0, 0), new float3(0, 0, 1), float2.zero, stable);
+                var v2 = b.AddVertex(new float3(0, 1, 0), new float3(0, 0, 1), float2.zero, corner);
+                b.AddTriangle(v0, v1, v2);
+            }
+            var eval = b.Build();
+            try
+            {
+                var hidden = new[] { true, true, true };
+
+                var kept = UnstableBones.Keep(eval, hidden, new[] { false, true });
+
+                Assert.That(hidden, Is.EqualTo(new[] { true, false, true }));
+                Assert.That(kept, Is.EqualTo(1));
+            }
+            finally
+            {
+                eval.Dispose();
+            }
         }
 
         // Rest scale, then the curve's values, then how many times the curve grows the bone: its largest magnitude over the

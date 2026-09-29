@@ -1,5 +1,6 @@
 using System.Linq;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Animators;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using UnityEngine;
 
@@ -144,7 +145,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         {
             // Both keys are at most 100, but the tangents carry the curve past 100 between them.
             var curve = new AnimationCurve(new Keyframe(0f, 0f, 0f, 400f), new Keyframe(1f, 100f, 0f, 0f));
-            var values = ShapeKeyClassifier.CurveValues(curve);
+            var values = AnimatedCurves.CurveValues(curve);
 
             Assert.That(values.Max(), Is.GreaterThan(100f));
             Assert.That(values, Has.Member(0f).And.Member(100f));

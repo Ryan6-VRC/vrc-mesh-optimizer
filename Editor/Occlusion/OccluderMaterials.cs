@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using nadena.dev.ndmf;
+using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Runtime;
@@ -15,7 +16,8 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
     /// <summary>
     /// How each submesh of an always-on renderer blocks rays: whether it can, where its alpha lets rays through,
     /// and which side of its faces renders. Every guess here errs toward blocking less, because a surface counted
-    /// as cover that is not deletes triangles someone can see, while the reverse only keeps a few.
+    /// as cover that is not deletes triangles someone can see, while the reverse only keeps a few. Which sides a
+    /// renderer draws as something that might be hidden (<see cref="SidesDrawn"/>) errs the other way, toward drawing more.
     /// </summary>
     internal sealed class OccluderMaterials
     {
@@ -152,6 +154,85 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
                 case 1: return FaceCulling.Front;
                 default: return FaceCulling.Back;
             }
+        }
+
+        /// <summary>
+        /// Every renderer owes occlusion the sides its own triangles draw: one whose material draws its back is hidden only
+        /// when both sides are covered. Read toward drawing more, the opposite of how <paramref name="blocking"/> (an
+        /// occluder's submeshes, or null) reads toward blocking less; Unity draws a material slot past the last submesh
+        /// over the last submesh again, so those slots count there. A renderer that blocks nothing has no alpha read.
+        /// Each material's outline joins in only with <paramref name="outlines"/>, which follows
+        /// <see cref="AvatarMeshOptimizer.outlinesShowInside"/>.
+        /// </summary>
+        public static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking, bool outlines)
+        {
+            var materials = renderer.sharedMaterials;
+            var result = new OccluderSubmesh[submeshCount];
+            for (var s = 0; s < submeshCount; s++)
+            {
+                var sides = s < materials.Length ? SidesOf(materials[s], outlines) : FaceCulling.Back;
+                if (s == submeshCount - 1)
+                    for (var k = submeshCount; k < materials.Length; k++)
+                        if (materials[k] != null && SidesOf(materials[k], outlines) != sides) sides = FaceCulling.Off;
+                var b = blocking?[s];
+                result[s] = b == null
+                    ? new OccluderSubmesh { Culling = sides }
+                    : new OccluderSubmesh { Mode = b.Mode, Culling = b.Culling, Alpha = b.Alpha, CandidateCulling = sides };
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The sides a material draws, as something that might be hidden: its main pass's, joined by a two-pass material's
+        /// second pass (see <see cref="MaterialSecondPass"/>), which shows its back in ordinary view through its own
+        /// front. With <paramref name="outlines"/>, its outline's sides join too (see <see cref="MaterialOutline"/>): an
+        /// outline culled front, the default, draws the back of a triangle whose main pass culls it, so that triangle
+        /// draws both sides. That back shows only from inside the garment, so by default the outline is left out.
+        /// </summary>
+        public static FaceCulling SidesOf(Material material, bool outlines)
+        {
+            var sides = Join(MainSidesOf(material), MaterialSecondPass.SidesOf(material));
+            return outlines ? Join(sides, MaterialOutline.SidesOf(material)) : sides;
+        }
+
+        /// <summary>Every side either reading draws: one side each, unless they are the same side, draws both.</summary>
+        static FaceCulling Join(FaceCulling sides, FaceCulling? more) => more == null || more == sides ? sides : FaceCulling.Off;
+
+        /// <summary>
+        /// The sides a material's main pass draws: from the <see cref="CullProperty"/> convention, or MToon and UTS's
+        /// <c>_CullMode</c>, or back only for Unity's built-in shaders; any other shader might draw both, so it is taken
+        /// to. An empty slot draws nothing.
+        /// </summary>
+        static FaceCulling MainSidesOf(Material material)
+        {
+            if (material == null) return FaceCulling.Back;
+            if (material.HasProperty(CullProperty)) return CullingOf(material);
+            if (material.HasProperty("_CullMode")) return CullingOf(material, "_CullMode");
+            var name = material.shader != null ? material.shader.name : "";
+            var builtIn = name == "Standard" || name == "Standard (Specular setup)" || name == "Autodesk Interactive" ||
+                          name.StartsWith("Legacy Shaders/") || name.StartsWith("Unlit/") || name.StartsWith("Mobile/");
+            return builtIn ? FaceCulling.Back : FaceCulling.Off;
+        }
+
+        /// <summary>
+        /// Triangles the solve kept on a submesh that draws its back only because of an outline, though every corner was
+        /// covered on its front: what judging the outline's side cost. At most that, since a front judged alone could still
+        /// have been exposed by a live frame, a deletion or a lattice sample inside a large triangle. Counted only when
+        /// outlines join the sides drawn; otherwise they kept nothing.
+        /// </summary>
+        public static int KeptForOutline(Renderer renderer, int submeshCount, in EvalMesh eval, in OcclusionResult result)
+        {
+            var blind = SidesDrawn(renderer, submeshCount, null, outlines: false);
+            var drawn = SidesDrawn(renderer, submeshCount, null, outlines: true);
+            var kept = 0;
+            for (var t = 0; t < eval.TriangleCount; t++)
+            {
+                var s = eval.TriangleSubmesh[t];
+                if (result.HiddenTriangles[t] || blind[s].Culling != FaceCulling.Back || drawn[s].Culling == FaceCulling.Back) continue;
+                var tri = eval.Triangles[t];
+                if (result.FrontCovered[tri.x] && result.FrontCovered[tri.y] && result.FrontCovered[tri.z]) kept++;
+            }
+            return kept;
         }
 
         /// <summary>The Editor's alpha map, as occlusion samples it: the same texels, square, threshold and wrap.</summary>

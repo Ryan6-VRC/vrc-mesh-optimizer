@@ -361,7 +361,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         static ShapeKeyLiveness[] LivenessOf(SkinnedMeshRenderer skinned, PipelineInput input)
         {
             if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out var liveness) || liveness == null)
-                liveness = LivenessSources.Describe(skinned, input.Root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
+                liveness = LivenessSources.EveryKeyLive(skinned, input.Root);
             return liveness;
         }
 
@@ -470,87 +470,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        /// <summary>
-        /// Every renderer owes occlusion the sides its own triangles draw: one whose material draws its back is hidden only
-        /// when both sides are covered. Read toward drawing more, the opposite of how <paramref name="blocking"/> (an
-        /// occluder's submeshes, or null) reads toward blocking less; Unity draws a material slot past the last submesh
-        /// over the last submesh again, so those slots count there. A renderer that blocks nothing has no alpha read.
-        /// Each material's outline joins in only with <paramref name="outlines"/>, which follows
-        /// <see cref="AvatarMeshOptimizer.outlinesShowInside"/>.
-        /// </summary>
-        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking, bool outlines)
-        {
-            var materials = renderer.sharedMaterials;
-            var result = new OccluderSubmesh[submeshCount];
-            for (var s = 0; s < submeshCount; s++)
-            {
-                var sides = s < materials.Length ? SidesOf(materials[s], outlines) : FaceCulling.Back;
-                if (s == submeshCount - 1)
-                    for (var k = submeshCount; k < materials.Length; k++)
-                        if (materials[k] != null && SidesOf(materials[k], outlines) != sides) sides = FaceCulling.Off;
-                var b = blocking?[s];
-                result[s] = b == null
-                    ? new OccluderSubmesh { Culling = sides }
-                    : new OccluderSubmesh { Mode = b.Mode, Culling = b.Culling, Alpha = b.Alpha, CandidateCulling = sides };
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// The sides a material draws, as something that might be hidden: its main pass's, joined by a two-pass material's
-        /// second pass (see <see cref="MaterialSecondPass"/>), which shows its back in ordinary view through its own
-        /// front. With <paramref name="outlines"/>, its outline's sides join too (see <see cref="MaterialOutline"/>): an
-        /// outline culled front, the default, draws the back of a triangle whose main pass culls it, so that triangle
-        /// draws both sides. That back shows only from inside the garment, so by default the outline is left out.
-        /// </summary>
-        static FaceCulling SidesOf(Material material, bool outlines)
-        {
-            var sides = Join(MainSidesOf(material), MaterialSecondPass.SidesOf(material));
-            return outlines ? Join(sides, MaterialOutline.SidesOf(material)) : sides;
-        }
-
-        /// <summary>Every side either reading draws: one side each, unless they are the same side, draws both.</summary>
-        static FaceCulling Join(FaceCulling sides, FaceCulling? more) => more == null || more == sides ? sides : FaceCulling.Off;
-
-        /// <summary>
-        /// The sides a material's main pass draws: from the <see cref="OccluderMaterials.CullProperty"/> convention, or
-        /// MToon and UTS's <c>_CullMode</c>, or back only for Unity's built-in shaders; any other shader might draw both,
-        /// so it is taken to. An empty slot draws nothing.
-        /// </summary>
-        static FaceCulling MainSidesOf(Material material)
-        {
-            if (material == null) return FaceCulling.Back;
-            if (material.HasProperty(OccluderMaterials.CullProperty)) return OccluderMaterials.CullingOf(material);
-            if (material.HasProperty("_CullMode")) return OccluderMaterials.CullingOf(material, "_CullMode");
-            var name = material.shader != null ? material.shader.name : "";
-            var builtIn = name == "Standard" || name == "Standard (Specular setup)" || name == "Autodesk Interactive" ||
-                          name.StartsWith("Legacy Shaders/") || name.StartsWith("Unlit/") || name.StartsWith("Mobile/");
-            return builtIn ? FaceCulling.Back : FaceCulling.Off;
-        }
-
-        /// <summary>
-        /// Triangles the solve kept on a submesh that draws its back only because of an outline, though every corner was
-        /// covered on its front: what judging the outline's side cost. At most that, since a front judged alone could still
-        /// have been exposed by a live frame, a deletion or a lattice sample inside a large triangle. Counted only when
-        /// outlines join the sides drawn; otherwise they kept nothing.
-        /// </summary>
-        static int KeptForOutline(PreparedRenderer job, in OcclusionResult result)
-        {
-            var count = job.Source.subMeshCount;
-            var blind = SidesDrawn(job.Renderer, count, null, outlines: false);
-            var drawn = SidesDrawn(job.Renderer, count, null, outlines: true);
-            var eval = job.Eval;
-            var kept = 0;
-            for (var t = 0; t < eval.TriangleCount; t++)
-            {
-                var s = eval.TriangleSubmesh[t];
-                if (result.HiddenTriangles[t] || blind[s].Culling != FaceCulling.Back || drawn[s].Culling == FaceCulling.Back) continue;
-                var tri = eval.Triangles[t];
-                if (result.FrontCovered[tri.x] && result.FrontCovered[tri.y] && result.FrontCovered[tri.z]) kept++;
-            }
-            return kept;
-        }
-
         static void RemoveHidden(List<PreparedRenderer> jobs, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
@@ -575,36 +494,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 var meshes = new List<OcclusionMesh>();
                 foreach (var job in jobs)
-                {
-                    var eval = job.Eval;
-                    if (job.Mirrored)
-                    {
-                        // Occlusion reads a face's front by Unity's winding in avatar-root space; Unity draws a
-                        // mirrored renderer with its winding reversed, so occlusion sees it reversed too.
-                        var flipped = new NativeArray<int3>(eval.Triangles.Length, Allocator.Persistent);
-                        owned.Add(flipped);
-                        for (var t = 0; t < flipped.Length; t++) flipped[t] = eval.Triangles[t].xzy;
-                        eval.Triangles = flipped;
-                    }
-                    meshes.Add(new OcclusionMesh
-                    {
-                        Mesh = eval,
-                        Occludes = job.Occludes,
-                        Submeshes = SidesDrawn(job.Renderer, job.Source.subMeshCount, job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : null, outlines),
-                    });
-                }
+                    meshes.Add(OcclusionInput.Mesh(job.Renderer, job.Source.subMeshCount, job.Eval, job.Mirrored, job.Occludes, materials, outlines, owned));
 
                 var unstable = UnstableBones.Compute(bones, input.ScaleCurves);
                 for (var b = 0; b < unstable.Length; b++)
                     if (unstable[b]) prepared.UnstableBones.Add(RuntimeUtil.RelativePath(input.Root.gameObject, bones.Transforms[b].gameObject) ?? bones.Transforms[b].name);
-                // The occluder side: a face on an unstable bone never covers.
-                var boneTable = new OcclusionBones
-                {
-                    Parents = bones.ParentArray(Allocator.Persistent),
-                    Vanishes = new NativeArray<bool>(unstable, Allocator.Persistent),
-                };
-                owned.Add(boneTable.Parents);
-                owned.Add(boneTable.Vanishes);
+                var boneTable = OcclusionInput.Bones(bones, unstable, owned);
 
                 results = OcclusionSolver.Solve(meshes, boneTable, input.Occlusion, Allocator.Persistent, out var stats);
                 prepared.OcclusionRan = true;
@@ -614,17 +509,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 {
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
-                    job.KeptOnUnstableBones = KeepUnstable(job, unstable);
-                    job.KeptForFur = KeepFur(job);
-                    job.KeptForOutline = outlines ? KeptForOutline(job, results[i]) : 0;
-                    var d = results[i].Declined;
-                    job.Declined = d;
-                    declined.Unweighted += d.Unweighted;
-                    declined.Swings += d.Swings;
-                    declined.SeeThrough += d.SeeThrough;
-                    declined.Escaped += d.Escaped;
-                    declined.ExposedByFrame += d.ExposedByFrame;
-                    declined.ExposedByDeletion += d.ExposedByDeletion;
+                    job.KeptOnUnstableBones = UnstableBones.Keep(job.Eval, job.Hidden, unstable);
+                    job.KeptForFur = MaterialFur.Keep(job.Renderer, job.Source.subMeshCount, job.Eval, job.Hidden);
+                    job.KeptForOutline = outlines ? OccluderMaterials.KeptForOutline(job.Renderer, job.Source.subMeshCount, job.Eval, results[i]) : 0;
+                    job.Declined = results[i].Declined;
+                    declined.Add(results[i].Declined);
                 }
                 prepared.Declined = declined;
             }
@@ -643,51 +532,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        /// <summary>
-        /// A triangle drawn with fur grows it past its cover (<see cref="MaterialFur"/>), so it is never deleted. Like
-        /// <see cref="KeepUnstable"/>, this only clears flags after the solve. Returns how many triangles it kept.
-        /// </summary>
-        static int KeepFur(PreparedRenderer job)
-        {
-            var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
-            var kept = 0;
-            for (var t = 0; t < job.Hidden.Length; t++)
-            {
-                if (!job.Hidden[t] || !fur[job.Eval.TriangleSubmesh[t]]) continue;
-                job.Hidden[t] = false;
-                kept++;
-            }
-            return kept;
-        }
-
-        /// <summary>
-        /// The candidate side: a triangle with a corner on an unstable bone can move out from under its cover, so it
-        /// is never deleted. This clears flags after the solve and needs no second one, which is why Core does not
-        /// know about it: every triangle the solve hides is covered by faces the solve keeps, and keeping more
-        /// triangles takes no face away from anyone's cover. Any weight counts, as on the occluder side: however small, it
-        /// moves the corner when the bone scales, and to NaN when the bone does. Returns how many triangles it kept.
-        /// </summary>
-        static int KeepUnstable(PreparedRenderer job, bool[] unstable)
-        {
-            var eval = job.Eval;
-            var kept = 0;
-            for (var t = 0; t < job.Hidden.Length; t++)
-            {
-                if (!job.Hidden[t]) continue;
-                var tri = eval.Triangles[t];
-                for (var c = 0; c < 3 && job.Hidden[t]; c++)
-                    for (var k = eval.WeightStart[tri[c]]; k < eval.WeightStart[tri[c] + 1]; k++)
-                    {
-                        var w = eval.Weights[k];
-                        if (w.Weight <= 0f || w.Bone >= unstable.Length || !unstable[w.Bone]) continue;
-                        job.Hidden[t] = false;
-                        kept++;
-                        break;
-                    }
-            }
-            return kept;
-        }
-
         /// <summary>Records every extracted renderer's collapse sequence, over the triangles occlusion kept.</summary>
         static void Record(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
@@ -701,7 +545,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             input.BeforeStep?.Invoke(AvatarStep.Clearance);
             var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : default;
             prepared.Times.Clearance = stage.Elapsed.TotalMilliseconds;
-            var rig = RigOf(bones, SkinWeightPerBone(live, bones.Count));
+            var rig = BendRigs.Of(bones, BendRigs.SkinWeightPerBone(live.Select(j => j.Eval), bones.Count));
             try
             {
                 stage.Restart();
@@ -747,13 +591,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
             // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
             fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - j.HiddenCount - j.Sequence.InitialTriangleCount);
-            var entries = decimated.Select(j => new AllocationEntry
-            {
-                Steps = j.Sequence.Steps,
-                InitialTriangleCount = j.Sequence.InitialTriangleCount,
-                FloorTriangles = j.FloorTriangles,
-                Weight = j.Weight,
-            }).ToList();
+            var entries = decimated.Select(j => AllocationEntry.From(j.Sequence, j.FloorTriangles, j.Weight)).ToList();
             if (entries.Count == 0) return 0f;
             var result = settings.target == TargetKind.TriangleBudget
                 ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles))
@@ -807,65 +645,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        /// <summary>Per bone id, the skin weight every extracted mesh's vertices put on it.</summary>
-        static float[] SkinWeightPerBone(List<PreparedRenderer> live, int bones)
-        {
-            var weight = new float[bones];
-            foreach (var job in live)
-                foreach (var w in job.Eval.Weights)
-                    if (w.Bone >= 0 && w.Bone < bones) weight[w.Bone] += w.Weight;
-            return weight;
-        }
-
-        /// <summary>
-        /// The avatar's bones as decimation bends them, in avatar-root space. A bone runs toward the child whose subtree
-        /// carries the most of <paramref name="weight"/>, the skin weight per bone id: the next bone of its chain, which moves
-        /// the most surface, rather than a ribbon or accessory hung on it, which may have more transforms and far less
-        /// surface. Among children carrying none, the one with the most transforms under it; null weighs every bone alike.
-        /// </summary>
-        internal static BendRig RigOf(AvatarBones bones, float[] weight)
-        {
-            var n = bones.Count;
-            var worldToRoot = RendererExtraction.WorldToRoot(bones.Root);
-            var mass = new double[n];
-            var size = new int[n];
-            // Ids are depth first, so a child's id is above its parent's and walking back sums subtrees.
-            for (var b = n - 1; b >= 0; b--)
-            {
-                size[b] += 1;
-                if (weight != null && b < weight.Length) mass[b] += weight[b];
-                var p = bones.Parents[b];
-                if (p < 0) continue;
-                size[p] += size[b];
-                mass[p] += mass[b];
-            }
-            var chain = new int[n];
-            for (var b = 0; b < n; b++) chain[b] = -1;
-            for (var b = 0; b < n; b++)
-            {
-                var p = bones.Parents[b];
-                if (p < 0) continue;
-                var c = chain[p];
-                if (c < 0 || mass[b] > mass[c] || mass[b] == mass[c] && size[b] > size[c]) chain[p] = b;
-            }
-            var rig = new BendRig
-            {
-                Parent = bones.ParentArray(Allocator.Persistent),
-                Position = new NativeArray<float3>(n, Allocator.Persistent),
-                Axis = new NativeArray<float3>(n, Allocator.Persistent),
-                Right = new NativeArray<float3>(n, Allocator.Persistent),
-            };
-            for (var b = 0; b < n; b++)
-            {
-                var t = bones.Transforms[b];
-                rig.Position[b] = worldToRoot.MultiplyPoint3x4(t.position);
-                rig.Right[b] = math.normalizesafe((float3)worldToRoot.MultiplyVector(t.right));
-            }
-            for (var b = 0; b < n; b++)
-                rig.Axis[b] = chain[b] >= 0 ? math.normalizesafe(rig.Position[chain[b]] - rig.Position[b]) : float3.zero;
-            return rig;
-        }
-
         /// <summary>
         /// A renderer the pass leaves as it was, extracted only to stand in the clearance surface. False, with nothing to
         /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing.
@@ -899,35 +678,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 var hidden = HiddenMask(job);
                 if (hidden.IsCreated) owned.Add(hidden);
 
-                var locks = protection.Locks(eval, out var lockedCount, out var fromZeroScale);
-                // Fur is grown per triangle, so its density is the triangle count: every vertex of a furred triangle is locked.
-                var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
-                var lockedForFur = 0;
-                for (var t = 0; t < eval.TriangleCount; t++)
-                {
-                    if ((job.Hidden != null && job.Hidden[t]) || !fur[eval.TriangleSubmesh[t]]) continue;
-                    var tri = eval.Triangles[t];
-                    for (var c = 0; c < 3; c++)
-                    {
-                        locks ??= new byte[eval.VertexCount];
-                        if (locks[tri[c]] != 0) continue;
-                        locks[tri[c]] = 1;
-                        lockedCount++;
-                        lockedForFur++;
-                    }
-                }
-                var vertexProtection = new VertexProtection();
-                if (locks != null)
-                {
-                    vertexProtection.Locked = new NativeArray<byte>(locks, Allocator.Persistent);
-                    owned.Add(vertexProtection.Locked);
-                }
-                var multipliers = protection.Multipliers(eval, out var grownCount);
-                if (multipliers != null)
-                {
-                    vertexProtection.CostMultiplier = new NativeArray<float>(multipliers, Allocator.Persistent);
-                    owned.Add(vertexProtection.CostMultiplier);
-                }
+                var vertexProtection = protection.For(job.Renderer, job.Source.subMeshCount, eval, job.Hidden, owned,
+                    out var lockedCount, out var fromZeroScale, out var lockedForFur, out var grownCount);
                 job.LockedVertices = lockedCount;
                 job.LockedFromZeroScale = fromZeroScale;
                 job.LockedForFur = lockedForFur;
@@ -996,43 +748,19 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             try
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Writing);
-                var eval = job.Eval;
-                var mesh = job.Source;
-                var perSubmesh = new List<int>[mesh.subMeshCount];
-                for (var s = 0; s < perSubmesh.Length; s++) perSubmesh[s] = new List<int>();
-                for (var i = 0; i < kept.Triangles.Length; i++)
-                    Add(perSubmesh[eval.TriangleSubmesh[kept.Source[i]]], kept.Triangles[i]);
-
-                var indices = new int[mesh.subMeshCount][];
-                var used = new bool[mesh.vertexCount];
-                var triangles = 0;
-                for (var s = 0; s < indices.Length; s++)
-                {
-                    // A submesh of lines or points is passed through whole, with its vertices.
-                    var isTriangles = MeshTriangles.IsTriangles(mesh, s);
-                    indices[s] = isTriangles ? perSubmesh[s].ToArray() : mesh.GetIndices(s, true);
-                    if (isTriangles) triangles += indices[s].Length / 3;
-                    foreach (var i in indices[s]) used[i] = true;
-                }
-                var keptList = new List<int>();
-                for (var v = 0; v < used.Length; v++) if (used[v]) keptList.Add(v);
-                var keptArray = keptList.ToArray();
-                outcome.Mesh = MeshWriter.Write(mesh, indices, keptArray);
-                outcome.KeptVertices = keptArray;
+                var submesh = new int[kept.Source.Length];
+                for (var i = 0; i < submesh.Length; i++) submesh[i] = job.Eval.TriangleSubmesh[kept.Source[i]];
+                var mesh = MeshWriter.Write(job.Source, kept.Triangles, submesh, out var keptVertices);
+                outcome.Mesh = mesh;
+                outcome.KeptVertices = keptVertices;
                 outcome.Hidden = job.HiddenCount;
-                outcome.Triangles = triangles;
+                // Every evaluation triangle is on a submesh of triangles, so each kept one is drawn.
+                outcome.Triangles = kept.Triangles.Length;
             }
             catch (Exception e)
             {
                 Fail(job.Renderer, report.Diagnostics, PipelineStage.Writing, e, out outcome.Skip, out outcome.SkipDetail);
             }
-        }
-
-        static void Add(List<int> list, int3 t)
-        {
-            list.Add(t.x);
-            list.Add(t.y);
-            list.Add(t.z);
         }
     }
 }

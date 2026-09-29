@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using nadena.dev.ndmf.animator;
 using Ryan6Vrc.MeshOptimizer.Animators;
+using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
-using Ryan6Vrc.MeshOptimizer.Liveness;
 using UnityEditor;
 using UnityEngine;
 
@@ -63,6 +63,34 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         }
 
         public static bool ByName(Transform bone) => bone != null && bone.name.StartsWith(ModularAvatarDeletionBonePrefix);
+
+        /// <summary>
+        /// The candidate side: a triangle with a corner on an unstable bone can move out from under its cover, so it
+        /// is never deleted. This clears flags in <paramref name="hidden"/> after the solve and needs no second one, which
+        /// is why Core does not know about it: every triangle the solve hides is covered by faces the solve keeps, and
+        /// keeping more triangles takes no face away from anyone's cover. Any weight counts, as on the occluder side:
+        /// however small, it moves the corner when the bone scales, and to NaN when the bone does. Returns how many
+        /// triangles it kept.
+        /// </summary>
+        public static int Keep(in EvalMesh eval, bool[] hidden, bool[] unstable)
+        {
+            var kept = 0;
+            for (var t = 0; t < hidden.Length; t++)
+            {
+                if (!hidden[t]) continue;
+                var tri = eval.Triangles[t];
+                for (var c = 0; c < 3 && hidden[t]; c++)
+                    for (var k = eval.WeightStart[tri[c]]; k < eval.WeightStart[tri[c] + 1]; k++)
+                    {
+                        var w = eval.Weights[k];
+                        if (w.Weight <= 0f || w.Bone >= unstable.Length || !unstable[w.Bone]) continue;
+                        hidden[t] = false;
+                        kept++;
+                        break;
+                    }
+            }
+            return kept;
+        }
 
         /// <summary>
         /// A scale curve moves its bone when it can take the axis away from its rest value, either way, or to a
@@ -132,7 +160,7 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
 
         static IEnumerable<ScaleCurve> ScaleCurves(IEnumerable<AnimatedCurve> curves) =>
             curves.Select(c => new ScaleCurve(c.Target, c.Binding.propertyName[c.Binding.propertyName.Length - 1] - 'x',
-                ShapeKeyClassifier.CurveValues(c.Curve)))
+                AnimatedCurves.CurveValues(c.Curve)))
                 .Where(c => c.Axis >= 0 && c.Axis <= 2);
 
         /// <summary>Scale curves in every controller NDMF holds; see <see cref="AnimatedCurves.FromAnimatorServices"/>.</summary>

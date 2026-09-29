@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using UnityEditor;
@@ -402,6 +403,28 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         Shader CullShader() => a.Made(ShaderUtil.CreateShaderAsset(
             "Shader \"Hidden/MeshOptimizerTests/Cull\" { Properties { [Enum(UnityEngine.Rendering.CullMode)] _Cull (\"Cull\", Float) = 2 } " +
             "SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_Cull] } } }", true));
+
+        // The sides a material draws as something that might be hidden, read toward drawing more: the cull convention when
+        // the shader declares it, back only for Unity's built-in shaders, both for any shader that states nothing, and back
+        // for an empty slot, which draws nothing.
+        [TestCase("cull", 2f, FaceCulling.Back)]
+        [TestCase("cull", 1f, FaceCulling.Front)]
+        [TestCase("cull", 0f, FaceCulling.Off)]
+        [TestCase("Standard", 0f, FaceCulling.Back)]
+        [TestCase("unknown", 0f, FaceCulling.Off)]
+        [TestCase(null, 0f, FaceCulling.Back)]
+        public void SidesOf_ReadsWhatTheMaterialStates_TowardDrawingMore(string shader, float cull, FaceCulling sides)
+        {
+            Material material = null;
+            if (shader == "cull") material = a.Made(new Material(CullShader()));
+            else if (shader == "Standard") material = a.Made(new Material(Shader.Find("Standard")));
+            else if (shader == "unknown")
+                material = a.Made(new Material(a.Made(ShaderUtil.CreateShaderAsset(
+                    "Shader \"Hidden/MeshOptimizerTests/NoCull\" { SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { } } }", true))));
+            if (shader == "cull") material.SetFloat(OccluderMaterials.CullProperty, cull);
+
+            Assert.That(OccluderMaterials.SidesOf(material, outlines: false), Is.EqualTo(sides));
+        }
 
         [Test]
         public void CullingOf_ReadsTheCullModeConvention_AndBackWithoutIt()

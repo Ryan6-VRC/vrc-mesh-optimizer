@@ -44,7 +44,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     ///
     /// Driving is the classifier's: a curve drives a key when it leaves the weight the renderer holds by more than
     /// <see cref="ShapeKeyClassifier.HoldTolerance"/>. Same curve means the same key times and the same normalised values,
-    /// keys and samples between them both, as <see cref="ShapeKeyClassifier.CurveValues"/> reads them, since tangents
+    /// keys and samples between them both, as <see cref="Animators.AnimatedCurves.CurveValues"/> reads them, since tangents
     /// carry a curve between its keys. A clip is the object, never its name.
     ///
     /// A curve that only holds a key where it already is can still stand keys apart, through the layer that plays it. A

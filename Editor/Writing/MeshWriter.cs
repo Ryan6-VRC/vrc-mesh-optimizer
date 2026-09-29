@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Ryan6Vrc.MeshOptimizer.Extraction;
 using Unity.Collections;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -15,6 +17,37 @@ namespace Ryan6Vrc.MeshOptimizer.Writing
     /// </summary>
     internal static class MeshWriter
     {
+        /// <summary>
+        /// Writes the mesh a list of triangles leaves: each triangle into its submesh, in list order; every submesh that
+        /// is not triangles passed through whole, as <see cref="Write(Mesh, IReadOnlyList{int[]}, int[])"/> does; and
+        /// every source vertex any of them uses, ascending, in <paramref name="keptVertices"/>.
+        /// </summary>
+        /// <param name="triangles">Surviving triangles, each corner naming a source vertex.</param>
+        /// <param name="submesh">Per triangle, the source submesh it is drawn in, one of triangles.</param>
+        public static Mesh Write(Mesh source, IReadOnlyList<int3> triangles, IReadOnlyList<int> submesh, out int[] keptVertices)
+        {
+            var perSubmesh = new List<int>[source.subMeshCount];
+            for (var s = 0; s < perSubmesh.Length; s++) perSubmesh[s] = new List<int>();
+            for (var i = 0; i < triangles.Count; i++)
+            {
+                var list = perSubmesh[submesh[i]];
+                list.Add(triangles[i].x);
+                list.Add(triangles[i].y);
+                list.Add(triangles[i].z);
+            }
+            var indices = new int[source.subMeshCount][];
+            var used = new bool[source.vertexCount];
+            for (var s = 0; s < indices.Length; s++)
+            {
+                indices[s] = MeshTriangles.IsTriangles(source, s) ? perSubmesh[s].ToArray() : source.GetIndices(s, true);
+                foreach (var i in indices[s]) used[i] = true;
+            }
+            var kept = new List<int>();
+            for (var v = 0; v < used.Length; v++) if (used[v]) kept.Add(v);
+            keptVertices = kept.ToArray();
+            return Write(source, indices, keptVertices);
+        }
+
         /// <param name="source">The mesh the renderer draws now.</param>
         /// <param name="submeshIndices">
         /// Per source submesh, its surviving indices in its own topology, naming source vertices. A submesh that is not

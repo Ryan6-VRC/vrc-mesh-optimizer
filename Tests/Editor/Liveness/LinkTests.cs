@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Animators;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using UnityEngine;
 
@@ -53,7 +54,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         static ShapeKeyBinding Binding(Clip clip, string path, string key, AnimationCurve curve) => Binding(clip.Layer, clip, path, key, curve);
 
         static ShapeKeyBinding Binding(Layer layer, Clip clip, string path, string key, AnimationCurve curve) =>
-            new ShapeKeyBinding(path, key, ShapeKeyClassifier.CurveValues(curve), curve.keys.Select(k => k.time).ToArray(), clip, layer, layer.Order);
+            new ShapeKeyBinding(path, key, AnimatedCurves.CurveValues(curve), curve.keys.Select(k => k.time).ToArray(), clip, layer, layer.Order);
 
         static List<KeyRef[]> Find(RendererShapeKeys[] renderers, IEnumerable<ShapeKeyBinding> bindings, params DrivenKey[] driven) =>
             ShapeKeyLinks.Find(renderers, bindings.ToList(), driven);
@@ -265,7 +266,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var tights = new AnimationCurve(new Keyframe(0f, 100f, 0f, 400f), new Keyframe(1f, 0f, 0f, 0f));
             var bindings = new[] { Binding(Heels, "Body", "Toe_heels", body), Binding(Heels, "Tights", "Toe_heels", tights) };
 
-            Assert.That(ShapeKeyClassifier.CurveValues(body), Is.Not.EqualTo(ShapeKeyClassifier.CurveValues(tights)), "control: the samples differ");
+            Assert.That(AnimatedCurves.CurveValues(body), Is.Not.EqualTo(AnimatedCurves.CurveValues(tights)), "control: the samples differ");
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
         }
 

@@ -252,6 +252,23 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Writing
             Assert.That(() => MeshWriter.Write(source, indices, new[] { 0, 2 }), Throws.ArgumentException);
         }
 
+        // A triangle list goes into the submeshes it names, in list order; the line submesh is passed through whole, and
+        // every vertex either uses is kept, ascending.
+        [Test]
+        public void ATriangleList_FillsItsSubmeshesInOrder_AndPassesALineSubmeshThroughWithItsVertices()
+        {
+            var source = RichMesh();
+
+            var written = Made(MeshWriter.Write(source, new[] { new int3(6, 8, 10), new int3(4, 2, 6) }, new[] { 1, 0 }, out var kept));
+
+            Assert.That(kept, Is.EqualTo(new[] { 1, 2, 3, 4, 5, 6, 8, 10 }));
+            int Out(int v) => System.Array.IndexOf(kept, v);
+            Assert.That(written.GetIndices(0), Is.EqualTo(new[] { Out(4), Out(2), Out(6) }));
+            Assert.That(written.GetIndices(1), Is.EqualTo(new[] { Out(6), Out(8), Out(10) }));
+            Assert.That(written.GetTopology(2), Is.EqualTo(MeshTopology.Lines));
+            Assert.That(written.GetIndices(2), Is.EqualTo(new[] { Out(1), Out(3), Out(3), Out(5) }));
+        }
+
         [Test]
         public void MeshShrinkingUnder65536Vertices_Uses16BitIndices_AndDrawsTheSameTriangles()
         {
