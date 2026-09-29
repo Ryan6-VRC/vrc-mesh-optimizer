@@ -2,9 +2,13 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
+using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
+using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Runtime;
+using Ryan6Vrc.MeshOptimizer.Tests.Occlusion;
+using Unity.Collections;
 using UnityEngine;
 using static Ryan6Vrc.MeshOptimizer.Tests.Integration.AvatarFixture;
 
@@ -93,6 +97,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var report = a.Run(tweak: input => input.Liveness = Classified("heels", body, tights));
 
             Assert.That(Of(report, boot).HiddenRemoved, Is.EqualTo(bootTriangles), "nothing the boot draws can be seen");
+        }
+
+        [Test]
+        public void EveryTriangleHiddenFromHeldKeys_IsCoveredAtRestAndInEveryFrame_ByTheIndependentChecker()
+        {
+            // The solver and the checker read one evaluation mesh; this runs both on what extraction makes of held keys.
+            var (body, tights, boot) = Rig(bodyKeyed: 0.13f, tightsKeyed: 0.135f, held: 100f);
+            var liveness = Classified("heels", body, tights);
+            var bones = new AvatarBones(a.Root.transform);
+            var meshes = new[] { body, tights, boot }.Select(r => new OcclusionMesh
+            {
+                Mesh = RendererExtraction.Extract(r, bones, liveness.TryGetValue(r, out var l) ? l : new ShapeKeyLiveness[0], Allocator.Persistent, out _),
+                Occludes = true,
+            }).ToList();
+            var parents = bones.Parents.ToArray();
+            using var parentArray = new NativeArray<int>(parents, Allocator.Persistent);
+            OcclusionResult[] results = null;
+            try
+            {
+                Assert.That(meshes[0].Mesh.Frames.Length, Is.EqualTo(1), "the body's key is evaluated off, from where it is held");
+                results = OcclusionSolver.Solve(meshes, new OcclusionBones { Parents = parentArray }, OcclusionSettings.Default, Allocator.Persistent, out _);
+                Assert.That(results[2].HiddenCount, Is.GreaterThan(0));
+
+                var report = CoverChecker.Check(meshes, parents, null, OcclusionSettings.Default, results);
+
+                Assert.That(report.Ok, Is.True, report.ToString());
+                Assert.That(report.HiddenChecked, Is.GreaterThan(0));
+            }
+            finally
+            {
+                if (results != null) foreach (var r in results) r.Dispose();
+                foreach (var m in meshes) m.Mesh.Dispose();
+            }
         }
 
         /// <summary>
