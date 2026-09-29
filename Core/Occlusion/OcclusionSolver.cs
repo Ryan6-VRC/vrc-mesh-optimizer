@@ -12,7 +12,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// Decides which triangles are hidden under the shared-weights rule.
     ///
     /// Rays leave each sample (every vertex, and lattice points inside large triangles) in a cone about its
-    /// normal. A ray is blocked only by a face of an always-on renderer other than the sample's own, whose
+    /// geometric normal, the area-weighted normal of the faces using it; an authored normal decides nothing a
+    /// viewer can see, and is used only where the faces have no area. A ray is blocked only by a face of an always-on renderer other than the sample's own, whose
     /// weight share on the sample's bones, widened by kin steps, reaches the share threshold, and which
     /// renders opaque where the ray meets it; every other face is transparent. A sample is covered when
     /// every ray is blocked, and a triangle is hidden when all its samples are covered. A triangle whose

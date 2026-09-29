@@ -129,7 +129,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     }
                 }
                 SampleBoneStart.Add(SampleBones.Length);
-                var n = Samples.UsableNormal(Nrm[v], GeoN[v], out var ok);
+                // The cone stands on the geometry: the area-weighted normal of the faces using the vertex, the side
+                // a viewer sees it from. An authored normal, which a toon mesh may lean far off the surface, is only
+                // the fallback for a vertex whose faces have no area.
+                var g = GeoN[v];
+                var ok = true;
+                var n = math.lengthsq(g) > 1e-30f ? math.normalize(g) : Samples.UsableNormal(Nrm[v], float3.zero, out ok);
                 SamplePos.Add(Pos[v]);
                 SampleNrm.Add(n);
                 SampleMesh.Add(VertMesh[v]);
