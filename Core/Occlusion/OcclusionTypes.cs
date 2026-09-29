@@ -214,6 +214,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public NativeArray<bool> HiddenTriangles;
         /// <summary>Per vertex: covered in every configuration it was evaluated in, on each side a triangle using it renders. Informational; a triangle's verdict is <see cref="HiddenTriangles"/>.</summary>
         public NativeArray<bool> CoveredVertices;
+        /// <summary>
+        /// Per vertex: covered on its front in every configuration it was evaluated in, whatever its back. Informational:
+        /// against <see cref="HiddenTriangles"/> it tells what having to cover a triangle's back as well kept.
+        /// </summary>
+        public NativeArray<bool> FrontCovered;
         public DeclineCounts Declined;
 
         public int HiddenCount
@@ -230,6 +235,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         {
             if (HiddenTriangles.IsCreated) HiddenTriangles.Dispose();
             if (CoveredVertices.IsCreated) CoveredVertices.Dispose();
+            if (FrontCovered.IsCreated) FrontCovered.Dispose();
         }
     }
 

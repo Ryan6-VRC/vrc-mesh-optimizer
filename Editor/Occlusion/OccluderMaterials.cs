@@ -140,10 +140,13 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         /// outline hull, a two-pass transparent's back pass) and extra material slots only add pixels, so reading the
         /// main pass alone blocks less than the renderer does.
         /// </summary>
-        public static FaceCulling CullingOf(Material material)
+        public static FaceCulling CullingOf(Material material) => CullingOf(material, CullProperty);
+
+        /// <summary>A cull property read as <c>UnityEngine.Rendering.CullMode</c>; back when the material does not declare it.</summary>
+        public static FaceCulling CullingOf(Material material, string property)
         {
-            if (material == null || !material.HasProperty(CullProperty)) return FaceCulling.Back;
-            switch (Mathf.RoundToInt(material.GetFloat(CullProperty)))
+            if (material == null || !material.HasProperty(property)) return FaceCulling.Back;
+            switch (Mathf.RoundToInt(material.GetFloat(property)))
             {
                 case 0: return FaceCulling.Off;
                 case 1: return FaceCulling.Front;

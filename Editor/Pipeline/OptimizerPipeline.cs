@@ -263,17 +263,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// when both sides are covered. Read toward drawing more, the opposite of how <paramref name="blocking"/> (an
         /// occluder's submeshes, or null) reads toward blocking less; Unity draws a material slot past the last submesh
         /// over the last submesh again, so those slots count there. A renderer that blocks nothing has no alpha read.
+        /// Without <paramref name="outlines"/>, each material's outline is left out, for measuring what it costs.
         /// </summary>
-        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking)
+        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking, bool outlines = true)
         {
             var materials = renderer.sharedMaterials;
             var result = new OccluderSubmesh[submeshCount];
             for (var s = 0; s < submeshCount; s++)
             {
-                var sides = s < materials.Length ? SidesOf(materials[s]) : FaceCulling.Back;
+                var sides = s < materials.Length ? SidesOf(materials[s], outlines) : FaceCulling.Back;
                 if (s == submeshCount - 1)
                     for (var k = submeshCount; k < materials.Length; k++)
-                        if (materials[k] != null && SidesOf(materials[k]) != sides) sides = FaceCulling.Off;
+                        if (materials[k] != null && SidesOf(materials[k], outlines) != sides) sides = FaceCulling.Off;
                 var b = blocking?[s];
                 result[s] = b == null
                     ? new OccluderSubmesh { Culling = sides }
@@ -283,25 +284,56 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// The sides a material draws, as something that might be hidden: from the <see cref="OccluderMaterials.CullProperty"/>
-        /// convention, or MToon and UTS's <c>_CullMode</c>, or back only for Unity's built-in shaders; any other shader
-        /// might draw both, so it is taken to. An empty slot draws nothing.
+        /// The sides a material draws, as something that might be hidden: its main pass's, joined by a two-pass material's
+        /// second pass (see <see cref="MaterialSecondPass"/>) and its outline's (see <see cref="MaterialOutline"/>). An
+        /// outline culled front, the default, draws the back of a triangle whose main pass culls it, so that triangle
+        /// draws both sides.
         /// </summary>
-        static FaceCulling SidesOf(Material material)
+        static FaceCulling SidesOf(Material material, bool outlines = true)
+        {
+            var sides = Join(MainSidesOf(material), MaterialSecondPass.SidesOf(material));
+            return outlines ? Join(sides, MaterialOutline.SidesOf(material)) : sides;
+        }
+
+        /// <summary>Every side either reading draws: one side each, unless they are the same side, draws both.</summary>
+        static FaceCulling Join(FaceCulling sides, FaceCulling? more) => more == null || more == sides ? sides : FaceCulling.Off;
+
+        /// <summary>
+        /// The sides a material's main pass draws: from the <see cref="OccluderMaterials.CullProperty"/> convention, or
+        /// MToon and UTS's <c>_CullMode</c>, or back only for Unity's built-in shaders; any other shader might draw both,
+        /// so it is taken to. An empty slot draws nothing.
+        /// </summary>
+        static FaceCulling MainSidesOf(Material material)
         {
             if (material == null) return FaceCulling.Back;
             if (material.HasProperty(OccluderMaterials.CullProperty)) return OccluderMaterials.CullingOf(material);
-            if (material.HasProperty("_CullMode"))
-                switch (Mathf.RoundToInt(material.GetFloat("_CullMode")))
-                {
-                    case 0: return FaceCulling.Off;
-                    case 1: return FaceCulling.Front;
-                    default: return FaceCulling.Back;
-                }
+            if (material.HasProperty("_CullMode")) return OccluderMaterials.CullingOf(material, "_CullMode");
             var name = material.shader != null ? material.shader.name : "";
             var builtIn = name == "Standard" || name == "Standard (Specular setup)" || name == "Autodesk Interactive" ||
                           name.StartsWith("Legacy Shaders/") || name.StartsWith("Unlit/") || name.StartsWith("Mobile/");
             return builtIn ? FaceCulling.Back : FaceCulling.Off;
+        }
+
+        /// <summary>
+        /// Triangles the solve kept on a submesh that draws its back only because of an outline, though every corner was
+        /// covered on its front: what judging the outline's side cost. At most that, since a front judged alone could still
+        /// have been exposed by a live frame, a deletion or a lattice sample inside a large triangle.
+        /// </summary>
+        static int KeptForOutline(Job job, in OcclusionResult result)
+        {
+            var count = job.Source.subMeshCount;
+            var blind = SidesDrawn(job.Renderer, count, null, outlines: false);
+            var drawn = SidesDrawn(job.Renderer, count, null);
+            var eval = job.Eval;
+            var kept = 0;
+            for (var t = 0; t < eval.TriangleCount; t++)
+            {
+                var s = eval.TriangleSubmesh[t];
+                if (result.HiddenTriangles[t] || blind[s].Culling != FaceCulling.Back || drawn[s].Culling == FaceCulling.Back) continue;
+                var tri = eval.Triangles[t];
+                if (result.FrontCovered[tri.x] && result.FrontCovered[tri.y] && result.FrontCovered[tri.z]) kept++;
+            }
+            return kept;
         }
 
         static void RemoveHidden(List<Job> jobs, PipelineInput input, AvatarBones bones, OptimizationReport report)
@@ -367,6 +399,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
                     job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable);
+                    job.Report.KeptForOutline = KeptForOutline(job, results[i]);
                     job.Report.HiddenSourceTriangles = job.Hidden;
                     var d = results[i].Declined;
                     job.Report.Declined = d;

@@ -39,7 +39,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var broken = Body("Broken");
             var brokenMesh = broken.sharedMesh;
             var healthy = Body("Healthy");
-            a.Optimizer(decimate: true).triangleBudget = 100000;
+            var optimizer = a.Optimizer(decimate: true);
+            optimizer.target = Runtime.TargetKind.TriangleBudget;
+            optimizer.triangleBudget = 100000;
             LogAssert.Expect(LogType.Exception, new Regex("injected"));
 
             var report = a.Run(tweak: input => input.BeforeStage = (renderer, at) =>

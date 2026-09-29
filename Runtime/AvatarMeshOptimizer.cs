@@ -18,11 +18,15 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         public bool decimate = true;
         public bool removeHiddenTriangles = true;
 
-        public TargetKind target = TargetKind.TriangleBudget;
+        /// <summary>
+        /// A tolerance for a component added fresh: the reduction then follows from what each mesh can lose unseen, where a
+        /// fixed budget forces whatever error reaching it takes. A saved component keeps the target it holds.
+        /// </summary>
+        public TargetKind target = TargetKind.Tolerance;
         /// <summary>Triangles for the whole avatar, used when <see cref="target"/> is a budget.</summary>
         [Min(0)] public int triangleBudget = 70000;
         /// <summary>Largest surface deviation allowed, in millimetres, used when <see cref="target"/> is a tolerance.</summary>
-        [Min(0)] public float tolerance = 0.5f;
+        [Min(0)] public float tolerance = 1f;
 
         /// <summary>
         /// Renderers that are always visible. Only these may hide another renderer's triangles; nothing
@@ -34,6 +38,7 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         public List<RendererSettings> renderers = new List<RendererSettings>();
     }
 
+    /// <summary>A saved component holds this as a number, so a value's number never changes.</summary>
     public enum TargetKind
     {
         TriangleBudget,
