@@ -1,0 +1,10 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.tmp
+
+# This is a VPM *package*, not a Unity project — no Library/, Temp/, etc.
+# Asset .meta files ARE tracked (they carry stable GUIDs).
+
+# Run output never lands here: a file written during a run is an asset to every venue that mounts
+# this package and import-loops. Write to the workspace's test-output/ instead.
