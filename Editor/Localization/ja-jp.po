@@ -93,4 +93,76 @@ msgid "RendererSettings:protection"
 msgstr "保護の強さ"
 
 msgid "RendererSettings:protection:tooltip"
-msgstr "ポリゴン数を振り分けるときに、このレンダラーの細部をどれだけ残すかです。1が標準で、大きいほど多く残します。"
+msgstr "このレンダラーの細部をどれだけ残すかです。目標に対して、このレンダラーの誤差をこの倍数で数えます。1が標準で、大きいほど多く残します。"
+
+msgid "MeshOptimizer:diag:not-readable"
+msgstr "Mesh Optimizerが{1}を読み込めません"
+
+msgid "MeshOptimizer:diag:not-readable:description"
+msgstr "{0}は変更していません。メッシュ{1}はプレイモードでの読み込みが許可されていません。"
+
+msgid "MeshOptimizer:diag:not-readable:hint"
+msgstr "モデルのインポート設定でRead/Writeを有効にするか、メッシュを読み込めるアップロード用ビルドで確認してください。"
+
+msgid "MeshOptimizer:diag:cloth"
+msgstr "Mesh OptimizerはClothのあるレンダラーをスキップしました"
+
+msgid "MeshOptimizer:diag:cloth:description"
+msgstr "{0}は変更していません。Clothコンポーネントがメッシュの頂点を番号で参照しているため、頂点を削除できません。"
+
+msgid "MeshOptimizer:diag:cloth:hint"
+msgstr "このレンダラーのポリゴン数が問題でなければ対応は不要です。問題であれば、Clothを付ける前にメッシュを削減してください。"
+
+msgid "MeshOptimizer:diag:renderer-failed"
+msgstr "Mesh Optimizerがレンダラーの処理に失敗しました"
+
+msgid "MeshOptimizer:diag:renderer-failed:description"
+msgstr "{0}の{1}で失敗しました: {2}。他のレンダラーは最適化されています。"
+
+msgid "MeshOptimizer:diag:renderer-failed:hint"
+msgstr "詳しいエラーはコンソールにあります。ExtractionかWritingで失敗したレンダラーは変更していません。Decimationで失敗したレンダラーは隠れたポリゴンの削除だけを行いました。"
+
+msgid "MeshOptimizer:diag:occlusion-failed"
+msgstr "Mesh Optimizerが隠れたポリゴンを判定できませんでした"
+
+msgid "MeshOptimizer:diag:occlusion-failed:description"
+msgstr "隠れたポリゴンの判定に失敗したため、隠れていることを理由に削除したポリゴンはありません: {0}"
+
+msgid "MeshOptimizer:diag:occlusion-failed:hint"
+msgstr "詳しいエラーはコンソールにあります。ポリゴン削減は行われました。"
+
+msgid "MeshOptimizer:diag:budget-not-met"
+msgstr "Mesh Optimizerが目標ポリゴン数に届きませんでした"
+
+msgid "MeshOptimizer:diag:budget-not-met:description"
+msgstr "アバターのポリゴン数は{0}で、目標は{1}です。"
+
+msgid "MeshOptimizer:diag:budget-not-met:hint"
+msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
+
+msgid "MeshOptimizer:diag:always-on-is-off"
+msgstr "常時表示のレンダラーがオフになっています"
+
+msgid "MeshOptimizer:diag:always-on-is-off:description"
+msgstr "{0}は常時表示に登録されていますが、アバターの読み込み時に無効か非アクティブなので、何も隠しません。"
+
+msgid "MeshOptimizer:diag:always-on-is-off:hint"
+msgstr "常時表示のリストから外すか、シーンでアクティブにしてください。"
+
+msgid "MeshOptimizer:diag:multiple-components"
+msgstr "アバターにMesh Optimizerが複数あります"
+
+msgid "MeshOptimizer:diag:multiple-components:description"
+msgstr "{0}が見つかりました。{1}の設定だけを使いました。"
+
+msgid "MeshOptimizer:diag:multiple-components:hint"
+msgstr "Mesh Optimizerはアバターごとに1つにしてください。"
+
+msgid "MeshOptimizer:diag:pass-failed"
+msgstr "Mesh Optimizerが失敗しました"
+
+msgid "MeshOptimizer:diag:pass-failed:description"
+msgstr "アバターは変更していません: {0}"
+
+msgid "MeshOptimizer:diag:pass-failed:hint"
+msgstr "詳しいエラーはコンソールにあります。"

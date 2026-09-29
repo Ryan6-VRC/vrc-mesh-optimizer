@@ -5,6 +5,8 @@
         "Ryan6VRC.MeshOptimizer.Core",
         "Ryan6VRC.MeshOptimizer.Runtime",
         "Ryan6VRC.MeshOptimizer.Editor",
+        "nadena.dev.ndmf",
+        "nadena.dev.ndmf.runtime",
         "Unity.Burst",
         "Unity.Collections",
         "Unity.Mathematics",
@@ -18,7 +20,9 @@
     "allowUnsafeCode": true,
     "overrideReferences": true,
     "precompiledReferences": [
-        "nunit.framework.dll"
+        "nunit.framework.dll",
+        "VRCSDK3A.dll",
+        "VRCSDKBase.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [

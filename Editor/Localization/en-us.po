@@ -93,4 +93,76 @@ msgid "RendererSettings:protection"
 msgstr "Protection"
 
 msgid "RendererSettings:protection:tooltip"
-msgstr "How much detail this renderer keeps when the triangle count is shared out. 1 is neutral; higher keeps more."
+msgstr "How much detail this renderer keeps: its error counts this many times over against the target. 1 is neutral; higher keeps more."
+
+msgid "MeshOptimizer:diag:not-readable"
+msgstr "Mesh Optimizer cannot read {1}"
+
+msgid "MeshOptimizer:diag:not-readable:description"
+msgstr "{0} was left as it was: its mesh {1} does not allow reading in play mode."
+
+msgid "MeshOptimizer:diag:not-readable:hint"
+msgstr "Turn on Read/Write in the model's import settings, or build for upload, where the mesh can be read."
+
+msgid "MeshOptimizer:diag:cloth"
+msgstr "Mesh Optimizer skipped a renderer with Cloth"
+
+msgid "MeshOptimizer:diag:cloth:description"
+msgstr "{0} was left as it was: its Cloth component addresses the mesh's vertices by index, so they cannot be removed."
+
+msgid "MeshOptimizer:diag:cloth:hint"
+msgstr "Nothing to do unless this renderer's triangle count matters; then reduce its mesh before it gets Cloth."
+
+msgid "MeshOptimizer:diag:renderer-failed"
+msgstr "Mesh Optimizer failed on a renderer"
+
+msgid "MeshOptimizer:diag:renderer-failed:description"
+msgstr "{0} failed during {1}: {2}. Every other renderer was still optimized."
+
+msgid "MeshOptimizer:diag:renderer-failed:hint"
+msgstr "The console holds the full error. A renderer that failed during Extraction or Writing was left as it was; one that failed during Decimation kept only its hidden-triangle removal."
+
+msgid "MeshOptimizer:diag:occlusion-failed"
+msgstr "Mesh Optimizer could not find hidden triangles"
+
+msgid "MeshOptimizer:diag:occlusion-failed:description"
+msgstr "Removing hidden triangles failed, so no triangle was removed for being hidden: {0}"
+
+msgid "MeshOptimizer:diag:occlusion-failed:hint"
+msgstr "The console holds the full error. Decimation still ran."
+
+msgid "MeshOptimizer:diag:budget-not-met"
+msgstr "Mesh Optimizer did not reach the triangle count"
+
+msgid "MeshOptimizer:diag:budget-not-met:description"
+msgstr "The avatar has {0} triangles against a target of {1}."
+
+msgid "MeshOptimizer:diag:budget-not-met:hint"
+msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, and finger vertices are never removed. Raise the target, or allow more renderers to be decimated."
+
+msgid "MeshOptimizer:diag:always-on-is-off"
+msgstr "An always-on renderer is off"
+
+msgid "MeshOptimizer:diag:always-on-is-off:description"
+msgstr "{0} is listed as always on, but it is disabled or inactive when the avatar loads, so it hides nothing."
+
+msgid "MeshOptimizer:diag:always-on-is-off:hint"
+msgstr "Remove it from the always-on list, or make it active in the scene."
+
+msgid "MeshOptimizer:diag:multiple-components"
+msgstr "More than one Mesh Optimizer on the avatar"
+
+msgid "MeshOptimizer:diag:multiple-components:description"
+msgstr "Found {0}; only the settings on {1} were used."
+
+msgid "MeshOptimizer:diag:multiple-components:hint"
+msgstr "Keep one Mesh Optimizer per avatar."
+
+msgid "MeshOptimizer:diag:pass-failed"
+msgstr "Mesh Optimizer failed"
+
+msgid "MeshOptimizer:diag:pass-failed:description"
+msgstr "The avatar was left as it was: {0}"
+
+msgid "MeshOptimizer:diag:pass-failed:hint"
+msgstr "The console holds the full error."

@@ -94,15 +94,24 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 PeakPoolBytes = statsOut[0] * Unity.Collections.LowLevel.Unsafe.UnsafeUtility.SizeOf<FrameQuadric>(),
                 Blocked = statsOut[1],
             };
-            return new CollapseSequence
+            var sequence = new CollapseSequence
             {
-                Steps = steps.ToArray(allocator),
-                Records = records.ToArray(allocator),
-                WorkingOrigin = new NativeArray<int>(topology.Origin, allocator),
-                WorkingTriangles = new NativeArray<int3>(topology.Triangles, allocator),
                 InitialTriangleCount = topology.LiveTriangleCount,
                 SourceVertexCount = topology.SourceVertexCount,
             };
+            try
+            {
+                sequence.Steps = steps.ToArray(allocator);
+                sequence.Records = records.ToArray(allocator);
+                sequence.WorkingOrigin = new NativeArray<int>(topology.Origin, allocator);
+                sequence.WorkingTriangles = new NativeArray<int3>(topology.Triangles, allocator);
+                return sequence;
+            }
+            catch
+            {
+                sequence.Dispose();
+                throw;
+            }
         }
     }
 }
