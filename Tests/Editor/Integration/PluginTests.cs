@@ -152,13 +152,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(OptimizationReports.Latest.UnstableBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
         }
 
-        // Links read the merged layers through NDMF's animator services, by clip object: one FX clip driving a key on two
-        // renderers links them, a second clip driving it on one only keeps them apart, and one that only holds it where
-        // the renderer holds it takes no part.
-        [TestCase(false, false, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_LinksThem")]
-        [TestCase(true, false, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_Control_ASecondClipDrivingOneKeepsThemApart")]
-        [TestCase(false, true, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_ASecondClipOnlyHoldingOneTakesNoPart")]
-        public void FxClipsAndLinks(bool secondDrives, bool secondHolds, bool links)
+        public enum Second { None, DrivesAfter, HoldsBefore, HoldsAfter, HoldsInGesture, DriverInGestureHoldInFx }
+
+        // Links read the merged layers through NDMF's animator services, by clip object and by the order layers play in:
+        // one FX clip driving a key on two renderers links them; a second clip driving it on one keeps them apart; a layer
+        // that only holds one where the renderer holds it takes no part if it plays before the driver, and refuses the
+        // link if it plays after it. Gesture plays before FX.
+        [TestCase(Second.None, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_LinksThem")]
+        [TestCase(Second.DrivesAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_Control_ASecondClipDrivingOneKeepsThemApart")]
+        [TestCase(Second.HoldsBefore, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInAnEarlierLayerTakesNoPart")]
+        [TestCase(Second.HoldsAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInALaterLayerRefuses")]
+        [TestCase(Second.HoldsInGesture, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInGestureTakesNoPart")]
+        [TestCase(Second.DriverInGestureHoldInFx, false, TestName = "AGestureClipDrivingAKeyOnTwoRenderers_AHoldOnOneInFxRefuses")]
+        public void ClipsLayersAndLinks(Second second, bool links)
         {
             var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
             var chest = a.Bone("Armature/Hips/Chest");
@@ -178,18 +184,30 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                     clip.SetCurve(path, typeof(SkinnedMeshRenderer), "blendShape.heels", new AnimationCurve(values.Select((v, i) => new Keyframe(i, v)).ToArray()));
                 return clip;
             }
-            var controller = a.Made(new UnityEditor.Animations.AnimatorController { name = "fx" });
-            controller.AddLayer("heels");
-            controller.layers[0].stateMachine.AddState("on").motion = Clip("heels", ("Body", new[] { 0f, 100f }), ("Tights", new[] { 0f, 100f }));
-            if (secondDrives || secondHolds)
+            UnityEditor.Animations.AnimatorController Controller(string name) => a.Made(new UnityEditor.Animations.AnimatorController { name = name });
+            void AddLayer(UnityEditor.Animations.AnimatorController c, string name, AnimationClip clip)
             {
-                controller.AddLayer("sweater");
-                controller.layers[1].stateMachine.AddState("off").motion = Clip("sweater", ("Tights", secondDrives ? new[] { 0f, 50f } : new[] { 0f, 0f }));
+                c.AddLayer(name);
+                c.layers[c.layers.Length - 1].stateMachine.AddState(name).motion = clip;
+            }
+            var heels = Clip("heels", ("Body", new[] { 0f, 100f }), ("Tights", new[] { 0f, 100f }));
+            var hold = Clip("sweater", ("Tights", new[] { 0f, 0f }));
+            var fx = Controller("fx");
+            var gesture = Controller("gesture");
+            switch (second)
+            {
+                case Second.None: AddLayer(fx, "heels", heels); break;
+                case Second.DrivesAfter: AddLayer(fx, "heels", heels); AddLayer(fx, "sweater", Clip("sweater", ("Tights", new[] { 0f, 50f }))); break;
+                case Second.HoldsBefore: AddLayer(fx, "sweater", hold); AddLayer(fx, "heels", heels); break;
+                case Second.HoldsAfter: AddLayer(fx, "heels", heels); AddLayer(fx, "sweater", hold); break;
+                case Second.HoldsInGesture: AddLayer(gesture, "sweater", hold); AddLayer(fx, "heels", heels); break;
+                case Second.DriverInGestureHoldInFx: AddLayer(gesture, "heels", heels); AddLayer(fx, "sweater", hold); break;
             }
             descriptor.customizeAnimationLayers = true;
             descriptor.baseAnimationLayers = new[]
             {
-                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, animatorController = controller, isDefault = false },
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.Gesture, animatorController = gesture, isDefault = false },
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, animatorController = fx, isDefault = false },
             };
             descriptor.specialAnimationLayers = new VRCAvatarDescriptor.CustomAnimLayer[0];
 

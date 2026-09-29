@@ -67,7 +67,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         static ShapeKeyBinding Binding(Transform root, AnimatedCurve c) =>
             new ShapeKeyBinding(PathOf(root, c.Target), c.Binding.propertyName.Substring(BlendShapePrefix.Length),
-                ShapeKeyClassifier.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip);
+                ShapeKeyClassifier.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip, c.Layer, c.Order);
 
         /// <summary>The descriptor's visemes, jaw flap and eyelids, which VRChat drives without a clip.</summary>
         public static IEnumerable<DrivenKey> FromDescriptor(Transform root)

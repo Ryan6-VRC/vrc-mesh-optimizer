@@ -113,9 +113,15 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// and a key a curve of unknown clip drives never links.
         /// </summary>
         public readonly object Clip;
+        /// <summary>The layer that plays the curve, by identity. Null when unknown: the curve is then a layer of its own, of unknown order.</summary>
+        public readonly object Layer;
+        /// <summary>Where <see cref="Layer"/> plays among the avatar's layers, later overriding earlier; null when not known.</summary>
+        public readonly long? Order;
 
-        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null)
+        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null, object layer = null, long? order = null)
         {
+            Layer = layer;
+            Order = order;
             Path = path;
             Key = key;
             Values = values;

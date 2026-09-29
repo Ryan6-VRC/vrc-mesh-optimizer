@@ -11,31 +11,49 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
     // pair can be driven apart is a refusal pinned here, next to the situations that must still link.
     public class LinkTests
     {
-        /// <summary>A clip by identity, as NDMF's virtual clips are; its name is only for reading a failure.</summary>
-        sealed class Clip
+        /// <summary>A layer by identity, as NDMF's virtual layers are, and where it plays; null when that is not known.</summary>
+        sealed class Layer
         {
             readonly string _name;
-            public Clip(string name) => _name = name;
+            public readonly long? Order;
+            public Layer(string name, long? order) { _name = name; Order = order; }
             public override string ToString() => _name;
         }
 
-        static readonly Clip Heels = new Clip("heels");
+        /// <summary>A clip by identity, as NDMF's virtual clips are, and the layer that plays it; its name is only for reading a failure.</summary>
+        sealed class Clip
+        {
+            readonly string _name;
+            public readonly Layer Layer;
+            public Clip(string name, Layer layer = null) { _name = name; Layer = layer ?? new Layer(name, 100); }
+            public override string ToString() => _name;
+        }
+
+        // As on the measured avatar: a garment's toggle layer at 13 holds the tights' heel, the boots' layer at 17 drives it.
+        static readonly Layer Toggles = new Layer("toggles", 13);
+        static readonly Layer Boots = new Layer("boots", 17);
+        static readonly Clip Heels = new Clip("heels", Boots);
         static readonly Clip Hips = new Clip("hips");
-        static readonly Clip Sweater = new Clip("sweater");
+        static readonly Clip Sweater = new Clip("sweater", Toggles);
 
         static ShapeKeyInput Key(string name, float weight = 0f, float fullWeight = 100f) => new ShapeKeyInput(name, weight, fullWeight);
 
         static RendererShapeKeys Renderer(string path, params ShapeKeyInput[] keys) => new RendererShapeKeys(path, keys);
 
-        /// <summary>A curve in <paramref name="clip"/> through <paramref name="values"/> at times 0, 1, 2 and so on, read as the sources read one.</summary>
-        static ShapeKeyBinding Curve(Clip clip, string path, string key, params float[] values)
+        /// <summary>A curve in <paramref name="clip"/>, played by its layer, through <paramref name="values"/> at times 0, 1, 2 and so on, read as the sources read one.</summary>
+        static ShapeKeyBinding Curve(Clip clip, string path, string key, params float[] values) => Curve(clip.Layer, clip, path, key, values);
+
+        /// <summary>As the other overload, played by <paramref name="layer"/>: one clip two layers play is read once from each.</summary>
+        static ShapeKeyBinding Curve(Layer layer, Clip clip, string path, string key, params float[] values)
         {
             var curve = new AnimationCurve(values.Select((v, i) => new Keyframe(i, v)).ToArray());
-            return Binding(clip, path, key, curve);
+            return Binding(layer, clip, path, key, curve);
         }
 
-        static ShapeKeyBinding Binding(Clip clip, string path, string key, AnimationCurve curve) =>
-            new ShapeKeyBinding(path, key, ShapeKeyClassifier.CurveValues(curve), curve.keys.Select(k => k.time).ToArray(), clip);
+        static ShapeKeyBinding Binding(Clip clip, string path, string key, AnimationCurve curve) => Binding(clip.Layer, clip, path, key, curve);
+
+        static ShapeKeyBinding Binding(Layer layer, Clip clip, string path, string key, AnimationCurve curve) =>
+            new ShapeKeyBinding(path, key, ShapeKeyClassifier.CurveValues(curve), curve.keys.Select(k => k.time).ToArray(), clip, layer, layer.Order);
 
         static List<KeyRef[]> Find(RendererShapeKeys[] renderers, IEnumerable<ShapeKeyBinding> bindings, params DrivenKey[] driven) =>
             ShapeKeyLinks.Find(renderers, bindings.ToList(), driven);
@@ -70,10 +88,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             Assert.That(links, Has.Count.EqualTo(1));
         }
 
+        // ------------------------------------------------------------------------------------------------
+        // Holds. A layer overrides the layers before it, so a layer that only holds one member pins it wherever the layers
+        // before it drive the rest; and with write defaults off, a state of the driving layer that holds one member resets
+        // it alone and leaves the others where the last state drove them.
+
         [Test]
-        public void AHoldCurveOnOneSideOnly_TakesNoPart_AndTheKeysLink()
+        public void AHoldInAnEarlierLayer_OnOneSideOnly_TakesNoPart_AndTheKeysLink()
         {
-            // The sweater's toggle holds the tights' heel where the renderer holds it, and has no curve for the body's.
+            // The sweater's toggle, at 13, holds the tights' heel where the renderer holds it; the boots' layer at 17 drives both.
             var bindings = new[]
             {
                 Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f),
@@ -81,6 +104,84 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             };
 
             Assert.That(Find(BodyAndTights, bindings), Is.EqualTo(new[] { BothHeels }));
+        }
+
+        [TestCase(20L, TestName = "TheSameHoldInALaterLayer_Refuses")]
+        [TestCase(null, TestName = "TheSameHoldInALayerOfUnknownOrder_Refuses")]
+        public void AHoldAfterTheDriver(long? order)
+        {
+            var sweater = new Clip("sweater", new Layer("toggles", order));
+            var bindings = new[]
+            {
+                Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f),
+                Curve(sweater, "Tights", "Toe_heels", 100f, 100f),
+            };
+
+            Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+        }
+
+        [Test]
+        public void AHoldAfterOneOfTwoLayersPlayingTheDriver_Refuses()
+        {
+            // One heels clip played by layers at 5 and 17; the toggle at 13 plays after the first.
+            var early = new Layer("early boots", 5);
+            var bindings = new[]
+            {
+                Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f),
+                Curve(early, Heels, "Body", "Toe_heels", 100f, 0f), Curve(early, Heels, "Tights", "Toe_heels", 100f, 0f),
+                Curve(Sweater, "Tights", "Toe_heels", 100f, 100f),
+            };
+
+            Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+        }
+
+        [Test]
+        public void AOneSidedHoldInAnotherStateOfTheDrivingLayer_Refuses()
+        {
+            // The boots' layer's off state holds the tights' heel alone: with write defaults off it resets the tights and
+            // leaves the body where the heels state drove it.
+            var bindings = new[]
+            {
+                Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f),
+                Curve(new Clip("boots off", Boots), "Tights", "Toe_heels", 100f, 100f),
+            };
+
+            Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+        }
+
+        [Test]
+        public void TheSameHoldOnEveryMemberInTheDrivingLayer_Links()
+        {
+            var off = new Clip("boots off", Boots);
+            var bindings = new[]
+            {
+                Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f),
+                Curve(off, "Body", "Toe_heels", 100f, 100f), Curve(off, "Tights", "Toe_heels", 100f, 100f),
+            };
+
+            Assert.That(Find(BodyAndTights, bindings), Is.EqualTo(new[] { BothHeels }));
+        }
+
+        // The playable layers play Base, Additive, Gesture, Action, FX; a controller's layers in index order.
+        [TestCase(VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.Gesture, 30, VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.FX, 0, true,
+            TestName = "AHoldInGesture_BeforeADriverInFX_Links")]
+        [TestCase(VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.FX, 0, VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.Gesture, 30, false,
+            TestName = "AHoldInFX_AfterADriverInGesture_Refuses")]
+        [TestCase(VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.Sitting, 0, VRC.SDK3.Avatars.Components.VRCAvatarDescriptor.AnimLayerType.FX, 30, false,
+            TestName = "AHoldInASpecialLayer_Refuses")]
+        public void OrderAcrossControllers(object holdController, int holdIndex, object driveController, int driveIndex, bool links)
+        {
+            var drive = new Layer("drive", Animators.AnimatedCurves.PlayOrder(driveController, driveIndex));
+            var hold = new Layer("hold", Animators.AnimatedCurves.PlayOrder(holdController, holdIndex));
+            var bindings = new[]
+            {
+                Curve(drive, Heels, "Body", "Toe_heels", 100f, 0f), Curve(drive, Heels, "Tights", "Toe_heels", 100f, 0f),
+                Curve(hold, Sweater, "Tights", "Toe_heels", 100f, 100f),
+            };
+
+            var found = Find(BodyAndTights, bindings);
+            if (links) Assert.That(found, Is.EqualTo(new[] { BothHeels }));
+            else Assert.That(found, Is.Empty);
         }
 
         [Test]
