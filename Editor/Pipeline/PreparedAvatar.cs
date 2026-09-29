@@ -26,6 +26,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         public readonly List<LinkReport> Links = new List<LinkReport>();
         public readonly List<ConfigurationReport> Configurations = new List<ConfigurationReport>();
+        /// <summary>Per reason, how many keys the pass evaluates moved alone though the same clips drive them with another.</summary>
+        public readonly Dictionary<LinkRefusal, int> LinkRefusals = new Dictionary<LinkRefusal, int>();
         public readonly List<Material> UnmatchedMaterialOverrides = new List<Material>();
         public bool OcclusionRan;
         public DeclineCounts Declined;

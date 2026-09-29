@@ -23,11 +23,14 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         /// <summary>
         /// Classifies every shape key of each renderer on the avatar being built, and finds the keys that cannot be driven
-        /// apart (<see cref="ShapeKeyLinks"/>) from the same sources. The calling pass must hold
-        /// <see cref="AnimatorServicesContext"/>, which also keeps NDMF from committing the controllers around it.
+        /// apart (<see cref="ShapeKeyLinks"/>) from the same sources, with the keys that could have linked and did not, each
+        /// with why (<see cref="ShapeKeyLinks.Find(IReadOnlyList{RendererShapeKeys}, IEnumerable{ShapeKeyBinding}, IEnumerable{DrivenKey}, out Dictionary{KeyRef, LinkRefusal})"/>).
+        /// The calling pass must hold <see cref="AnimatorServicesContext"/>, which also keeps NDMF from committing the
+        /// controllers around it.
         /// </summary>
         public static Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Classify(
-            BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers, out List<LinkedKey[]> links)
+            BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers, out List<LinkedKey[]> links,
+            out List<(LinkedKey key, LinkRefusal reason)> unlinked)
         {
             var root = context.AvatarRootTransform;
             var inputs = renderers.Select(r => Describe(r, root)).ToList();
@@ -39,8 +42,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             var table = ShapeKeyClassifier.Classify(inputs, bindings, driven);
             var result = new Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]>();
             for (var i = 0; i < renderers.Count; i++) result[renderers[i]] = table[i];
-            links = ShapeKeyLinks.Find(inputs, bindings, driven)
+            links = ShapeKeyLinks.Find(inputs, bindings, driven, out var refused)
                 .Select(g => g.Select(k => new LinkedKey(renderers[k.Renderer], k.Key)).ToArray()).ToList();
+            unlinked = refused.Select(kv => (new LinkedKey(renderers[kv.Key.Renderer], kv.Key.Key), kv.Value)).ToList();
             return result;
         }
 

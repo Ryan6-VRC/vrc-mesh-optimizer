@@ -31,6 +31,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public IReadOnlyDictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Liveness;
         /// <summary>Groups of keys that cannot be driven apart (<see cref="ShapeKeyLinks"/>). Null reads as none: every live key moves alone.</summary>
         public IReadOnlyList<LinkedKey[]> Links;
+        /// <summary>
+        /// Keys the same clips drive with another key that link with none, each with why (<see cref="ShapeKeyLinks"/>); the
+        /// report counts those the pass evaluates as live. Null reads as none.
+        /// </summary>
+        public IReadOnlyList<(LinkedKey key, LinkRefusal reason)> Unlinked;
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
@@ -188,6 +193,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             };
             report.Links.AddRange(prepared.Links);
             report.Configurations.AddRange(prepared.Configurations);
+            foreach (var kv in prepared.LinkRefusals) report.LinkRefusals[kv.Key] = kv.Value;
             report.UnmatchedMaterialOverrides.AddRange(prepared.UnmatchedMaterialOverrides);
             report.UnstableBones.AddRange(prepared.UnstableBones);
             report.Diagnostics.AddRange(prepared.Diagnostics);
@@ -403,10 +409,26 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// </summary>
         static void Configure(List<PreparedRenderer> jobs, PipelineInput input, PreparedAvatar prepared)
         {
-            if (input.Links == null) return;
             var byRenderer = new Dictionary<Renderer, PreparedRenderer>();
             foreach (var job in jobs)
                 if (job.Skip == SkipReason.None && job.Liveness != null) byRenderer[job.Renderer] = job;
+            bool Evaluated(LinkedKey m, out PreparedRenderer job)
+            {
+                job = null;
+                if (m.Renderer == null || !byRenderer.TryGetValue(m.Renderer, out job)) return false;
+                var liveness = job.Liveness;
+                return m.Key >= 0 && m.Key < liveness.Length && m.Key < job.Source.blendShapeCount && liveness[m.Key].State == ShapeKeyState.Live;
+            }
+            void Refused(LinkRefusal reason, int keys)
+            {
+                if (keys == 0) return;
+                prepared.LinkRefusals.TryGetValue(reason, out var n);
+                prepared.LinkRefusals[reason] = n + keys;
+            }
+            if (input.Unlinked != null)
+                foreach (var (key, reason) in input.Unlinked)
+                    if (Evaluated(key, out _)) Refused(reason, 1);
+            if (input.Links == null) return;
 
             var next = 1;
             foreach (var link in input.Links)
@@ -414,16 +436,22 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 var members = new List<(PreparedRenderer job, int key, float full)>();
                 foreach (var m in link ?? Array.Empty<LinkedKey>())
                 {
-                    if (m.Renderer == null || !byRenderer.TryGetValue(m.Renderer, out var job)) continue;
-                    var liveness = job.Liveness;
-                    if (m.Key < 0 || m.Key >= liveness.Length || m.Key >= job.Source.blendShapeCount || liveness[m.Key].State != ShapeKeyState.Live) continue;
+                    if (!Evaluated(m, out var job)) continue;
                     if (members.Any(x => x.job == job && x.key == m.Key)) continue;
                     var frameWeights = ShapeKeyFrames.WeightsOf(job.Source, m.Key);
                     members.Add((job, m.Key, ShapeKeyClassifier.FullScale(frameWeights[frameWeights.Length - 1])));
                 }
-                if (members.Count < 2) continue;
+                if (members.Count < 2)
+                {
+                    Refused(LinkRefusal.NotEvaluated, members.Count);
+                    continue;
+                }
                 float Held((PreparedRenderer job, int key, float full) m) => m.job.Liveness[m.key].HeldWeight / m.full;
-                if (members.Any(m => Math.Abs(Held(m) - Held(members[0])) > ShapeKeyLinks.Tolerance)) continue;
+                if (members.Any(m => Math.Abs(Held(m) - Held(members[0])) > ShapeKeyLinks.Tolerance))
+                {
+                    Refused(LinkRefusal.HeldApart, members.Count);
+                    continue;
+                }
 
                 var weights = new SortedSet<float>();
                 foreach (var (job, key, full) in members)
