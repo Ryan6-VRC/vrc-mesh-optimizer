@@ -233,18 +233,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Extraction);
                 ShapeKeyLiveness[] liveness = null;
-                float[] held = null;
                 if (job.Renderer is SkinnedMeshRenderer skinned)
                 {
                     if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out liveness) || liveness == null)
                         liveness = Enumerable.Repeat(ShapeKeyLiveness.Live(1f), job.Source.blendShapeCount).ToArray();
                     job.Report.Liveness = liveness;
-                    held = new float[job.Source.blendShapeCount];
-                    for (var k = 0; k < held.Length; k++) held[k] = skinned.GetBlendShapeWeight(k);
-                    job.Report.HeldWeights = held;
                 }
-                job.Eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out var frames, held);
-                job.Report.EvaluatedAsItStands = frames.Any(f => f.ShapeKey == LiveFrame.AsItStands);
+                job.Eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out _);
                 job.Extracted = true;
                 job.Report.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
             }
@@ -316,7 +311,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 {
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
-                    job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable, input.Occlusion.MinInfluence);
+                    job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable);
                     job.Report.HiddenSourceTriangles = job.Hidden;
                     var d = results[i].Declined;
                     job.Report.Declined = d;
@@ -352,9 +347,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// The candidate side: a triangle with a corner on an unstable bone can move out from under its cover, so it
         /// is never deleted. This clears flags after the solve and needs no second one, which is why Core does not
         /// know about it: every triangle the solve hides is covered by faces the solve keeps, and keeping more
-        /// triangles takes no face away from anyone's cover. Returns how many triangles it kept.
+        /// triangles takes no face away from anyone's cover. Any weight counts, as on the occluder side: however small, it
+        /// moves the corner when the bone scales, and to NaN when the bone does. Returns how many triangles it kept.
         /// </summary>
-        static int KeepUnstable(Job job, bool[] unstable, float minInfluence)
+        static int KeepUnstable(Job job, bool[] unstable)
         {
             var eval = job.Eval;
             var kept = 0;
@@ -366,7 +362,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     for (var k = eval.WeightStart[tri[c]]; k < eval.WeightStart[tri[c] + 1]; k++)
                     {
                         var w = eval.Weights[k];
-                        if (w.Weight < minInfluence || w.Bone >= unstable.Length || !unstable[w.Bone]) continue;
+                        if (w.Weight <= 0f || w.Bone >= unstable.Length || !unstable[w.Bone]) continue;
                         job.Hidden[t] = false;
                         kept++;
                         break;
@@ -401,6 +397,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var decimated = live.Where(j => j.Decimated).ToList();
             // The budget is the avatar's: whatever is not decimated costs its triangles in full.
             var fixedTriangles = all.Where(j => !j.Decimated).Sum(j => j.Report.TrianglesBefore - HiddenCount(j));
+            // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
+            // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
+            fixedTriangles += decimated.Sum(j => j.Reduced.Length - j.Sequence.InitialTriangleCount);
             var entries = decimated.Select(j => new AllocationEntry
             {
                 Steps = j.Sequence.Steps,

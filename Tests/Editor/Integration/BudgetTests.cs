@@ -73,6 +73,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Of(report, one).TrianglesAfter + Of(report, two).TrianglesAfter, Is.LessThanOrEqualTo(each));
         }
 
+        // A triangle that repeats a vertex is not in a collapse sequence, but a renderer left uncut still draws it, so
+        // it costs the budget in full. Five of them over a budget two above the rest leave the renderer to be cut.
+        [Test]
+        public void DegenerateTriangles_CountAgainstTheBudget()
+        {
+            var ball = Ball("Ball", Vector3.zero);
+            var mesh = ball.sharedMesh;
+            var proper = Triangles(mesh);
+            var triangles = mesh.triangles.ToList();
+            for (var i = 0; i < 5; i++) triangles.AddRange(new[] { 0, 0, 1 });
+            mesh.triangles = triangles.ToArray();
+            Budget(proper + 2);
+
+            var report = a.Run();
+
+            Assert.That(report.TrianglesAfter, Is.LessThanOrEqualTo(proper + 2));
+            Assert.That(report.TargetMet, Is.True);
+        }
+
         [Test]
         public void Tolerance_CutsEachRendererOnlyAsFarAsTheErrorAllows()
         {

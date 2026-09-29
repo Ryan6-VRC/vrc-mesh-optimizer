@@ -74,14 +74,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int[] KeptVertices { get; internal set; }
         /// <summary>Per shape key of the source mesh, what the pass evaluated it as. Null for a renderer that applies no shape keys.</summary>
         public ShapeKeyLiveness[] Liveness { get; internal set; }
-        /// <summary>
-        /// Per shape key of the source mesh, the weight the renderer held it at as the pass read it. Besides each live
-        /// key's own frames, the pass evaluates one more configuration when any live key holds a nonzero weight:
-        /// every live key at once at these weights, frozen keys at theirs.
-        /// </summary>
-        public float[] HeldWeights { get; internal set; }
-        /// <summary>True when that as-it-stands configuration was evaluated.</summary>
-        public bool EvaluatedAsItStands { get; internal set; }
     }
 
     /// <summary>Wall-clock per stage, in milliseconds.</summary>

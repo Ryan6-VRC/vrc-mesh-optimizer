@@ -31,15 +31,9 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             new SkinningPose(null, null, rendererToRoot, rendererBoneId);
     }
 
-    /// <summary>
-    /// Which shape key, at which weight, an entry of <see cref="EvalMesh.Frames"/> is; or, with
-    /// <see cref="ShapeKey"/> equal to <see cref="AsItStands"/>, every live key at once at the weight the renderer holds.
-    /// </summary>
+    /// <summary>Which shape key, at which weight, an entry of <see cref="EvalMesh.Frames"/> is.</summary>
     internal readonly struct LiveFrame
     {
-        /// <summary>The <see cref="ShapeKey"/> of the configuration the renderer stands in as built.</summary>
-        public const int AsItStands = -1;
-
         public readonly int ShapeKey;
         public readonly float Weight;
 
@@ -61,12 +55,9 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// live key as one frame per configuration it reaches: each authored frame at or under its driven maximum,
         /// then the key at that maximum. <paramref name="liveness"/> is indexed by shape key; null treats every key
         /// as dead, as a MeshRenderer, which never applies shape keys, needs.
-        /// <paramref name="heldWeights"/>, per shape key, is the weight the renderer holds each key at. When a live key
-        /// holds a nonzero weight, one more frame follows the rest: every live key at once at its held weight, the
-        /// state the avatar stands in by default, which no single key's frame reaches when two act on one region.
         /// </summary>
         public static EvalMesh Extract(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness,
-            Allocator allocator, out LiveFrame[] liveFrames, IReadOnlyList<float> heldWeights = null)
+            Allocator allocator, out LiveFrame[] liveFrames)
         {
             var vertexCount = mesh.vertexCount;
             var positions = mesh.vertices;
@@ -89,7 +80,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var result = new EvalMesh();
             try
             {
-                liveFrames = Fill(mesh, pose, liveness, keyCount, heldWeights, shapes, positions, normals, triangles, triangleSubmesh, allocator, ref result);
+                liveFrames = Fill(mesh, pose, liveness, keyCount, shapes, positions, normals, triangles, triangleSubmesh, allocator, ref result);
                 return result;
             }
             catch
@@ -100,7 +91,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         }
 
         static LiveFrame[] Fill(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness, int keyCount,
-            IReadOnlyList<float> heldWeights, ShapeKeyFrames shapes, Vector3[] positions, Vector3[] normals, List<int3> triangles, List<int> triangleSubmesh,
+            ShapeKeyFrames shapes, Vector3[] positions, Vector3[] normals, List<int3> triangles, List<int> triangleSubmesh,
             Allocator allocator, ref EvalMesh result)
         {
             var vertexCount = positions.Length;
@@ -136,31 +127,6 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                     frames.Add(new ShapeFrame { DeltaStart = start, DeltaCount = deltas.Count - start });
                     sources.Add(new LiveFrame(k, weight));
                 }
-            }
-
-            // As it stands: every live key at its held weight together. A held weight lies within the key's driven
-            // range by construction, since the classifier takes the held weight as a starting extreme, so none is clamped.
-            var stands = new Vector3[vertexCount];
-            var anyHeld = false;
-            for (var k = 0; heldWeights != null && k < keyCount && k < heldWeights.Count; k++)
-            {
-                if (liveness[k].State != ShapeKeyState.Live || heldWeights[k] == 0f) continue;
-                shapes.Load(mesh, k);
-                shapes.AddAt(heldWeights[k], stands, null);
-                anyHeld = true;
-            }
-            if (anyHeld)
-            {
-                var start = deltas.Count;
-                for (var v = 0; v < vertexCount; v++)
-                {
-                    var s = stands[v];
-                    if (s.x == 0f && s.y == 0f && s.z == 0f) continue;
-                    var d = math.mul(linear[v], (float3)s);
-                    if (math.lengthsq(d) > DeltaEpsilonSq) deltas.Add(new ShapeDelta { Vertex = v, Delta = d });
-                }
-                frames.Add(new ShapeFrame { DeltaStart = start, DeltaCount = deltas.Count - start });
-                sources.Add(new LiveFrame(LiveFrame.AsItStands, 0f));
             }
             result.Frames = new NativeArray<ShapeFrame>(frames.ToArray(), allocator);
             result.Deltas = new NativeArray<ShapeDelta>(deltas.ToArray(), allocator);
@@ -227,9 +193,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             for (var b = 0; b < slots; b++) skin[b] = pose.BoneToRoot[b] * bindposes[b];
             float4x4 rigid = pose.RendererToRoot;
 
-            var outPositions = new NativeArray<float3>(vertexCount, allocator);
-            var outNormals = new NativeArray<float3>(vertexCount, allocator);
-            var weightStart = new NativeArray<int>(vertexCount + 1, allocator);
+            // Each array goes into the result as it is made, so the caller's cleanup reaches it if anything below throws.
+            var outPositions = result.Positions = new NativeArray<float3>(vertexCount, allocator);
+            var outNormals = result.Normals = new NativeArray<float3>(vertexCount, allocator);
+            var weightStart = result.WeightStart = new NativeArray<int>(vertexCount + 1, allocator);
             var influences = new List<BoneInfluence>(vertexCount * 2);
             var linear = new float3x3[vertexCount];
             var merged = new List<BoneInfluence>(8);
@@ -272,9 +239,6 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             }
             weightStart[vertexCount] = influences.Count;
 
-            result.Positions = outPositions;
-            result.Normals = outNormals;
-            result.WeightStart = weightStart;
             result.Weights = new NativeArray<BoneInfluence>(influences.ToArray(), allocator);
             return linear;
         }

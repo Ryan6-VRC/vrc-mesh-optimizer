@@ -179,6 +179,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(HiddenOnBody(report), Is.GreaterThan(0), "the body on the steady bone beside it is still judged");
         }
 
+        // Any weight on an unstable bone moves a corner with it, however small: a body riding the steady chest with a
+        // trace of weight on a bone a clip collapses is kept, as the occluder side treats a trace of weight too.
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ACandidateWithATraceOfWeightOnAnUnstableBone_IsKept(bool scaled)
+        {
+            var core = a.Bone("Armature/Hips/Chest/Core");
+            var mesh = a.Sphere(BodyRadius, 16, 32, name: "traced");
+            mesh.boneWeights = mesh.vertices.Select(_ => new BoneWeight { boneIndex0 = 0, weight0 = 0.995f, boneIndex1 = 1, weight1 = 0.005f }).ToArray();
+            var traced = a.Skinned("Traced", mesh, new[] { chest, core });
+            Garment(chest);
+            if (scaled) a.ScaleClip(core, 1f, 0f);
+
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
+
+            Assert.That(Of(report, traced).HiddenRemoved > 0, Is.EqualTo(!scaled));
+        }
+
         // An override names the material the user sees; an NDMF plugin that cloned it and recorded the clone as its
         // replacement still gets the override. An unrecorded clone does not, and the report names the idle override.
         [TestCase(true)]
