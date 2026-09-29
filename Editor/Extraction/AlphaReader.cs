@@ -300,7 +300,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// </summary>
         internal static bool PoiyomiLowersAlphaElsewhere(Material m)
         {
-            if (Float(m, "_AlphaMod", 0f) < 0f || Float(m, "_AlphaGlobalMask", 0f) > 0f) return true;
+            if (Float(m, "_AlphaMod", 0f) < 0f) return true;
+            // A global mask blends into alpha by Poiyomi's maskBlend: only max (5) and add (7) never lower it.
+            var globalBlend = Float(m, "_AlphaGlobalMaskBlendType", 2f);
+            if (Float(m, "_AlphaGlobalMask", 0f) > 0f && globalBlend != 5f && globalBlend != 7f) return true;
             foreach (var option in new[] { "_AlphaDistanceFade", "_AlphaFresnel", "_AlphaAngular", "_AlphaAudioLinkEnabled", "_AlphaDithering" })
                 if (On(m, option)) return true;
             if (On(m, "_MainVertexColoringEnabled") && Float(m, "_MainUseVertexColorAlpha", 0f) > 0f) return true;

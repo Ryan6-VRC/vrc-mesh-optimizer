@@ -182,7 +182,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
         const string PoiyomiProperties =
             "_MainTex (\"Main\", 2D) = \"white\" {} _Color (\"Color\", Color) = (1, 1, 1, 1) _AlphaMask (\"Mask\", 2D) = \"white\" {} " +
             "_MainAlphaMaskMode (\"Mask Mode\", Int) = 0 _Mode (\"Mode\", Int) = 1 _Cutoff (\"Cutoff\", Float) = 0.5 " +
-            "_AlphaMod (\"Mod\", Range(-1, 1)) = 0 _AlphaGlobalMask (\"Global\", Int) = 0 _AlphaDistanceFade (\"x\", Float) = 0 " +
+            "_AlphaMod (\"Mod\", Range(-1, 1)) = 0 _AlphaGlobalMask (\"Global\", Int) = 0 _AlphaGlobalMaskBlendType (\"Blend\", Int) = 2 _AlphaDistanceFade (\"x\", Float) = 0 " +
             "_AlphaFresnel (\"x\", Float) = 0 _AlphaAngular (\"x\", Float) = 0 _AlphaAudioLinkEnabled (\"x\", Float) = 0 _AlphaDithering (\"x\", Float) = 0 " +
             "_MainVertexColoringEnabled (\"x\", Float) = 0 _MainUseVertexColorAlpha (\"x\", Range(0, 1)) = 0 " +
             "_BackFaceEnabled (\"x\", Float) = 0 _BackFaceReplaceAlpha (\"x\", Float) = 0 _EnableDissolve (\"x\", Float) = 0 " +
@@ -218,6 +218,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
         [TestCase("_AlphaMod=-1", false)]
         [TestCase("_AlphaMod=0.5", true)]
         [TestCase("_AlphaGlobalMask=1", false)]
+        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=5", true)]
+        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=7", true)]
+        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=0", false)]
         [TestCase("_AlphaDistanceFade=1", false)]
         [TestCase("_AlphaFresnel=1", false)]
         [TestCase("_AlphaAngular=1", false)]

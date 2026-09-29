@@ -1064,6 +1064,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             var shapes = _merged.Length;
             if (_bent) MergeBends(u, v);
             _rest[v] = Quadric.Sum(rv, ru);
+            // A multiplier prices the geometry a quadric measures, so v, now measuring u's too, is priced at least as u was.
+            _multiplier[v] = math.max(_multiplier[v], _multiplier[u]);
             var uv = _uv[v];
             uv.Add(_uv[u]);
             _uv[v] = uv;
