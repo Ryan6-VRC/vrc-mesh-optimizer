@@ -3,6 +3,8 @@
     "rootNamespace": "Ryan6Vrc.MeshOptimizer.Tests",
     "references": [
         "Ryan6VRC.MeshOptimizer.Core",
+        "Ryan6VRC.MeshOptimizer.Runtime",
+        "Ryan6VRC.MeshOptimizer.Editor",
         "Unity.Burst",
         "Unity.Collections",
         "Unity.Mathematics",
