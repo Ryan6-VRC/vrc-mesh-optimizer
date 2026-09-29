@@ -201,6 +201,29 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             StringAssert.Contains($"{r.HiddenRestored} hidden triangles kept because decimation took their cover", on.Summary());
         }
 
+        // A renderer the judge neither judges nor blocks by, which it enters with no triangles to hold its index, is the last
+        // one the avatar lists: here a charm clear of the body, not always on, that nothing covers. The judge still runs
+        // through and gives back what the coarsened garment uncovered.
+        [Test]
+        public void ARendererNeitherJudgedNorBlocking_LastInTheAvatar_DoesNotStopTheJudge()
+        {
+            Build(garmentFrom: 60f);
+            var charmMesh = a.Sphere(0.02f, 8, 16, name: "charm");
+            charmMesh.vertices = charmMesh.vertices.Select(v => v + new Vector3(0.3f, 0f, 0f)).ToArray();
+            charmMesh.RecalculateBounds();
+            var charm = a.Skinned("Charm", charmMesh, new[] { chest });
+            a.Optimizer(decimate: true).renderers.Add(new RendererSettings { renderer = charm, excludeFromDecimation = true });
+
+            var on = Run(TargetKind.Tolerance, 6f, rejudge: true);
+
+            Assert.That(on.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.RejudgeFailed));
+            Assert.That(Of(on, charm).HiddenRemoved, Is.Zero, "nothing covers the charm");
+            Assert.That(on.RejudgePasses, Is.EqualTo(1));
+            Assert.That(on.HiddenRestored, Is.GreaterThan(0));
+            var check = CheckWritten(on, setback: true);
+            Assert.That(check.Ok, Is.True, check.ToString());
+        }
+
         // A closed garment cut at 6 mm sinks past body it hid. Judged by the rule from where each triangle stood, the
         // triangles it sank past are uncovered; the cover moved, it did not go, so they stay removed, and the triangles
         // written back are fewer than those the rule alone would write back.

@@ -712,7 +712,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     r.Dispose();
                     throw;
                 }
-                NativeArray<bool>.Copy(Candidate, tb, r.HiddenTriangles, 0, tc);
+                // A mesh with no triangles last in the list starts where the triangles end, an index Copy refuses even for none.
+                if (tc > 0) NativeArray<bool>.Copy(Candidate, tb, r.HiddenTriangles, 0, tc);
                 // What covered each sample: its rest witness, replaced by a deletion re-cast, and every earlier one kept beside it.
                 ulong CoveredBy(int s) => Witness[s] | FrameWitness[s];
                 for (var t = 0; t < tc; t++)

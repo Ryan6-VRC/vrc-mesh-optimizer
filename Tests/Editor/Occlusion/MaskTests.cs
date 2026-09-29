@@ -175,5 +175,35 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Assert.That(check.Ok, Is.True, check.ToString());
             Assert.That(check.HiddenChecked, Is.GreaterThan(0));
         }
+
+        // A re-judge enters a renderer it neither judges nor blocks by with its vertices and no triangles, so every other
+        // mesh keeps its index. Last in the list, such a mesh starts where the triangles end. It solves, hides nothing, and
+        // changes no other mesh's verdict, occluder or not.
+        [Test]
+        public void AMeshWithNoTriangles_LastInTheList_SolvesAndChangesNothing()
+        {
+            var inner = Sphere(Inner, 16, 32);
+            scene.Add(inner, occludes: false);
+            scene.Add(Band(Middle, 60f, 180f), occludes: true);
+            var without = scene.Solve(OcclusionSettings.Default, Bones)[0].HiddenTriangles.ToArray();
+            Assert.That(without.Count(h => h), Is.GreaterThan(0));
+
+            foreach (var occludes in new[] { false, true })
+            {
+                scene.Dispose();
+                scene = new Scene();
+                scene.Add(inner, occludes: false);
+                scene.Add(Band(Middle, 60f, 180f), occludes: true);
+                var empty = new MeshBuilder();
+                empty.AddVertex(new float3(0f, 0.3f, 0f), new float3(0f, 1f, 0f), float2.zero, MeshBuilder.On(1));
+                scene.Add(empty, occludes);
+
+                var with = scene.Solve(OcclusionSettings.Default, Bones);
+
+                Assert.That(with[2].HiddenTriangles.Length, Is.Zero, $"occludes {occludes}");
+                Assert.That(with[2].CoveredBy.Length, Is.EqualTo(2), $"occludes {occludes}");
+                Assert.That(with[0].HiddenTriangles.ToArray(), Is.EqualTo(without), $"occludes {occludes}");
+            }
+        }
     }
 }
