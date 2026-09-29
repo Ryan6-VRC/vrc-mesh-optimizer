@@ -284,16 +284,19 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// The sides a material draws, as something that might be hidden: its main pass's, joined by its outline's (see
-        /// <see cref="MaterialOutline"/>). An outline culled front, the default, draws the back of a triangle whose main pass
-        /// culls it, so that triangle draws both sides.
+        /// The sides a material draws, as something that might be hidden: its main pass's, joined by a two-pass material's
+        /// second pass (see <see cref="MaterialSecondPass"/>) and its outline's (see <see cref="MaterialOutline"/>). An
+        /// outline culled front, the default, draws the back of a triangle whose main pass culls it, so that triangle
+        /// draws both sides.
         /// </summary>
         static FaceCulling SidesOf(Material material, bool outlines = true)
         {
-            var main = MainSidesOf(material);
-            var outline = outlines ? MaterialOutline.SidesOf(material) : null;
-            return outline == null || outline == main ? main : FaceCulling.Off;
+            var sides = Join(MainSidesOf(material), MaterialSecondPass.SidesOf(material));
+            return outlines ? Join(sides, MaterialOutline.SidesOf(material)) : sides;
         }
+
+        /// <summary>Every side either reading draws: one side each, unless they are the same side, draws both.</summary>
+        static FaceCulling Join(FaceCulling sides, FaceCulling? more) => more == null || more == sides ? sides : FaceCulling.Off;
 
         /// <summary>
         /// The sides a material's main pass draws: from the <see cref="OccluderMaterials.CullProperty"/> convention, or

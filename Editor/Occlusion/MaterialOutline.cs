@@ -25,24 +25,29 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         /// <summary>
         /// Poiyomi switches its outline with a toggle, and its outline pass clips every pixel while the toggle is under
         /// 0.01; locking a material whose toggle is off generates a shader with neither the toggle nor the pass, so it
-        /// reads as no outline below. lilToon has no switch: an outline variant is a shader of its own, which lilToon tells
-        /// by name and which carries a FORWARD_OUTLINE pass; every variant declares the outline's properties, so they say
-        /// nothing. A pass named for an outline in any other shader is taken to draw one.
+        /// reads as no outline below. The toggle is read only on a shader Poiyomi names, since another shader's property
+        /// of that name says nothing about its passes. lilToon has no switch: an outline variant is a shader of its own,
+        /// which lilToon tells by name and which carries a FORWARD_OUTLINE pass; every variant declares the outline's
+        /// properties, so they say nothing. A pass named for an outline in any other shader is taken to draw one.
         /// </summary>
         static bool Draws(Material m)
         {
-            if (m.HasProperty("_EnableOutlines"))
+            var poiyomi = IsPoiyomiName(m.shader.name);
+            if (poiyomi && m.HasProperty("_EnableOutlines"))
                 return m.GetFloat("_EnableOutlines") >= 0.01f &&
                        !(m.HasProperty("_OutlineClipAtZeroWidth") && m.GetFloat("_OutlineClipAtZeroWidth") != 0f && PoiyomiWidthIsZero(m));
             // Poiyomi 7's toggle, named for the locker, which comments out what it switches off; its outline always clips a zero width.
-            if (m.HasProperty("_commentIfZero_EnableOutlinePass"))
+            if (poiyomi && m.HasProperty("_commentIfZero_EnableOutlinePass"))
                 return m.GetFloat("_commentIfZero_EnableOutlinePass") != 0f && !PoiyomiWidthIsZero(m);
-            if (!HasOutlinePass(m) && !IsLilToonOutlineName(m.shader.name)) return false;
+            if (!HasPass(m, "OUTLINE") && !IsLilToonOutlineName(m.shader.name)) return false;
             // lilToon moves a zero-width hull to nowhere only when told to delete it; otherwise the hull lies flush on the
             // surface and still draws its back.
             return !(m.HasProperty("_OutlineWidth") && m.HasProperty("_OutlineDeleteMesh") &&
                      m.GetFloat("_OutlineWidth") == 0f && m.GetFloat("_OutlineDeleteMesh") != 0f);
         }
+
+        /// <summary>Every Poiyomi shader is named under ".poiyomi/", and a locked one keeps that name inside its own.</summary>
+        static bool IsPoiyomiName(string name) => name.IndexOf(".poiyomi/", StringComparison.Ordinal) >= 0;
 
         /// <summary>
         /// Whether Poiyomi's zero-width clip drops every pixel: it clips where the width, scaled by a mask of at most 1,
@@ -56,11 +61,11 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
             return Mathf.Max(mod.x, mod.y) <= 0f;
         }
 
-        /// <summary>Unity may report a pass name in upper case, so the match ignores case.</summary>
-        static bool HasOutlinePass(Material m)
+        /// <summary>Whether a pass of the material has a name containing <paramref name="part"/>. Unity may report a pass name in upper case, so the match ignores case.</summary>
+        internal static bool HasPass(Material m, string part)
         {
             for (var p = 0; p < m.passCount; p++)
-                if (m.GetPassName(p).IndexOf("OUTLINE", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (m.GetPassName(p).IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
         }
 

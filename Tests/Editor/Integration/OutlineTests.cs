@@ -102,9 +102,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 default:
                     // The locker bakes the outline's cull into the pass and keeps the properties block.
                     return outline
-                        ? Stand("Hidden/Locked/MeshOptimizerTests/Poiyomi Toon/0123456789abcdef0123456789abcdef", PoiProperties + " _EnableOutlines (\"Enable Outlines\", Float) = 1",
+                        ? Stand("Hidden/Locked/.poiyomi/Poiyomi Toon (MeshOptimizerTests)/0123456789abcdef0123456789abcdef", PoiProperties + " _EnableOutlines (\"Enable Outlines\", Float) = 1",
                             "Name \"Base\" Cull Back", "Name \"Outline\" Cull Front")
-                        : Stand("Hidden/Locked/MeshOptimizerTests/Poiyomi Toon/0123456789abcdef0123456789abcdef", PoiProperties, "Name \"Base\" Cull Back");
+                        : Stand("Hidden/Locked/.poiyomi/Poiyomi Toon (MeshOptimizerTests)/0123456789abcdef0123456789abcdef", PoiProperties, "Name \"Base\" Cull Back");
             }
         }
 
@@ -302,6 +302,55 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Cover(material: Toon(Family.LilToon, true), inward: inward);
 
             Assert.That(Of(a.Run(), body).HiddenRemoved > 0, Is.EqualTo(hides));
+        }
+
+        // Poiyomi's toggle speaks only for Poiyomi. Another shader that declares a property of that name off but carries
+        // an outline pass is read by its pass.
+        [Test]
+        public void AnEnableOutlinesPropertyOutsidePoiyomi_DoesNotHideAnOutlinePass()
+        {
+            var cup = Cup(Stand("Hidden/MeshOptimizerTests/OtherToon", "_Cull (\"Cull\", Float) = 2 _OutlineCull (\"Outline Cull\", Float) = 1 _EnableOutlines (\"Outlines\", Float) = 0",
+                "Name \"FORWARD\" Cull [_Cull]", "Name \"OUTLINE\" Cull [_OutlineCull]"));
+            Cover();
+
+            Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.Zero);
+        }
+
+        // An outline carried by a material slot past the last submesh draws over the last submesh too.
+        [Test]
+        public void AnOutlineInASurplusSlot_IsKept()
+        {
+            var cup = Cup(Toon(Family.LilToon, false));
+            cup.sharedMaterials = new[] { Toon(Family.LilToon, false), Toon(Family.LilToon, true) };
+            Cover();
+
+            Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.Zero);
+        }
+
+        // A two-pass transparent material draws a second pass over the same triangles with a cull of its own: lilToon's
+        // FORWARD_BACK by _PreCull in its TwoPass variants (every transparent variant declares _PreCull; only these draw
+        // it), Poiyomi Two Pass's second pass by _Cull2. Culled front, as lilToon sets it for two-pass, it draws the back.
+        [TestCase("Hidden/MeshOptimizerTests/lilToonTwoPassTransparent", "_PreCull", true, 1, false, TestName = "{m}(lilToon, back pass culled front)")]
+        [TestCase("Hidden/MeshOptimizerTests/lilToonTwoPassTransparent", "_PreCull", true, 2, true, TestName = "{m}(lilToon, back pass culled back)")]
+        [TestCase("Hidden/MeshOptimizerTests/CustomTransparent", "_PreCull", true, 1, false, TestName = "{m}(a FORWARD_BACK pass by any name)")]
+        [TestCase("Hidden/MeshOptimizerTests/lilToonTwoPassTransparent", "_PreCull", false, 1, false, TestName = "{m}(lilToon's TwoPass name)")]
+        [TestCase("Hidden/MeshOptimizerTests/lilToonTransparent", "_PreCull", false, 1, true, TestName = "{m}(lilToon one-pass, declaring _PreCull)")]
+        [TestCase("Hidden/MeshOptimizerTests/.poiyomi/Poiyomi Toon Two Pass", "_Cull2", true, 1, false, TestName = "{m}(Poiyomi, second pass culled front)")]
+        [TestCase("Hidden/MeshOptimizerTests/.poiyomi/Poiyomi Toon Two Pass", "_Cull2", true, 2, true, TestName = "{m}(Poiyomi, second pass culled back)")]
+        public void ATwoPassMaterial_DrawsTheSidesOfBothPasses(string shaderName, string property, bool pass, int cull, bool removed)
+        {
+            var passName = property == "_PreCull" ? "FORWARD_BACK" : "Base";
+            var passes = pass
+                ? new[] { $"Name \"{passName}\" Cull [{property}]", "Name \"FORWARD\" Cull [_Cull]" }
+                : new[] { "Name \"FORWARD\" Cull [_Cull]" };
+            var material = Stand(shaderName, $"_Cull (\"Cull\", Float) = 2 {property} (\"Cull\", Float) = 2", passes);
+            material.SetFloat(property, cull);
+            var cup = Cup(material);
+            Cover();
+
+            var r = Of(a.Run(), cup);
+            Assert.That(r.HiddenRemoved > 0, Is.EqualTo(removed));
+            Assert.That(r.KeptForOutline, Is.Zero, "a second pass is no outline");
         }
     }
 }
