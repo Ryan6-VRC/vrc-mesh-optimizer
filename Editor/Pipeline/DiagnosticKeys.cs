@@ -22,10 +22,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public const string MultipleComponents = "MeshOptimizer:diag:multiple-components";
         /// <summary>{0} the exception's message.</summary>
         public const string PassFailed = "MeshOptimizer:diag:pass-failed";
+        /// <summary>{0} the material the override names.</summary>
+        public const string NeverOccludesUnmatched = "MeshOptimizer:diag:never-occludes-unmatched";
 
         public static readonly string[] All =
         {
-            NotReadable, Cloth, RendererFailed, OcclusionFailed, BudgetNotMet, AlwaysOnIsOff, MultipleComponents, PassFailed,
+            NotReadable, Cloth, RendererFailed, OcclusionFailed, BudgetNotMet, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
         };
     }
 }

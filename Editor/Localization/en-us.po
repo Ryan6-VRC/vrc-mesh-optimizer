@@ -166,3 +166,12 @@ msgstr "The avatar was left as it was: {0}"
 
 msgid "MeshOptimizer:diag:pass-failed:hint"
 msgstr "The console holds the full error."
+
+msgid "MeshOptimizer:diag:never-occludes-unmatched"
+msgstr "A never-occludes material matched nothing"
+
+msgid "MeshOptimizer:diag:never-occludes-unmatched:description"
+msgstr "{0} is set to never occlude, but no renderer on the avatar uses it or a clone of it by the same name, so the setting does nothing: the material that replaced it may still hide triangles behind it."
+
+msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
+msgstr "Set the override on the material the renderer uses at build, or remove the override if the material is gone."

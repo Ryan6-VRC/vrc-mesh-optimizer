@@ -117,6 +117,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 }
                 report.Times.Extraction = stage.Elapsed.TotalMilliseconds;
                 report.UnmatchedMaterialOverrides.AddRange(new OccluderMaterials(settings.materials).Unmatched(jobs.Select(j => j.Renderer)));
+                // A never-occludes override that matched nothing left a surface the user said can vanish free to hide others.
+                foreach (var o in settings.materials)
+                    if (o != null && o.material != null && o.mode == OcclusionMode.NeverOccludes && report.UnmatchedMaterialOverrides.Contains(o.material))
+                        report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.NeverOccludesUnmatched, true, o.material));
 
                 var live = jobs.Where(j => j.Extracted).ToList();
                 stage.Restart();
