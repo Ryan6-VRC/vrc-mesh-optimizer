@@ -187,12 +187,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         // A coarse layer, a boot of few large triangles, crossing a fine one along a ring. Where the two already cross,
         // a collapse may not lengthen the crossing; it may not move it either, by shortening it against one of the
         // boot's triangles and lengthening it against another.
-        [Test]
-        public void AFineLayerCrossingACoarseOne_GainsNoNewCrossing()
+        // At meetings shallower than about a degree a crossing moves along by millimetres for every hundredth of a
+        // millimetre either surface moves, which the gate reads as new by its own stated design; this holds 2 degrees.
+        [TestCase(0.004f, TestName = "{m}(meeting at about 2 degrees)")]
+        public void AFineLayerCrossingACoarseOne_GainsNoNewCrossing(float reach)
         {
             using var scene = new Scene();
             scene.Add(SkinTube());
-            scene.Add(Tube(10, 4, Length, (a, y) => Skin(a, y) + math.lerp(-0.004f, 0.004f, y / Length), 0.3f));
+            scene.Add(Tube(10, 4, Length, (a, y) => Skin(a, y) + math.lerp(-reach, reach, y / Length), 0.3f));
             scene.BuildSurface();
             using var skin = scene.Decimate(0, true, out _);
             var result = new Dictionary<float, float>();
