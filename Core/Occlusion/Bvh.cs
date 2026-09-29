@@ -13,14 +13,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>
-    /// One occluder triangle as traversal reads it: corner x and the edges to corners y and z, in the
-    /// configuration the tree was built for, plus the occluder id the rest of its data hangs off.
+    /// One occluder triangle as traversal reads it: its corners x, y and z exactly as the configuration the
+    /// tree was built for places them, so faces that share an edge share its floats, plus the occluder id
+    /// the rest of its data hangs off.
     /// </summary>
     internal struct BvhTri
     {
         public float3 V0;
-        public float3 E1;
-        public float3 E2;
+        public float3 V1;
+        public float3 V2;
         public int Occ;
     }
 

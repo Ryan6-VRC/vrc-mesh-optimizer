@@ -258,6 +258,52 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>
+        /// Every renderer owes occlusion the sides its own triangles draw: one whose material draws its back is hidden only
+        /// when both sides are covered. Read toward drawing more, the opposite of how <paramref name="blocking"/> (an
+        /// occluder's submeshes, or null) reads toward blocking less; Unity draws a material slot past the last submesh
+        /// over the last submesh again, so those slots count there. A renderer that blocks nothing has no alpha read.
+        /// </summary>
+        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking)
+        {
+            var materials = renderer.sharedMaterials;
+            var result = new OccluderSubmesh[submeshCount];
+            for (var s = 0; s < submeshCount; s++)
+            {
+                var sides = s < materials.Length ? SidesOf(materials[s]) : FaceCulling.Back;
+                if (s == submeshCount - 1)
+                    for (var k = submeshCount; k < materials.Length; k++)
+                        if (materials[k] != null && SidesOf(materials[k]) != sides) sides = FaceCulling.Off;
+                var b = blocking?[s];
+                result[s] = b == null
+                    ? new OccluderSubmesh { Culling = sides }
+                    : new OccluderSubmesh { Mode = b.Mode, Culling = b.Culling, Alpha = b.Alpha, CandidateCulling = sides };
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// The sides a material draws, as something that might be hidden: from the <see cref="OccluderMaterials.CullProperty"/>
+        /// convention, or MToon and UTS's <c>_CullMode</c>, or back only for Unity's built-in shaders; any other shader
+        /// might draw both, so it is taken to. An empty slot draws nothing.
+        /// </summary>
+        static FaceCulling SidesOf(Material material)
+        {
+            if (material == null) return FaceCulling.Back;
+            if (material.HasProperty(OccluderMaterials.CullProperty)) return OccluderMaterials.CullingOf(material);
+            if (material.HasProperty("_CullMode"))
+                switch (Mathf.RoundToInt(material.GetFloat("_CullMode")))
+                {
+                    case 0: return FaceCulling.Off;
+                    case 1: return FaceCulling.Front;
+                    default: return FaceCulling.Back;
+                }
+            var name = material.shader != null ? material.shader.name : "";
+            var builtIn = name == "Standard" || name == "Standard (Specular setup)" || name == "Autodesk Interactive" ||
+                          name.StartsWith("Legacy Shaders/") || name.StartsWith("Unlit/") || name.StartsWith("Mobile/");
+            return builtIn ? FaceCulling.Back : FaceCulling.Off;
+        }
+
         static void RemoveHidden(List<Job> jobs, PipelineInput input, AvatarBones bones, OptimizationReport report)
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
@@ -296,7 +342,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     {
                         Mesh = eval,
                         Occludes = job.Occludes,
-                        Submeshes = job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : null,
+                        Submeshes = SidesDrawn(job.Renderer, job.Source.subMeshCount, job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : null),
                     });
                 }
 
