@@ -304,9 +304,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         public void TrianglesRemovedAsHidden_AreNotReadAsHoles()
         {
             var (root, renderer, source, optimized) = SheetRig();
-            var hidden = GeometryGate.ReadTriangles(source).Select(t => t.x == Sheet.Middle || t.y == Sheet.Middle || t.z == Sheet.Middle).ToArray();
+            var hidden = MeshTriangles.Read(source).triangles.Select(t => t.x == Sheet.Middle || t.y == Sheet.Middle || t.z == Sheet.Middle).ToArray();
             // The optimized mesh without the hexagon at all: hidden triangles deleted, not refanned.
-            var all = GeometryGate.ReadTriangles(source);
+            var all = MeshTriangles.Read(source).triangles;
             var deleted = _scene.Optimized(source, all.Where((_, i) => !hidden[i]).SelectMany(t => new[] { t.x, t.y, t.z }).ToArray());
             var liveness = new[] { ShapeKeyLiveness.Dead, ShapeKeyLiveness.Dead, ShapeKeyLiveness.Dead };
 

@@ -11,7 +11,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
     {
         /// <summary>Every layer's kept surface, this mesh's included.</summary>
         public ClearanceSurface Surface;
-        /// <summary>Per triangle of the mesh being decimated, its layer in <see cref="Surface"/>.</summary>
+        /// <summary>Per triangle of the mesh being decimated, its layer in <see cref="Surface"/>; a triangle decimation drops is never read.</summary>
         public NativeArray<int> TriangleLayer;
 
         public bool IsActive => Surface.IsCreated && Surface.TriangleCount > 0 && TriangleLayer.IsCreated;

@@ -100,7 +100,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// <summary>
         /// Builds the evaluation mesh: positions and normals skinned into avatar-root space at the given pose with every
         /// key at the weight the renderer holds it at, the state the avatar stands in; influences by avatar-wide bone id;
-        /// triangles of every triangle submesh; and each live key as one frame per other weight it reaches (see
+        /// triangles as <see cref="MeshTriangles"/> reads them; and each live key as one frame per other weight it reaches (see
         /// <see cref="Configurations"/>), every other key held. <paramref name="liveness"/> is indexed by shape key; null
         /// treats every key as dead, as a MeshRenderer, which never applies shape keys, needs.
         /// </summary>
@@ -127,7 +127,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var hasNormals = normals.Length == vertexCount;
             if (!hasNormals) normals = new Vector3[vertexCount];
 
-            var (triangles, triangleSubmesh) = ReadTriangles(mesh);
+            var (triangles, triangleSubmesh) = MeshTriangles.Read(mesh);
 
             var shapes = new ShapeKeyFrames(vertexCount);
             var keyCount = liveness == null ? 0 : Math.Min(liveness.Count, mesh.blendShapeCount);
@@ -153,7 +153,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         }
 
         static LiveFrame[] Fill(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness, IReadOnlyList<LiveFrame> linked, int keyCount,
-            ShapeKeyFrames shapes, Vector3[] positions, Vector3[] normals, List<int3> triangles, List<int> triangleSubmesh,
+            ShapeKeyFrames shapes, Vector3[] positions, Vector3[] normals, int3[] triangles, int[] triangleSubmesh,
             Allocator allocator, ref EvalMesh result)
         {
             var vertexCount = positions.Length;
@@ -169,8 +169,8 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 if (!math.all(math.isfinite(result.Positions[v])) || !math.all(math.isfinite(result.Uv0[v])))
                     throw new NonFiniteMeshException(null, v);
 
-            result.Triangles = new NativeArray<int3>(triangles.ToArray(), allocator);
-            result.TriangleSubmesh = new NativeArray<int>(triangleSubmesh.ToArray(), allocator);
+            result.Triangles = new NativeArray<int3>(triangles, allocator);
+            result.TriangleSubmesh = new NativeArray<int>(triangleSubmesh, allocator);
 
             var frames = new List<ShapeFrame>();
             var deltas = new List<ShapeDelta>();
@@ -255,24 +255,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// </summary>
         static float Snap(float end, float held) => Math.Abs(end - held) <= ShapeKeyClassifier.HoldTolerance ? held : end;
 
-        static (List<int3>, List<int>) ReadTriangles(Mesh mesh)
-        {
-            var triangles = new List<int3>();
-            var submesh = new List<int>();
-            for (var s = 0; s < mesh.subMeshCount; s++)
-            {
-                if (mesh.GetTopology(s) != MeshTopology.Triangles) continue;
-                var indices = mesh.GetIndices(s, true);
-                for (var i = 0; i + 2 < indices.Length; i += 3)
-                {
-                    triangles.Add(new int3(indices[i], indices[i + 1], indices[i + 2]));
-                    submesh.Add(s);
-                }
-            }
-            return (triangles, submesh);
-        }
-
-        static void FaceNormals(Vector3[] positions, List<int3> triangles, Vector3[] normals)
+        static void FaceNormals(Vector3[] positions, int3[] triangles, Vector3[] normals)
         {
             foreach (var t in triangles)
             {

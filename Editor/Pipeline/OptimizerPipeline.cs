@@ -107,10 +107,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             public bool[] Hidden;
             public CollapseSequence Sequence;
             public bool Decimated;
-            /// <summary>Per triangle occlusion kept, its layer in the clearance surface; not created when the rule is off.</summary>
+            /// <summary>Per extracted triangle, its layer in the clearance surface, -1 for one occlusion removed; not created when the rule is off.</summary>
             public NativeArray<int> Layers;
-            /// <summary>Per triangle the decimator saw, the extracted triangle it is.</summary>
-            public int[] Reduced;
             public int Cut;
 
             public void Dispose()
@@ -231,7 +229,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 r.Skip = SkipReason.NoMesh;
                 return job;
             }
-            r.TrianglesBefore = r.TrianglesAfter = TriangleCount(mesh);
+            r.TrianglesBefore = r.TrianglesAfter = MeshTriangles.Count(mesh);
             if (renderer.GetComponent<Cloth>() != null)
             {
                 r.Skip = SkipReason.Cloth;
@@ -276,15 +274,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             for (var k = 0; k < mesh.blendShapeCount; k++)
                 if (!names.Add(mesh.GetBlendShapeName(k))) return mesh.GetBlendShapeName(k);
             return null;
-        }
-
-        /// <summary>Triangles in the mesh's triangle submeshes; other topologies are not triangles.</summary>
-        static int TriangleCount(Mesh mesh)
-        {
-            long count = 0;
-            for (var s = 0; s < mesh.subMeshCount; s++)
-                if (mesh.GetTopology(s) == UnityEngine.MeshTopology.Triangles) count += mesh.GetIndexCount(s) / 3;
-            return (int)count;
         }
 
         /// <summary>
@@ -649,7 +638,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var fixedTriangles = all.Where(j => !j.Decimated).Sum(j => j.Report.TrianglesBefore - HiddenCount(j));
             // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
             // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
-            fixedTriangles += decimated.Sum(j => j.Reduced.Length - j.Sequence.InitialTriangleCount);
+            fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - HiddenCount(j) - j.Sequence.InitialTriangleCount);
             var entries = decimated.Select(j => new AllocationEntry
             {
                 Steps = j.Sequence.Steps,
@@ -676,7 +665,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
-        /// each renderer's layer per kept triangle in <see cref="Job.Layers"/>. Kept means what occlusion left: a triangle
+        /// each renderer's layer per triangle in <see cref="Job.Layers"/>. Kept means what occlusion left: a triangle
         /// it deleted is not there to be passed through. A renderer off at build is in it like any other, since whatever
         /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is a renderer the
         /// pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be read: it is still
@@ -692,14 +681,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 foreach (var job in live)
                 {
                     var eval = job.Eval;
-                    var kept = new NativeArray<int3>(eval.TriangleCount - HiddenCount(job), Allocator.Persistent);
-                    owned.Add(kept);
-                    for (int t = 0, i = 0; t < eval.TriangleCount; t++)
-                        if (job.Hidden == null || !job.Hidden[t]) kept[i++] = eval.Triangles[t];
-                    job.Layers = Layers.Pieces(eval.Positions, kept, Allocator.Persistent, out var pieces);
-                    for (var i = 0; i < job.Layers.Length; i++) job.Layers[i] += next;
+                    var hidden = HiddenMask(job);
+                    if (hidden.IsCreated) owned.Add(hidden);
+                    job.Layers = Layers.Pieces(eval.Positions, eval.Triangles, hidden, Allocator.Persistent, out var pieces);
+                    for (var i = 0; i < job.Layers.Length; i++)
+                        if (job.Layers[i] >= 0) job.Layers[i] += next;
                     next += pieces;
-                    sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = kept, TriangleLayer = job.Layers });
+                    sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = eval.Triangles, TriangleLayer = job.Layers, Excluded = hidden });
                 }
                 foreach (var job in all)
                 {
@@ -806,6 +794,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return n;
         }
 
+        /// <summary>The triangles occlusion removed, as the mask decimation and the clearance surface leave them out by; unset when it removed none. The caller owns it.</summary>
+        static NativeArray<bool> HiddenMask(Job job) => job.Hidden == null ? default : new NativeArray<bool>(job.Hidden, Allocator.Persistent);
+
         static void DecimateOne(Job job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, OptimizationReport report)
         {
             var owned = new List<IDisposable>();
@@ -813,30 +804,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Decimation);
                 var eval = job.Eval;
-                var reduced = new List<int>(eval.TriangleCount);
-                for (var t = 0; t < eval.TriangleCount; t++)
-                    if (job.Hidden == null || !job.Hidden[t]) reduced.Add(t);
-                job.Reduced = reduced.ToArray();
-
-                // The decimator sees only what occlusion kept; it shares every vertex array with the extraction.
-                var seen = eval;
-                seen.Triangles = new NativeArray<int3>(reduced.Count, Allocator.Persistent);
-                owned.Add(seen.Triangles);
-                seen.TriangleSubmesh = new NativeArray<int>(reduced.Count, Allocator.Persistent);
-                owned.Add(seen.TriangleSubmesh);
-                for (var i = 0; i < reduced.Count; i++)
-                {
-                    seen.Triangles[i] = eval.Triangles[reduced[i]];
-                    seen.TriangleSubmesh[i] = eval.TriangleSubmesh[reduced[i]];
-                }
+                // The decimator sees only what occlusion kept.
+                var hidden = HiddenMask(job);
+                if (hidden.IsCreated) owned.Add(hidden);
 
                 var locks = protection.Locks(eval, out var lockedCount, out var fromZeroScale);
                 // Fur is grown per triangle, so its density is the triangle count: every vertex of a furred triangle is locked.
                 var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
                 var lockedForFur = 0;
-                foreach (var t in reduced)
+                for (var t = 0; t < eval.TriangleCount; t++)
                 {
-                    if (!fur[eval.TriangleSubmesh[t]]) continue;
+                    if ((job.Hidden != null && job.Hidden[t]) || !fur[eval.TriangleSubmesh[t]]) continue;
                     var tri = eval.Triangles[t];
                     for (var c = 0; c < 3; c++)
                     {
@@ -863,9 +841,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 job.Report.LockedFromZeroScale = fromZeroScale;
                 job.Report.LockedForFur = lockedForFur;
                 job.Report.CostRaisedForGrowth = grownCount;
-                job.Report.FloorTriangles = protection.FloorFor(job.Renderer, reduced.Count);
+                job.Report.FloorTriangles = protection.FloorFor(job.Renderer, eval.TriangleCount - HiddenCount(job));
 
-                job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);
+                job.Sequence = Decimator.Run(eval, hidden, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);
                 job.Decimated = true;
                 job.Report.SequenceLength = job.Sequence.Length;
                 job.Report.NearVertices = clearanceStats.NearVertices;
@@ -874,7 +852,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             catch (Exception e)
             {
                 // Decimation failing on one renderer leaves it at what occlusion kept.
-                job.Reduced = null;
                 job.Report.SequenceLength = 0;
                 report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, PipelineStage.Decimation.ToString(), e.Message));
                 Debug.LogException(e);
@@ -910,7 +887,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     cut = job.Sequence.Cut(job.Cut, Allocator.Persistent);
                     cutMade = true;
                     for (var i = 0; i < cut.Triangles.Length; i++)
-                        Add(perSubmesh[eval.TriangleSubmesh[job.Reduced[cut.SourceTriangle[i]]]], cut.Triangles[i]);
+                        Add(perSubmesh[eval.TriangleSubmesh[cut.SourceTriangle[i]]], cut.Triangles[i]);
                 }
                 else
                 {
@@ -924,7 +901,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 for (var s = 0; s < indices.Length; s++)
                 {
                     // A submesh of lines or points is passed through whole, with its vertices.
-                    var isTriangles = mesh.GetTopology(s) == UnityEngine.MeshTopology.Triangles;
+                    var isTriangles = MeshTriangles.IsTriangles(mesh, s);
                     indices[s] = isTriangles ? perSubmesh[s].ToArray() : mesh.GetIndices(s, true);
                     if (isTriangles) triangles += indices[s].Length / 3;
                     foreach (var i in indices[s]) used[i] = true;

@@ -42,9 +42,20 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// joint when it bends.
         /// </summary>
         public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance,
-            in BendRig rig, Allocator allocator, out ClearanceStats stats)
+            in BendRig rig, Allocator allocator, out ClearanceStats stats) =>
+            Run(mesh, default, settings, protection, clearance, rig, allocator, out stats);
+
+        /// <summary>
+        /// As the overload without <paramref name="excluded"/>, but a triangle it flags takes no part, as one that repeats a
+        /// vertex takes none: the sequence is the one recorded from a copy of the mesh without those triangles, while every
+        /// triangle keeps its index in <paramref name="mesh"/>, so <see cref="CutResult.SourceTriangle"/> names the mesh's
+        /// triangles and <see cref="ClearanceInput.TriangleLayer"/> has one entry per triangle of it, an excluded one's unread.
+        /// </summary>
+        /// <param name="excluded">Per triangle of <paramref name="mesh"/>; unset excludes none.</param>
+        public static CollapseSequence Run(in EvalMesh mesh, NativeArray<bool> excluded, in DecimationSettings settings, in VertexProtection protection,
+            in ClearanceInput clearance, in BendRig rig, Allocator allocator, out ClearanceStats stats)
         {
-            using var topology = MeshTopology.Build(mesh, settings.Topology, Allocator.Persistent);
+            using var topology = MeshTopology.Build(mesh, excluded, settings.Topology, Allocator.Persistent);
             using var bends = Bends.Build(mesh, rig, settings.Bend, Allocator.Persistent);
             var field = default(ClearanceField);
             var bank = default(QuadricBank);
