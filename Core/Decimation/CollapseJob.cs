@@ -855,7 +855,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        static void SortUnique(ref NativeList<int> list)
+        /// <summary>Sorts ascending and drops repeats, in place.</summary>
+        internal static void SortUnique(ref NativeList<int> list)
         {
             if (list.Length < 2) return;
             list.Sort();
