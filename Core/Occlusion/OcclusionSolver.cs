@@ -21,8 +21,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// when each side is covered. Poses decide nothing:
     /// geometry on the same bones moves together, so what hides a surface at rest hides it in every pose.
     ///
-    /// Shape keys: coverage holds at rest and in each live frame on its own at its driven maximum, and a
-    /// frame is evaluated only where it can change a verdict (see <see cref="FramePrepJob"/>).
+    /// Shape keys: rest is the avatar as it stands, every key at its held weight, and each live frame is one key
+    /// moved on its own to another weight it reaches (see <see cref="EvalMesh"/>). Coverage holds at rest and in
+    /// every frame, and a frame is evaluated only where it can change a verdict (see <see cref="FramePrepJob"/>).
     ///
     /// Deletion: a triangle hidden only by another hidden triangle would be exposed when both go. So after
     /// the first verdict, the hidden occluder faces are removed and every hidden candidate whose cover rests

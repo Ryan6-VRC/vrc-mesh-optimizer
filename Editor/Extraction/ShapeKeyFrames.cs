@@ -19,9 +19,16 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         public ShapeKeyFrames(int vertexCount) => _vertexCount = vertexCount;
 
         public int FrameCount { get; private set; }
-        public float FrameWeight(int frame) => _weights[frame];
-        /// <summary>The weight of the last frame, at which the key is fully applied.</summary>
-        public float FullWeight => _weights[FrameCount - 1];
+        /// <summary>Every frame's weight, ascending, as the mesh authors them.</summary>
+        public IReadOnlyList<float> Weights => new ArraySegment<float>(_weights, 0, FrameCount);
+
+        /// <summary>A key's frame weights, read without its vertices.</summary>
+        public static float[] WeightsOf(Mesh mesh, int key)
+        {
+            var weights = new float[mesh.GetBlendShapeFrameCount(key)];
+            for (var f = 0; f < weights.Length; f++) weights[f] = mesh.GetBlendShapeFrameWeight(key, f);
+            return weights;
+        }
 
         public void Load(Mesh mesh, int key)
         {
@@ -47,12 +54,18 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             Add(_normals, f0, a0, f1, a1, normals);
         }
 
-        /// <summary>Writes the key's displacement at <paramref name="weight"/> over <paramref name="positions"/>.</summary>
-        public void PositionsAt(float weight, Vector3[] positions)
+        /// <summary>
+        /// Writes over <paramref name="positions"/> how far the key moves each vertex when its weight goes from
+        /// <paramref name="from"/> to <paramref name="to"/>: its displacement at one less its displacement at the other,
+        /// each blended from the frames around it, so a move across an authored frame bends where the renderer's does.
+        /// </summary>
+        public void PositionsBetween(float from, float to, Vector3[] positions)
         {
             Array.Clear(positions, 0, positions.Length);
-            var (f0, a0, f1, a1) = Blend(weight);
+            var (f0, a0, f1, a1) = Blend(to);
             Add(_positions, f0, a0, f1, a1, positions);
+            (f0, a0, f1, a1) = Blend(from);
+            Add(_positions, f0, -a0, f1, -a1, positions);
         }
 
         /// <summary>The key's displacement at a weight is a0 × frame f0 + a1 × frame f1; f1 is -1 when one frame suffices.</summary>

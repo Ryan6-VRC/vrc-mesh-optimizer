@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
@@ -11,8 +12,9 @@ using UnityEngine.Rendering;
 namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
 {
     // The algorithms judge error, occlusion and shape motion in avatar-root space, so the evaluation mesh
-    // must stand where the renderer draws it: skinned by the bones' current pose, frozen keys applied, and
-    // each live key's motion carried as the displacement it causes at its driven maximum.
+    // must stand where the renderer draws it: skinned by the bones' current pose with every key at the weight
+    // the renderer holds, and each live key's motion carried as the displacement it causes from that weight to
+    // each other weight it reaches.
     public class ExtractionTests
     {
         readonly List<Object> _made = new List<Object>();
@@ -187,6 +189,163 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             AssertNear(eval.Deltas[eval.Frames[0].DeltaStart].Delta, new Vector3(1, 0, 0), "the frame at 50");
             // At 80, three fifths of the way from the frame at 50 to the frame at 100.
             AssertNear(eval.Deltas[eval.Frames[1].DeltaStart].Delta, new Vector3(2.2f, 0, 0), "the key at 80");
+        }
+
+        // A frame is where the key takes the vertex from where it is held, not from zero.
+        static Vector3 Displaced(EvalMesh eval, int frame, int vertex)
+        {
+            var f = eval.Frames[frame];
+            for (var i = f.DeltaStart; i < f.DeltaStart + f.DeltaCount; i++)
+                if (eval.Deltas[i].Vertex == vertex) return eval.Positions[vertex] + eval.Deltas[i].Delta;
+            return eval.Positions[vertex];
+        }
+
+        [Test]
+        public void LiveKeyHeldAtFullWeight_StandsThereAtRest_AndIsEvaluatedAtZero()
+        {
+            var mesh = TwoBoneMesh();
+            mesh.AddBlendShapeFrame("push", 100f, new[] { Vector3.zero, Vector3.right, Vector3.zero }, null, null);
+            var liveness = new[] { ShapeKeyLiveness.Live(0f, 1f, 100f) };
+
+            using var eval = MeshExtractor.Extract(mesh, TwoBonePose(), liveness, Allocator.Temp, out var frames);
+
+            AssertNear(eval.Positions[1], new Vector3(-1, 2, 0), "rest has the key where the renderer holds it");
+            Assert.That(frames, Is.EqualTo(new[] { new LiveFrame(0, 0f) }), "the one other weight it reaches");
+            AssertNear(Displaced(eval, 0, 1), new Vector3(-1, 1, 0), "the key taken off");
+        }
+
+        [Test]
+        public void LiveKeyHeldPartway_IsEvaluatedOnBothSidesOfIt()
+        {
+            var mesh = TwoBoneMesh();
+            mesh.AddBlendShapeFrame("push", 100f, new[] { Vector3.zero, Vector3.right, Vector3.zero }, null, null);
+            // Held at 40 and driven anywhere from -50 to 100.
+            var liveness = new[] { ShapeKeyLiveness.Live(-0.5f, 1f, 40f) };
+
+            using var eval = MeshExtractor.Extract(mesh, TwoBonePose(), liveness, Allocator.Temp, out var frames);
+
+            AssertNear(eval.Positions[1], new Vector3(-1, 1.4f, 0), "rest at 40");
+            Assert.That(frames.Select(f => f.Weight), Is.EqualTo(new[] { -50f, 0f, 100f }));
+            AssertNear(Displaced(eval, 0, 1), new Vector3(-1, 0.5f, 0), "at -50");
+            AssertNear(Displaced(eval, 1, 1), new Vector3(-1, 1, 0), "at 0");
+            AssertNear(Displaced(eval, 2, 1), new Vector3(-1, 2, 0), "at 100");
+        }
+
+        [Test]
+        public void MultiFrameKeyHeldBetweenItsFrames_MovesAlongTheFramesFromWhereItIsHeld()
+        {
+            var mesh = Made(new Mesh());
+            mesh.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up };
+            mesh.triangles = new[] { 0, 1, 2 };
+            mesh.AddBlendShapeFrame("grow", 50f, new[] { Vector3.zero, Vector3.zero, new Vector3(1, 0, 0) }, null, null);
+            mesh.AddBlendShapeFrame("grow", 100f, new[] { Vector3.zero, Vector3.zero, new Vector3(3, 0, 0) }, null, null);
+            var pose = SkinningPose.Unskinned(Matrix4x4.identity, 0);
+
+            using var eval = MeshExtractor.Extract(mesh, pose, new[] { ShapeKeyLiveness.Live(0f, 1f, 75f) }, Allocator.Temp, out var frames);
+
+            // At 75, halfway from the frame at 50 to the frame at 100.
+            AssertNear(eval.Positions[2], new Vector3(2, 1, 0), "rest at 75");
+            Assert.That(frames.Select(f => f.Weight), Is.EqualTo(new[] { 0f, 50f, 100f }));
+            AssertNear(Displaced(eval, 0, 2), new Vector3(0, 1, 0), "off");
+            AssertNear(Displaced(eval, 1, 2), new Vector3(1, 1, 0), "the frame at 50");
+            AssertNear(Displaced(eval, 2, 2), new Vector3(3, 1, 0), "the frame at 100");
+        }
+
+        // The classifier states a key's range as a fraction of a scale it chooses, 100 when the last frame weighs nothing
+        // or less; extraction has to read the fraction back against that same scale, or a state the curve reaches is lost.
+        [TestCase(0f)]
+        [TestCase(-100f)]
+        public void KeyWhoseLastFrameIsAtZeroOrBelow_IsEvaluatedWhereItsCurveDrivesIt(float lastFrame)
+        {
+            var key = ShapeKeyClassifier.ClassifyKey(new ShapeKeyInput("odd", 0f, lastFrame), new[] { new[] { 0f, 50f } }, false);
+
+            Assert.That(MeshExtractor.Configurations(new[] { lastFrame }, key, 0f), Has.Member(50f));
+        }
+
+        [Test]
+        public void AKeyHeldAtAnEndOfItsRange_GetsNoConfigurationBesideItsHeldWeight()
+        {
+            // Driven from where it is held down to zero: the held end, read back from its fraction, is rest, not a frame.
+            var extra = new List<string>();
+            foreach (var full in new[] { 37f, 90f, 100f, 150f })
+                for (var held = 0.7f; held < full; held += 1.3f)
+                {
+                    var key = ShapeKeyClassifier.ClassifyKey(new ShapeKeyInput("k", held, full), new[] { new[] { 0f } }, false);
+                    var configurations = MeshExtractor.Configurations(new[] { full }, key, held);
+                    if (!configurations.SequenceEqual(new[] { 0f })) extra.Add($"held {held} of {full}: {string.Join(", ", configurations)}");
+                }
+            Assert.That(extra, Is.Empty);
+        }
+
+        [Test]
+        public void AnAuthoredFrameBesideTheHeldWeight_IsStillEvaluated()
+        {
+            // A weight close to the held one can still be a frame far from it in space; only the held weight itself is rest.
+            var configurations = MeshExtractor.Configurations(new[] { 0.0005f, 100f }, ShapeKeyLiveness.Live(0f, 1f, 0f), 0f);
+
+            Assert.That(configurations, Is.EqualTo(new[] { 0.0005f, 100f }));
+        }
+
+        [TestCase(0f)]
+        [TestCase(30f)]
+        [TestCase(75f)]
+        [TestCase(100f)]
+        public void EveryConfiguration_StandsWhereTheRendererBakesIt(float held)
+        {
+            // Two bones, the second turned and moved, a renderer under a scaled parent; a multi-frame live key, a frozen
+            // key, and a live key held at 60.
+            var root = new GameObject("Avatar");
+            _made.Add(root);
+            root.transform.SetPositionAndRotation(new Vector3(0.3f, 0.1f, -0.2f), Quaternion.Euler(0, 30, 0));
+            var bone0 = new GameObject("Bone0").transform;
+            bone0.SetParent(root.transform, false);
+            var bone1 = new GameObject("Bone1").transform;
+            bone1.SetParent(bone0, false);
+            bone1.localPosition = new Vector3(0, 1, 0);
+            var holder = new GameObject("Holder").transform;
+            holder.SetParent(root.transform, false);
+            holder.localScale = new Vector3(1.5f, 1f, 0.8f);
+            var at = new GameObject("Mesh").transform;
+            at.SetParent(holder, false);
+
+            var mesh = TwoBoneMesh();
+            mesh.AddBlendShapeFrame("grow", 25f, new[] { new Vector3(0, 0, 0.01f), Vector3.zero, new Vector3(0.02f, 0, 0) }, null, null);
+            mesh.AddBlendShapeFrame("grow", 100f, new[] { new Vector3(0, 0, 0.05f), new Vector3(0.03f, 0, 0), new Vector3(0.01f, 0.04f, 0) }, null, null);
+            mesh.AddBlendShapeFrame("frozen", 100f, new[] { Vector3.zero, new Vector3(0, 0, 0.02f), Vector3.zero }, null, null);
+            mesh.AddBlendShapeFrame("partway", 100f, new[] { new Vector3(0.01f, 0.01f, 0), Vector3.zero, new Vector3(0, 0, -0.03f) }, null, null);
+            mesh.bindposes = new[] { bone0.worldToLocalMatrix * at.localToWorldMatrix, bone1.worldToLocalMatrix * at.localToWorldMatrix };
+            var renderer = at.gameObject.AddComponent<SkinnedMeshRenderer>();
+            renderer.sharedMesh = mesh;
+            renderer.bones = new[] { bone0, bone1 };
+            bone1.localRotation = Quaternion.Euler(0, 0, 40);
+            var weights = new[] { held, 35f, 60f };
+            for (var k = 0; k < weights.Length; k++) renderer.SetBlendShapeWeight(k, weights[k]);
+            var liveness = new[] { ShapeKeyLiveness.Live(0f, 1f, held), ShapeKeyLiveness.Frozen(35f), ShapeKeyLiveness.Live(0f, 1f, 60f) };
+
+            using var eval = RendererExtraction.Extract(renderer, new AvatarBones(root.transform), liveness, Allocator.Temp, out var frames);
+
+            var toRoot = RendererExtraction.WorldToRoot(root.transform) * at.localToWorldMatrix;
+            var baked = Made(new Mesh());
+            Vector3[] Bake(float[] w)
+            {
+                for (var k = 0; k < w.Length; k++) renderer.SetBlendShapeWeight(k, w[k]);
+                renderer.BakeMesh(baked, true);
+                return baked.vertices.Select(v => toRoot.MultiplyPoint3x4(v)).ToArray();
+            }
+            void AssertBaked(Vector3[] expected, System.Func<int, Vector3> actual, string what)
+            {
+                for (var v = 0; v < expected.Length; v++)
+                    Assert.That(Vector3.Distance(actual(v), expected[v]), Is.LessThan(1e-6f), $"{what}, vertex {v}: {actual(v)} is not {expected[v]}");
+            }
+
+            AssertBaked(Bake(weights), v => eval.Positions[v], "as it stands");
+            Assert.That(frames.Length, Is.EqualTo(eval.Frames.Length));
+            for (var f = 0; f < frames.Length; f++)
+            {
+                var w = (float[])weights.Clone();
+                w[frames[f].ShapeKey] = frames[f].Weight;
+                AssertBaked(Bake(w), v => Displaced(eval, f, v), $"key {frames[f].ShapeKey} at {frames[f].Weight}");
+            }
         }
 
         [Test]

@@ -56,6 +56,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 var keys = Liveness?.Count ?? 0;
                 if (keys != Source.blendShapeCount)
                     throw new ArgumentException($"liveness has {keys} entries for a source mesh with {Source.blendShapeCount} shape keys; pass the renderer's liveness table", "liveness");
+                // The gate measures the state the optimizer evaluated as rest, so the renderer must hold the weights liveness recorded.
+                if (holds != null)
+                    for (var k = 0; k < keys; k++)
+                    {
+                        var weight = skinned.GetBlendShapeWeight(k);
+                        if (Math.Abs(weight - Liveness[k].HeldWeight) > ShapeKeyClassifier.HoldTolerance)
+                            throw new ArgumentException(
+                                $"'{Renderer.name}' holds shape key '{Source.GetBlendShapeName(k)}' at {weight} and its liveness records {Liveness[k].HeldWeight}, so the avatar as it stands is not the state the optimizer evaluated; pass the liveness classified from the renderer as it stands now",
+                                "liveness");
+                    }
             }
             if (RemovedTriangles != null)
             {
@@ -73,33 +83,31 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             return true;
         }
 
-        /// <summary>Frozen keys at their frozen weights, every other key at zero.</summary>
-        public float[] RestWeights()
+        /// <summary>
+        /// The avatar as it stands, the state the optimizer evaluates as rest: every key at the weight liveness records it
+        /// held at, which <see cref="Check"/> has confirmed the renderer holds. <paramref name="liveOffZero"/> says whether
+        /// any live key is held off zero, which is when <see cref="LiveKeysAtZero"/> is a different state.
+        /// </summary>
+        public float[] StandingWeights(out bool liveOffZero)
+        {
+            var weights = LiveKeysAtZero();
+            liveOffZero = false;
+            for (var k = 0; k < weights.Length; k++)
+            {
+                if (Liveness[k].State != ShapeKeyState.Live) continue;
+                weights[k] = Liveness[k].HeldWeight;
+                liveOffZero |= weights[k] != 0f;
+            }
+            return weights;
+        }
+
+        /// <summary>Frozen keys at their held weights, every other key at zero: the avatar with everything a live key does undone.</summary>
+        public float[] LiveKeysAtZero()
         {
             if (Skinned == null) return Array.Empty<float>();
             var weights = new float[Source.blendShapeCount];
             for (var k = 0; k < weights.Length; k++)
-                if (Liveness[k].State == ShapeKeyState.Frozen) weights[k] = Liveness[k].FrozenWeight;
-            return weights;
-        }
-
-        /// <summary>
-        /// Rest, with every live key at the weight the renderer holds now. Read it before any weight is set; the renderer
-        /// holds a mesh whose keys are the source's by index (checked by <see cref="Check"/>). <paramref name="standing"/>
-        /// says whether any live key is held off zero.
-        /// </summary>
-        public float[] HeldWeights(out bool standing)
-        {
-            var weights = RestWeights();
-            standing = false;
-            var skinned = Skinned;
-            if (skinned == null || skinned.sharedMesh == null) return weights;
-            for (var k = 0; k < weights.Length; k++)
-            {
-                if (Liveness[k].State != ShapeKeyState.Live) continue;
-                weights[k] = skinned.GetBlendShapeWeight(k);
-                standing |= weights[k] != 0f;
-            }
+                if (Liveness[k].State == ShapeKeyState.Frozen) weights[k] = Liveness[k].HeldWeight;
             return weights;
         }
 
