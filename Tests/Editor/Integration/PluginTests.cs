@@ -152,6 +152,60 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(OptimizationReports.Latest.UnstableBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
         }
 
+        // Links read the merged layers through NDMF's animator services, by clip object: one FX clip driving a key on two
+        // renderers links them, a second clip driving it on one only keeps them apart, and one that only holds it where
+        // the renderer holds it takes no part.
+        [TestCase(false, false, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_LinksThem")]
+        [TestCase(true, false, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_Control_ASecondClipDrivingOneKeepsThemApart")]
+        [TestCase(false, true, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_ASecondClipOnlyHoldingOneTakesNoPart")]
+        public void FxClipsAndLinks(bool secondDrives, bool secondHolds, bool links)
+        {
+            var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
+            var chest = a.Bone("Armature/Hips/Chest");
+            SkinnedMeshRenderer Layer(string name, float radius)
+            {
+                var mesh = a.Sphere(radius, 16, 32, name: name);
+                mesh.AddBlendShapeFrame("heels", 100f, mesh.vertices.Select(v => v.normalized * 0.01f).ToArray(), null, null);
+                return a.Skinned(name, mesh, new[] { chest });
+            }
+            Layer("Body", 0.1f);
+            a.Optimizer().alwaysOn.Add(Layer("Tights", 0.105f));
+
+            AnimationClip Clip(string name, params (string path, float[] values)[] curves)
+            {
+                var clip = a.Made(new AnimationClip { name = name });
+                foreach (var (path, values) in curves)
+                    clip.SetCurve(path, typeof(SkinnedMeshRenderer), "blendShape.heels", new AnimationCurve(values.Select((v, i) => new Keyframe(i, v)).ToArray()));
+                return clip;
+            }
+            var controller = a.Made(new UnityEditor.Animations.AnimatorController { name = "fx" });
+            controller.AddLayer("heels");
+            controller.layers[0].stateMachine.AddState("on").motion = Clip("heels", ("Body", new[] { 0f, 100f }), ("Tights", new[] { 0f, 100f }));
+            if (secondDrives || secondHolds)
+            {
+                controller.AddLayer("sweater");
+                controller.layers[1].stateMachine.AddState("off").motion = Clip("sweater", ("Tights", secondDrives ? new[] { 0f, 50f } : new[] { 0f, 0f }));
+            }
+            descriptor.customizeAnimationLayers = true;
+            descriptor.baseAnimationLayers = new[]
+            {
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, animatorController = controller, isDefault = false },
+            };
+            descriptor.specialAnimationLayers = new VRCAvatarDescriptor.CustomAnimLayer[0];
+
+            Process();
+
+            Assert.That(errors, Is.Empty, "the build logs no error");
+            var report = OptimizationReports.Latest;
+            Assert.That(report.AvatarName, Is.EqualTo(a.Root.name));
+            if (links)
+            {
+                Assert.That(report.Links.Single().ToString(), Is.EqualTo("Body:heels, Tights:heels"));
+                Assert.That(report.Configurations.Select(c => c.Weight), Is.EqualTo(new[] { 1f }));
+            }
+            else Assert.That(report.Links, Is.Empty);
+        }
+
         [Test]
         public void WithoutTheComponent_ThePassChangesNothing()
         {

@@ -251,6 +251,43 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             AssertNear(Displaced(eval, 2, 2), new Vector3(3, 1, 0), "the frame at 100");
         }
 
+        // A linked frame is this renderer's part in a state of the whole avatar: its keys moved together, each from where it
+        // is held, carrying the configuration's id, and none of them also moved alone.
+
+        [Test]
+        public void LinkedFrame_MovesItsKeysTogether_FromWhereEachIsHeld_UnderItsId()
+        {
+            var mesh = Made(new Mesh());
+            mesh.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up };
+            mesh.triangles = new[] { 0, 1, 2 };
+            mesh.AddBlendShapeFrame("a", 100f, new[] { Vector3.zero, Vector3.zero, new Vector3(1, 0, 0) }, null, null);
+            mesh.AddBlendShapeFrame("b", 100f, new[] { Vector3.zero, new Vector3(0, 0, 2), new Vector3(0, 2, 0) }, null, null);
+            mesh.AddBlendShapeFrame("c", 100f, new[] { new Vector3(0, 0, 1), Vector3.zero, Vector3.zero }, null, null);
+            var pose = SkinningPose.Unskinned(Matrix4x4.identity, 0);
+            // a held at 0, b held at 50, both driven over their whole range; c live on its own.
+            var liveness = new[] { ShapeKeyLiveness.Live(0f, 1f, 0f), ShapeKeyLiveness.Live(0f, 1f, 50f), ShapeKeyLiveness.Live(1f) };
+            var linked = new[] { new LiveFrame(7, new[] { 0, 1 }, new[] { 100f, 100f }), new LiveFrame(8, new[] { 0, 1 }, new[] { 0f, 0f }) };
+
+            using var eval = MeshExtractor.Extract(mesh, pose, liveness, linked, Allocator.Temp, out var frames);
+
+            Assert.That(frames, Is.EqualTo(new[] { new LiveFrame(2, 100f), linked[0], linked[1] }), "c alone first, then the linked frames in order");
+            Assert.That(Enumerable.Range(0, eval.Frames.Length).Select(f => eval.Frames[f].Configuration), Is.EqualTo(new[] { 0, 7, 8 }));
+            AssertNear(eval.Positions[2], new Vector3(0, 2, 0), "rest with b at 50");
+            AssertNear(Displaced(eval, 1, 2), new Vector3(1, 3, 0), "a to 100 and b from 50 to 100, added");
+            AssertNear(Displaced(eval, 1, 1), new Vector3(1, 0, 2), "b alone moves vertex 1");
+            AssertNear(Displaced(eval, 2, 2), new Vector3(0, 1, 0), "a stays at 0 and b goes from 50 to 0");
+        }
+
+        [Test]
+        public void LinkedFrame_NamingAKeyTheRendererDoesNotEvaluate_IsRefused()
+        {
+            var mesh = TwoBoneMesh();
+            mesh.AddBlendShapeFrame("push", 100f, new[] { Vector3.zero, Vector3.right, Vector3.zero }, null, null);
+            var linked = new[] { new LiveFrame(1, new[] { 3 }, new[] { 100f }) };
+
+            Assert.Throws<System.ArgumentException>(() => MeshExtractor.Extract(mesh, TwoBonePose(), new[] { ShapeKeyLiveness.Live(1f) }, linked, Allocator.Temp, out _));
+        }
+
         // The classifier states a key's range as a fraction of a scale it chooses, 100 when the last frame weighs nothing
         // or less; extraction has to read the fraction back against that same scale, or a state the curve reaches is lost.
         [TestCase(0f)]

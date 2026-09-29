@@ -22,22 +22,25 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         const string BlendShapePrefix = "blendShape.";
 
         /// <summary>
-        /// Classifies every shape key of each renderer on the avatar being built. The calling pass must hold
+        /// Classifies every shape key of each renderer on the avatar being built, and finds the keys that cannot be driven
+        /// apart (<see cref="ShapeKeyLinks"/>) from the same sources. The calling pass must hold
         /// <see cref="AnimatorServicesContext"/>, which also keeps NDMF from committing the controllers around it.
         /// </summary>
         public static Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Classify(
-            BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers)
+            BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers, out List<LinkedKey[]> links)
         {
             var root = context.AvatarRootTransform;
             var inputs = renderers.Select(r => Describe(r, root)).ToList();
 
             var bindings = FromAnimatorServices(context.Extension<AnimatorServicesContext>(), root)
-                .Concat(FromLegacyAnimations(root));
-            var driven = FromDescriptor(root).Concat(MmdKeys(root));
+                .Concat(FromLegacyAnimations(root)).ToList();
+            var driven = FromDescriptor(root).Concat(MmdKeys(root)).ToList();
 
             var table = ShapeKeyClassifier.Classify(inputs, bindings, driven);
             var result = new Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]>();
             for (var i = 0; i < renderers.Count; i++) result[renderers[i]] = table[i];
+            links = ShapeKeyLinks.Find(inputs, bindings, driven)
+                .Select(g => g.Select(k => new LinkedKey(renderers[k.Renderer], k.Key)).ToArray()).ToList();
             return result;
         }
 
@@ -64,7 +67,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         static ShapeKeyBinding Binding(Transform root, AnimatedCurve c) =>
             new ShapeKeyBinding(PathOf(root, c.Target), c.Binding.propertyName.Substring(BlendShapePrefix.Length),
-                ShapeKeyClassifier.CurveValues(c.Curve));
+                ShapeKeyClassifier.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip);
 
         /// <summary>The descriptor's visemes, jaw flap and eyelids, which VRChat drives without a clip.</summary>
         public static IEnumerable<DrivenKey> FromDescriptor(Transform root)

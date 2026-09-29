@@ -22,12 +22,19 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public readonly IReadOnlyList<GateInput> Crossing;
         /// <summary>Each renderer's path, and which channels it is left out of and why.</summary>
         public readonly IReadOnlyList<(string path, string reason)> LeftOut;
+        /// <summary>
+        /// For <see cref="CrossingGate"/>, one state of the whole avatar per configuration the report's links made: each linked
+        /// key at its weight in it, every other key of every renderer in <see cref="Crossing"/> where it stands. A linked key
+        /// on a renderer left out of the crossing channel is left out of its configuration.
+        /// </summary>
+        public readonly IReadOnlyList<AvatarConfiguration> Configurations;
 
-        GateReportInputs(List<GateInput> geometry, List<GateInput> crossing, List<(string, string)> leftOut)
+        GateReportInputs(List<GateInput> geometry, List<GateInput> crossing, List<(string, string)> leftOut, List<AvatarConfiguration> configurations)
         {
             Geometry = geometry;
             Crossing = crossing;
             LeftOut = leftOut;
+            Configurations = configurations;
         }
 
         /// <summary>
@@ -65,7 +72,26 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 leftOut.Add((r.Path, $"left out of the geometric channel, measured unchanged for crossing: {Why(r)}"));
                 crossing.Add(new GateInput(r.Renderer, r.SourceMesh, r.SourceMesh, null, liveness));
             }
-            return new GateReportInputs(geometry, crossing, leftOut);
+            return new GateReportInputs(geometry, crossing, leftOut, Linked(report, crossing));
+        }
+
+        static List<AvatarConfiguration> Linked(OptimizationReport report, List<GateInput> crossing)
+        {
+            var result = new List<AvatarConfiguration>();
+            foreach (var c in report.Configurations)
+            {
+                var weights = new Dictionary<Renderer, float[]>();
+                for (var i = 0; i < c.Link.Keys.Count; i++)
+                {
+                    var key = c.Link.Keys[i];
+                    var input = crossing.FirstOrDefault(x => x.Renderer == key.Renderer);
+                    if (input == null || input.Skinned == null) continue;
+                    if (!weights.TryGetValue(input.Renderer, out var w)) weights[input.Renderer] = w = input.StandingWeights(out _);
+                    w[key.Key] = c.Weights[i];
+                }
+                if (weights.Count > 0) result.Add(new AvatarConfiguration($"linked {c}", null, weights));
+            }
+            return result;
         }
 
         /// <summary>A reference the report holds whose Unity object is gone; a mesh the pass never wrote is null outright and is not gone.</summary>

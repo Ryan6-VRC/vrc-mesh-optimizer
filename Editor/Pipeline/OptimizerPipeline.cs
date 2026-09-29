@@ -29,6 +29,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public AvatarMeshOptimizer Settings;
         /// <summary>Per skinned renderer, per shape key. A renderer missing from it has every key evaluated as live, from the weight it holds to full weight.</summary>
         public IReadOnlyDictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Liveness;
+        /// <summary>Groups of keys that cannot be driven apart (<see cref="ShapeKeyLinks"/>). Null reads as none: every live key moves alone.</summary>
+        public IReadOnlyList<LinkedKey[]> Links;
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
@@ -63,6 +65,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             public Renderer Renderer;
             public Mesh Source;
             public RendererReport Report;
+            /// <summary>This renderer's frames in the avatar's linked configurations.</summary>
+            public readonly List<LiveFrame> Linked = new List<LiveFrame>();
             public EvalMesh Eval;
             public bool Extracted;
             public bool Occludes;
@@ -110,11 +114,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 foreach (var renderer in input.Root.GetComponentsInChildren<Renderer>(true))
                 {
                     if (!(renderer is SkinnedMeshRenderer) && !(renderer is MeshRenderer)) continue;
-                    var job = Survey(renderer, input.Root, report);
+                    var job = Survey(renderer, input, report);
                     jobs.Add(job);
                     report.Renderers.Add(job.Report);
-                    if (job.Report.Skip == SkipReason.None) Extract(job, input, bones, report);
                 }
+                Configure(jobs, input, report);
+                foreach (var job in jobs)
+                    if (job.Report.Skip == SkipReason.None) Extract(job, input, bones, report);
                 report.Times.Extraction = stage.Elapsed.TotalMilliseconds;
                 report.UnmatchedMaterialOverrides.AddRange(new OccluderMaterials(settings.materials).Unmatched(jobs.Select(j => j.Renderer)));
                 // A never-occludes override that matched nothing left a surface the user said can vanish free to hide others.
@@ -169,8 +175,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        static Job Survey(Renderer renderer, Transform root, OptimizationReport report)
+        static Job Survey(Renderer renderer, PipelineInput input, OptimizationReport report)
         {
+            var root = input.Root;
             var mesh = RendererExtraction.MeshOf(renderer);
             var job = new Job
             {
@@ -205,6 +212,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 r.Skip = SkipReason.NoTriangles;
             }
+            else if (renderer is SkinnedMeshRenderer skinned)
+            {
+                if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out var liveness) || liveness == null)
+                    liveness = LivenessSources.Describe(skinned, root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
+                r.Liveness = liveness;
+            }
             return job;
         }
 
@@ -236,19 +249,66 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             Debug.LogException(e);
         }
 
+        /// <summary>
+        /// The avatar's linked configurations, from its links: a link at one normalised weight is one state of the avatar, in
+        /// which every member key stands at that fraction of its <see cref="ShapeKeyClassifier.FullScale"/> and every other
+        /// key where it is held. The weights are the union, normalised, of what <see cref="MeshExtractor.Configurations"/>
+        /// gives each member alone, so each member is evaluated at every corner of its own path; configurations come only
+        /// from links, never from a product of them. Each renderer takes one frame per configuration it has a member in.
+        /// A member the pass does not evaluate as live, or on a renderer it does not extract, is left out; a link left with
+        /// fewer than two members, or whose members no longer stand at one normalised weight, moves its keys alone.
+        /// </summary>
+        static void Configure(List<Job> jobs, PipelineInput input, OptimizationReport report)
+        {
+            if (input.Links == null) return;
+            var byRenderer = new Dictionary<Renderer, Job>();
+            foreach (var job in jobs)
+                if (job.Report.Skip == SkipReason.None && job.Report.Liveness != null) byRenderer[job.Renderer] = job;
+
+            var next = 1;
+            foreach (var link in input.Links)
+            {
+                var members = new List<(Job job, int key, float full)>();
+                foreach (var m in link ?? Array.Empty<LinkedKey>())
+                {
+                    if (m.Renderer == null || !byRenderer.TryGetValue(m.Renderer, out var job)) continue;
+                    var liveness = job.Report.Liveness;
+                    if (m.Key < 0 || m.Key >= liveness.Length || m.Key >= job.Source.blendShapeCount || liveness[m.Key].State != ShapeKeyState.Live) continue;
+                    if (members.Any(x => x.job == job && x.key == m.Key)) continue;
+                    var frameWeights = ShapeKeyFrames.WeightsOf(job.Source, m.Key);
+                    members.Add((job, m.Key, ShapeKeyClassifier.FullScale(frameWeights[frameWeights.Length - 1])));
+                }
+                if (members.Count < 2) continue;
+                float Held((Job job, int key, float full) m) => m.job.Report.Liveness[m.key].HeldWeight / m.full;
+                if (members.Any(m => Math.Abs(Held(m) - Held(members[0])) > ShapeKeyLinks.Tolerance)) continue;
+
+                var weights = new SortedSet<float>();
+                foreach (var (job, key, full) in members)
+                {
+                    var liveness = job.Report.Liveness[key];
+                    foreach (var w in MeshExtractor.Configurations(ShapeKeyFrames.WeightsOf(job.Source, key), liveness, liveness.HeldWeight))
+                        weights.Add(w / full);
+                }
+                if (weights.Count == 0) continue;
+
+                var linkReport = new LinkReport(members.Select(m => new ShapeKeyRef(m.job.Renderer, m.job.Report.Path, m.key, m.job.Source.GetBlendShapeName(m.key))).ToArray());
+                report.Links.Add(linkReport);
+                foreach (var u in weights)
+                {
+                    var id = next++;
+                    foreach (var group in members.GroupBy(m => m.job))
+                        group.Key.Linked.Add(new LiveFrame(id, group.Select(m => m.key).ToArray(), group.Select(m => u * m.full).ToArray()));
+                    report.Configurations.Add(new ConfigurationReport(id, linkReport, u, members.Select(m => u * m.full).ToArray()));
+                }
+            }
+        }
+
         static void Extract(Job job, PipelineInput input, AvatarBones bones, OptimizationReport report)
         {
             try
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Extraction);
-                ShapeKeyLiveness[] liveness = null;
-                if (job.Renderer is SkinnedMeshRenderer skinned)
-                {
-                    if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out liveness) || liveness == null)
-                        liveness = LivenessSources.Describe(skinned, input.Root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
-                    job.Report.Liveness = liveness;
-                }
-                job.Eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out _);
+                job.Eval = RendererExtraction.Extract(job.Renderer, bones, job.Report.Liveness, job.Linked, Allocator.Persistent, out _);
                 job.Extracted = true;
                 job.Report.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
             }
