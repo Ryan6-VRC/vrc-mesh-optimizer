@@ -33,9 +33,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// enable the rule and it holds any; otherwise as the overload without it.
         /// </summary>
         public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance,
-            Allocator allocator, out ClearanceStats stats)
+            Allocator allocator, out ClearanceStats stats) =>
+            Run(mesh, settings, protection, clearance, default, allocator, out stats);
+
+        /// <summary>
+        /// As the overload without <paramref name="rig"/>; with it, each collapse's error is also measured in bends of the
+        /// rig's bones (see <see cref="BendSettings"/>), so a surface spanning a joint keeps what it needs to follow the
+        /// joint when it bends.
+        /// </summary>
+        public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance,
+            in BendRig rig, Allocator allocator, out ClearanceStats stats)
         {
             using var topology = MeshTopology.Build(mesh, settings.Topology, Allocator.Persistent);
+            using var bends = Bends.Build(mesh, rig, settings.Bend, Allocator.Persistent);
             var field = default(ClearanceField);
             var bank = default(QuadricBank);
             try
@@ -60,8 +70,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                         live.Dispose();
                     }
                 }
-                bank = QuadricBank.Build(mesh, topology, settings, Allocator.Persistent);
-                var sequence = Collapse(mesh, topology, ref bank, settings, protection, clearance, field, allocator, out var collapseStats);
+                bank = QuadricBank.Build(mesh, topology, settings, bends, Allocator.Persistent);
+                var sequence = Collapse(mesh, topology, ref bank, settings, protection, clearance, field, bends, allocator, out var collapseStats);
                 stats = new ClearanceStats { NearVertices = field.NearVertices, Refused = collapseStats.ClearanceRefused };
                 return sequence;
             }
@@ -78,11 +88,20 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             in DecimationSettings settings, in VertexProtection protection, Allocator allocator, out CollapseStats stats) =>
             Collapse(mesh, topology, ref bank, settings, protection, default, default, allocator, out stats);
 
-        /// <summary>The collapse stage, keeping clear of the layers in <paramref name="clearance"/> where <paramref name="field"/>
-        /// has been measured; its triangle clearances are updated in place as collapses replace triangles.</summary>
         internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
             in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
             Allocator allocator, out CollapseStats stats)
+        {
+            using var none = Bends.None(Allocator.Persistent);
+            return Collapse(mesh, topology, ref bank, settings, protection, clearance, field, none, allocator, out stats);
+        }
+
+        /// <summary>The collapse stage, keeping clear of the layers in <paramref name="clearance"/> where <paramref name="field"/>
+        /// has been measured; its triangle clearances are updated in place as collapses replace triangles. <paramref name="bends"/>
+        /// must be the ones the bank was built with.</summary>
+        internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
+            in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
+            in Bends bends, Allocator allocator, out CollapseStats stats)
         {
             var active = field.Triangle.IsCreated;
             using var nodes = new OptionalArray<Core.Gate.TreeNode>(active ? clearance.Surface.Nodes : default);
@@ -147,6 +166,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 VertexClearance = vertexClearance.Array,
                 TriangleClearance = triangleClearance.Array,
                 StarClearance = starClearance.Array,
+                Bends = bends,
                 Settings = settings,
                 Steps = steps,
                 Records = records,

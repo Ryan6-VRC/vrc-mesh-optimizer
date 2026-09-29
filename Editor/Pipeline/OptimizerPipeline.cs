@@ -34,11 +34,40 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
-        public DecimationSettings Decimation = DecimationSettings.Default;
+        public DecimationSettings Decimation = DecimationDefaults.Current;
         /// <summary>Time the caller spent classifying liveness, for the report.</summary>
         public double LivenessMs;
         /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
         public Action<Renderer, PipelineStage> BeforeStage;
+    }
+
+    /// <summary>
+    /// Decimation settings the component does not expose, as every build reads them. A test or a measurement may set these
+    /// before a build to try other values; nothing in the package writes them.
+    /// </summary>
+    internal static class DecimationDefaults
+    {
+        /// <summary><see cref="BendSettings.Degrees"/>; 0 with <see cref="BendTwistDegrees"/> also 0 measures no bends.</summary>
+        public static float BendDegrees = BendSettings.Default.Degrees;
+        /// <summary><see cref="BendSettings.TwistDegrees"/>.</summary>
+        public static float BendTwistDegrees = BendSettings.Default.TwistDegrees;
+        /// <summary><see cref="BendSettings.ClearanceShare"/>; 0 lets bends count against the error level alone.</summary>
+        public static float BendClearanceShare = BendSettings.Default.ClearanceShare;
+        /// <summary><see cref="BendSettings.NearLayersOnly"/>.</summary>
+        public static bool BendNearLayersOnly = BendSettings.Default.NearLayersOnly;
+
+        public static DecimationSettings Current
+        {
+            get
+            {
+                var s = DecimationSettings.Default;
+                s.Bend = new BendSettings
+                {
+                    Degrees = BendDegrees, TwistDegrees = BendTwistDegrees, ClearanceShare = BendClearanceShare, NearLayersOnly = BendNearLayersOnly,
+                };
+                return s;
+            }
+        }
     }
 
     /// <summary>The per-renderer stages, as a failure names them.</summary>
@@ -534,6 +563,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var stage = Stopwatch.StartNew();
             var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, input.Decimation.Clearance.Reach) : default;
             report.Times.Clearance = stage.Elapsed.TotalMilliseconds;
+            var rig = RigOf(bones);
             try
             {
                 stage.Restart();
@@ -546,13 +576,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                         job.Report.ExcludedFromDecimation = true;
                         continue;
                     }
-                    DecimateOne(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, report);
+                    DecimateOne(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, rig, report);
                 }
                 report.Times.Decimation = stage.Elapsed.TotalMilliseconds;
             }
             finally
             {
                 surface.Dispose();
+                rig.Parent.Dispose();
+                rig.Position.Dispose();
+                rig.Axis.Dispose();
+                rig.Right.Dispose();
             }
 
             stage.Restart();
@@ -619,6 +653,46 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>
+        /// The avatar's bones as decimation bends them, in avatar-root space. A bone runs toward the child carrying the
+        /// most of the hierarchy under it, which is the next bone of its chain rather than an accessory hung on it.
+        /// </summary>
+        static BendRig RigOf(AvatarBones bones)
+        {
+            var n = bones.Count;
+            var worldToRoot = RendererExtraction.WorldToRoot(bones.Root);
+            var size = new int[n];
+            for (var b = n - 1; b >= 0; b--)
+            {
+                size[b] += 1;
+                var p = bones.Parents[b];
+                if (p >= 0) size[p] += size[b];
+            }
+            var chain = new int[n];
+            for (var b = 0; b < n; b++) chain[b] = -1;
+            for (var b = 0; b < n; b++)
+            {
+                var p = bones.Parents[b];
+                if (p >= 0 && (chain[p] < 0 || size[b] > size[chain[p]])) chain[p] = b;
+            }
+            var rig = new BendRig
+            {
+                Parent = bones.ParentArray(Allocator.Persistent),
+                Position = new NativeArray<float3>(n, Allocator.Persistent),
+                Axis = new NativeArray<float3>(n, Allocator.Persistent),
+                Right = new NativeArray<float3>(n, Allocator.Persistent),
+            };
+            for (var b = 0; b < n; b++)
+            {
+                var t = bones.Transforms[b];
+                rig.Position[b] = worldToRoot.MultiplyPoint3x4(t.position);
+                rig.Right[b] = math.normalizesafe((float3)worldToRoot.MultiplyVector(t.right));
+            }
+            for (var b = 0; b < n; b++)
+                rig.Axis[b] = chain[b] >= 0 ? math.normalizesafe(rig.Position[chain[b]] - rig.Position[b]) : float3.zero;
+            return rig;
+        }
+
         static int HiddenCount(Job job)
         {
             if (job.Hidden == null) return 0;
@@ -627,7 +701,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return n;
         }
 
-        static void DecimateOne(Job job, PipelineInput input, Protection protection, in ClearanceInput clearance, OptimizationReport report)
+        static void DecimateOne(Job job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, OptimizationReport report)
         {
             var owned = new List<IDisposable>();
             try
@@ -661,7 +735,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 job.Report.LockedVertices = lockedCount;
                 job.Report.FloorTriangles = protection.FloorFor(job.Renderer, reduced.Count);
 
-                job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, clearance, Allocator.Persistent, out var clearanceStats);
+                job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);
                 job.Decimated = true;
                 job.Report.SequenceLength = job.Sequence.Length;
                 job.Report.NearVertices = clearanceStats.NearVertices;

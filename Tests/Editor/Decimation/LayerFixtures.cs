@@ -108,12 +108,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Surface = ClearanceSurface.Build(sources, Core.Decimation.ClearanceSettings.Default.Reach, Allocator.Persistent);
             }
 
+            /// <summary>The skeleton the meshes are weighted to; unassigned, decimation measures no bends.</summary>
+            public BendRig Rig;
+
             public CollapseSequence Decimate(int mesh, bool rule, out ClearanceStats stats, Func<DecimationSettings, DecimationSettings> tweak = null)
             {
                 var s = DecimationSettings.Default;
                 s.Clearance.Enabled = rule;
                 if (tweak != null) s = tweak(s);
-                return Decimator.Run(Meshes[mesh], s, default, new ClearanceInput { Surface = Surface, TriangleLayer = Layers[mesh] }, Allocator.Persistent, out stats);
+                return Decimator.Run(Meshes[mesh], s, default, new ClearanceInput { Surface = Surface, TriangleLayer = Layers[mesh] }, Rig, Allocator.Persistent, out stats);
             }
 
             public void Dispose()
@@ -122,6 +125,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 foreach (var m in Meshes) m.Dispose();
                 foreach (var l in Layers) l.Dispose();
                 foreach (var o in _owned) o.Dispose();
+                if (Rig.Parent.IsCreated) Rig.Parent.Dispose();
+                if (Rig.Position.IsCreated) Rig.Position.Dispose();
+                if (Rig.Axis.IsCreated) Rig.Axis.Dispose();
+                if (Rig.Right.IsCreated) Rig.Right.Dispose();
             }
         }
 

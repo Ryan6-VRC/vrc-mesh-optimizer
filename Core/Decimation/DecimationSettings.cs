@@ -58,9 +58,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>Keeps each layer clear of the others; acts only when the decimator is given the other layers.</summary>
         public ClearanceSettings Clearance;
 
+        /// <summary>Measures each collapse's error in synthetic bends of the rig too; acts only when the decimator is given the rig.</summary>
+        public BendSettings Bend;
+
         public static DecimationSettings Default => new DecimationSettings
         {
             Clearance = ClearanceSettings.Default,
+            Bend = BendSettings.Default,
             Topology = TopologySettings.Default,
             Aggregation = ShapeAggregation.WorstCase,
             AggregationBlend = 0.5f,
@@ -87,7 +91,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// or crosses another layer has no clearance to keep; there a collapse is refused only when it lengthens the line
     /// along which the layers cross.
     ///
-    /// Limits: clearance is measured at rest, so a shape key or pose that moves two layers differently is not checked;
+    /// Limits: clearance is measured at rest; in a bend of the rig a collapse is held only to a share of that gap (see
+    /// <see cref="BendSettings.ClearanceShare"/>), and a shape key that moves two layers differently is not checked;
     /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
     /// pieces meeting at one vertex) are one layer; and the gap is read per source triangle, so where it changes by a
     /// large part of itself across one source triangle, the least of it stands for the whole.
