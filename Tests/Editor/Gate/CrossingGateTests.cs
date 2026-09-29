@@ -73,8 +73,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
             var report = MeasureRig(rig, new[] { Bent });
 
-            Assert.That(report.Configurations, Is.EqualTo(new[] { "rest", "pose 'bent'" }));
-            var rest = Pair(report, "Skin", "Tights", "rest").Change;
+            Assert.That(report.Configurations, Is.EqualTo(new[] { "as it stands", "pose 'bent'" }));
+            var rest = Pair(report, "Skin", "Tights", "as it stands").Change;
             var bent = Pair(report, "Skin", "Tights", "pose 'bent'").Change;
             Assert.That(rest.After.Length, Is.Zero, "straight, the tights' long facets lie where the dropped rings were");
             Assert.That(bent.Before.Length, Is.Zero, "bent, the source tights still clear the skin");
@@ -128,7 +128,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
             var report = MeasureRig(rig, PoseBank.Default);
 
-            Assert.That(report.Configurations, Is.EqualTo(new[] { "rest" }));
+            Assert.That(report.Configurations, Is.EqualTo(new[] { "as it stands" }));
             Assert.That(report.Skipped.Select(s => s.Name), Is.EqualTo(PoseBank.Default.Select(p => $"pose '{p.Name}'")));
         }
 
@@ -157,7 +157,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             var before = State();
 
             var report = MeasureRig(rig, new[] { Bent });
-            Assert.That(report.Configurations, Is.EqualTo(new[] { "rest", "as it stands", "pose 'bent'", "pose 'bent' as it stands" }));
+            Assert.That(report.Configurations, Is.EqualTo(new[] { "as it stands", "live keys at zero", "pose 'bent'", "pose 'bent' with live keys at zero" }));
             Assert.That(State(), Is.EqualTo(before), "after a run");
 
             var e = Assert.Throws<InvalidOperationException>(() => MeasureRig(rig, new GatePose[] { Bent, new ThrowingPose() }));

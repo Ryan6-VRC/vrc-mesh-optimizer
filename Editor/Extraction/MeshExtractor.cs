@@ -31,7 +31,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             new SkinningPose(null, null, rendererToRoot, rendererBoneId);
     }
 
-    /// <summary>Which shape key, at which weight, an entry of <see cref="EvalMesh.Frames"/> is.</summary>
+    /// <summary>Which shape key, moved from the weight it is held at to which weight, an entry of <see cref="EvalMesh.Frames"/> is.</summary>
     internal readonly struct LiveFrame
     {
         public readonly int ShapeKey;
@@ -50,11 +50,11 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         public const float DeltaEpsilonSq = 1e-12f;
 
         /// <summary>
-        /// Builds the evaluation mesh: positions and normals skinned into avatar-root space at the given pose with
-        /// frozen keys applied, influences by avatar-wide bone id, triangles of every triangle submesh, and each
-        /// live key as one frame per configuration it reaches: each authored frame at or under its driven maximum,
-        /// then the key at that maximum. <paramref name="liveness"/> is indexed by shape key; null treats every key
-        /// as dead, as a MeshRenderer, which never applies shape keys, needs.
+        /// Builds the evaluation mesh: positions and normals skinned into avatar-root space at the given pose with every
+        /// key at the weight the renderer holds it at, the state the avatar stands in; influences by avatar-wide bone id;
+        /// triangles of every triangle submesh; and each live key as one frame per other weight it reaches (see
+        /// <see cref="Configurations"/>), every other key held. <paramref name="liveness"/> is indexed by shape key; null
+        /// treats every key as dead, as a MeshRenderer, which never applies shape keys, needs.
         /// </summary>
         public static EvalMesh Extract(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness,
             Allocator allocator, out LiveFrame[] liveFrames)
@@ -71,9 +71,9 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var keyCount = liveness == null ? 0 : Math.Min(liveness.Count, mesh.blendShapeCount);
             for (var k = 0; k < keyCount; k++)
             {
-                if (liveness[k].State != ShapeKeyState.Frozen) continue;
+                if (liveness[k].State == ShapeKeyState.Dead || liveness[k].HeldWeight == 0f) continue;
                 shapes.Load(mesh, k);
-                shapes.AddAt(liveness[k].FrozenWeight, positions, hasNormals ? normals : null);
+                shapes.AddAt(liveness[k].HeldWeight, positions, hasNormals ? normals : null);
             }
             if (!hasNormals) FaceNormals(positions, triangles, normals);
 
@@ -113,9 +113,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             {
                 if (liveness[k].State != ShapeKeyState.Live) continue;
                 shapes.Load(mesh, k);
-                foreach (var weight in Configurations(shapes, liveness[k].DrivenMax * shapes.FullWeight))
+                var held = liveness[k].HeldWeight;
+                foreach (var weight in Configurations(shapes.Weights, liveness[k], held))
                 {
-                    shapes.PositionsAt(weight, scratch);
+                    shapes.PositionsBetween(held, weight, scratch);
                     var start = deltas.Count;
                     for (var v = 0; v < vertexCount; v++)
                     {
@@ -134,16 +135,33 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         }
 
         /// <summary>
-        /// The weights a live key is evaluated at: every authored frame it passes on the way to its driven
-        /// maximum, then the maximum itself. A key driven below zero is evaluated at its minimum only.
+        /// The weights a live key is evaluated at, besides the <paramref name="held"/> weight rest already has it at: zero,
+        /// the lowest and highest weights it is driven to, and every authored frame weight between them, ascending. Its
+        /// range is widened to take in zero and the held weight, since evaluating a weight the key never reaches only keeps
+        /// triangles, and missing one it does reach can open a hole. A renderer blends a key linearly between authored
+        /// frames, so these weights and the held one are every corner of the path the key moves a vertex along.
         /// </summary>
-        internal static List<float> Configurations(ShapeKeyFrames shapes, float drivenWeight)
+        /// <param name="frameWeights">The key's authored frame weights, ascending.</param>
+        /// <param name="key">A live key's liveness, whose driven range is a fraction of the last frame's weight.</param>
+        /// <param name="held">The weight the other configurations depart from, in the renderer's units.</param>
+        internal static List<float> Configurations(IReadOnlyList<float> frameWeights, in ShapeKeyLiveness key, float held)
         {
-            var weights = new List<float>();
-            if (drivenWeight > 0f)
-                for (var f = 0; f < shapes.FrameCount; f++)
-                    if (shapes.FrameWeight(f) < drivenWeight) weights.Add(shapes.FrameWeight(f));
-            weights.Add(drivenWeight);
+            var full = frameWeights[frameWeights.Count - 1];
+            var lo = Math.Min(Math.Min(key.DrivenMin * full, 0f), held);
+            var hi = Math.Max(Math.Max(key.DrivenMax * full, 0f), held);
+            var candidates = new List<float> { lo, 0f, hi };
+            foreach (var w in frameWeights)
+                if (w > lo && w < hi) candidates.Add(w);
+            candidates.Sort();
+
+            var weights = new List<float>(candidates.Count);
+            foreach (var w in candidates)
+            {
+                // A weight within the classifier's hold tolerance of the held weight is the rest state again.
+                if (Math.Abs(w - held) <= ShapeKeyClassifier.HoldTolerance) continue;
+                if (weights.Count > 0 && weights[weights.Count - 1] == w) continue;
+                weights.Add(w);
+            }
             return weights;
         }
 

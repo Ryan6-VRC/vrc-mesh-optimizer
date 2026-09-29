@@ -26,7 +26,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     {
         public Transform Root;
         public AvatarMeshOptimizer Settings;
-        /// <summary>Per skinned renderer, per shape key. A renderer missing from it has every key evaluated as live at full weight.</summary>
+        /// <summary>Per skinned renderer, per shape key. A renderer missing from it has every key evaluated as live, from the weight it holds to full weight.</summary>
         public IReadOnlyDictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Liveness;
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
@@ -236,7 +236,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (job.Renderer is SkinnedMeshRenderer skinned)
                 {
                     if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out liveness) || liveness == null)
-                        liveness = Enumerable.Repeat(ShapeKeyLiveness.Live(1f), job.Source.blendShapeCount).ToArray();
+                        liveness = LivenessSources.Describe(skinned, input.Root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
                     job.Report.Liveness = liveness;
                 }
                 job.Eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out _);

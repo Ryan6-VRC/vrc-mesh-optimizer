@@ -11,8 +11,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 {
     /// <summary>
     /// One state of the whole avatar to measure crossing in: an optional pose, and the weights each renderer holds. A
-    /// renderer <see cref="Weights"/> does not name holds its rest weights. The crossing gate builds rest, as it stands and
-    /// the poses itself; a caller passes any others, such as avatar-wide shape-key states.
+    /// renderer <see cref="Weights"/> does not name holds the weights it stands at. The crossing gate builds as it stands,
+    /// live keys at zero and the poses itself; a caller passes any others, such as avatar-wide shape-key states.
     /// </summary>
     internal sealed class AvatarConfiguration
     {
@@ -101,8 +101,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     internal static class CrossingGate
     {
         /// <remarks>
-        /// Configurations, in order: rest; as it stands, when some renderer holds a live key off zero; each pose at rest
-        /// weights, and again as it stands; then <paramref name="configurations"/>. A pair is measured when the two
+        /// Configurations, in order: as it stands; live keys at zero, when some renderer holds a live key off zero; each pose
+        /// as it stands, and again with live keys at zero; then <paramref name="configurations"/>. A pair is measured when the two
         /// renderers' bounds overlap before or after, and every renderer is measured against itself. The avatar is left
         /// as it was found, every blendshape weight, every transform and every renderer's mesh, when this throws too.
         /// </remarks>
@@ -115,25 +115,24 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var repeated = inputs.GroupBy(i => i.Renderer).FirstOrDefault(g => g.Count() > 1);
             if (repeated != null) throw new ArgumentException($"'{repeated.Key.name}' is passed {repeated.Count()} times; pass each renderer once", nameof(inputs));
 
-            var rest = inputs.Select(i => i.RestWeights()).ToArray();
-            var standing = false;
-            var held = inputs.Select(i =>
+            var liveOffZero = false;
+            var standing = inputs.Select(i =>
             {
-                var w = i.HeldWeights(out var s);
-                standing |= s;
+                var w = i.StandingWeights(out var s);
+                liveOffZero |= s;
                 return w;
             }).ToArray();
-            var heldMap = new Dictionary<Renderer, float[]>();
-            for (var i = 0; i < inputs.Count; i++) heldMap[inputs[i].Renderer] = held[i];
+            var zeroMap = new Dictionary<Renderer, float[]>();
+            foreach (var input in inputs) zeroMap[input.Renderer] = input.LiveKeysAtZero();
 
-            var planned = new List<AvatarConfiguration> { new AvatarConfiguration("rest") };
-            if (standing) planned.Add(new AvatarConfiguration("as it stands", null, heldMap));
+            var planned = new List<AvatarConfiguration> { new AvatarConfiguration("as it stands") };
+            if (liveOffZero) planned.Add(new AvatarConfiguration("live keys at zero", null, zeroMap));
             var skipped = new List<SkippedConfiguration>();
             var usable = GatePoses.Usable(avatarRoot, poses, skipped, out var humanoid);
             foreach (var pose in usable)
             {
                 planned.Add(new AvatarConfiguration($"pose '{pose.Name}'", pose));
-                if (standing) planned.Add(new AvatarConfiguration($"pose '{pose.Name}' as it stands", pose, heldMap));
+                if (liveOffZero) planned.Add(new AvatarConfiguration($"pose '{pose.Name}' with live keys at zero", pose, zeroMap));
             }
             foreach (var extra in configurations ?? Array.Empty<AvatarConfiguration>())
             {
@@ -175,7 +174,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     configuration.Pose?.Apply(avatarRoot, handler);
                     for (var i = 0; i < inputs.Count; i++)
                     {
-                        var weights = configuration.Weights.TryGetValue(inputs[i].Renderer, out var w) ? w : rest[i];
+                        var weights = configuration.Weights.TryGetValue(inputs[i].Renderer, out var w) ? w : standing[i];
                         surfaces.Bake(i, inputs[i], weights, scratch, avatarRoot);
                     }
                     for (var i = 0; i < inputs.Count; i++)
