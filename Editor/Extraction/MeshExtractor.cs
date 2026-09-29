@@ -193,9 +193,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             for (var b = 0; b < slots; b++) skin[b] = pose.BoneToRoot[b] * bindposes[b];
             float4x4 rigid = pose.RendererToRoot;
 
-            var outPositions = new NativeArray<float3>(vertexCount, allocator);
-            var outNormals = new NativeArray<float3>(vertexCount, allocator);
-            var weightStart = new NativeArray<int>(vertexCount + 1, allocator);
+            // Each array goes into the result as it is made, so the caller's cleanup reaches it if anything below throws.
+            var outPositions = result.Positions = new NativeArray<float3>(vertexCount, allocator);
+            var outNormals = result.Normals = new NativeArray<float3>(vertexCount, allocator);
+            var weightStart = result.WeightStart = new NativeArray<int>(vertexCount + 1, allocator);
             var influences = new List<BoneInfluence>(vertexCount * 2);
             var linear = new float3x3[vertexCount];
             var merged = new List<BoneInfluence>(8);
@@ -238,9 +239,6 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             }
             weightStart[vertexCount] = influences.Count;
 
-            result.Positions = outPositions;
-            result.Normals = outNormals;
-            result.WeightStart = weightStart;
             result.Weights = new NativeArray<BoneInfluence>(influences.ToArray(), allocator);
             return linear;
         }

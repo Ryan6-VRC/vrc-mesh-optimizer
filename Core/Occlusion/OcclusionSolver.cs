@@ -253,6 +253,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         Width = map.Width, Height = map.Height, Offset = off,
                         ThresholdByte = (int)math.ceil(math.saturate(map.Threshold) * 255f),
                         ScaleOffset = map.ScaleOffset,
+                        WrapU = map.WrapU,
+                        WrapV = map.WrapV,
                     };
                     off += map.Alpha.Length;
                 }

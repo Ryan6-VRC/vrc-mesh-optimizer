@@ -31,9 +31,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         Front = 2,
     }
 
+    /// <summary>How a texture coordinate outside [0, 1) reaches a texel, as Unity's <c>TextureWrapMode</c> does.</summary>
+    public enum AlphaWrap : byte
+    {
+        Repeat = 0,
+        Clamp = 1,
+        Mirror = 2,
+        MirrorOnce = 3,
+    }
+
     /// <summary>
     /// An occluder material's alpha, sampled at a hit's interpolated UV0. Texels run row by row from the
-    /// bottom row, the order <c>Texture2D.GetPixels32</c> returns, so UV (0, 0) is texel 0. UVs wrap.
+    /// bottom row, the order <c>Texture2D.GetPixels32</c> returns, so UV (0, 0) is texel 0. UVs outside the
+    /// square reach a texel by <see cref="WrapU"/> and <see cref="WrapV"/>.
     /// A hit blocks only when all four texels of its bilinear footprint reach <see cref="Threshold"/>,
     /// so an edge between opaque and see-through reads as see-through.
     /// </summary>
@@ -45,6 +55,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public readonly float Threshold;
         /// <summary>The material's tiling and offset: the map is sampled at uv * xy + zw.</summary>
         public float4 ScaleOffset = new float4(1, 1, 0, 0);
+        public AlphaWrap WrapU = AlphaWrap.Repeat;
+        public AlphaWrap WrapV = AlphaWrap.Repeat;
         internal readonly byte[] Alpha;
 
         /// <summary>Alpha as bytes, 0 to 255.</summary>

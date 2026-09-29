@@ -15,6 +15,8 @@ Projects this work studies and builds on, credited by name:
 
 The decimation cost rests on published work: Garland & Heckbert 1997 (quadric error metrics), Hoppe 1999 (attribute quadrics, here for UV0), Mohr & Gleicher 2003 (one quadric per deformed configuration, here per live shape frame), and Knodt 2025 (a skin-weight-gradient edge term).
 
+The visual-error gate's geometric channel, a two-sided distance between the source and optimized surfaces sampled over their area, follows Metro (Cignoni, Rocchini & Scopigno 1998).
+
 Anything copied rather than re-derived carries its license text in `NOTICE`.
 
 ## License

@@ -3,6 +3,7 @@ using System.Linq;
 using nadena.dev.ndmf;
 using nadena.dev.ndmf.animator;
 using nadena.dev.ndmf.runtime;
+using Ryan6Vrc.MeshOptimizer.Animators;
 using UnityEditor;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
@@ -53,49 +54,17 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             return new RendererShapeKeys(PathOf(root, renderer.transform), keys);
         }
 
-        /// <summary>
-        /// Every shape-key curve in every controller NDMF holds: the descriptor's playable layers and every
-        /// Animator's controller. A descriptor layer's paths are virtual paths from the avatar root; a child
-        /// Animator's are relative to that Animator.
-        /// </summary>
-        public static IEnumerable<ShapeKeyBinding> FromAnimatorServices(AnimatorServicesContext services, Transform root)
-        {
-            var remapper = services.ObjectPathRemapper;
-            foreach (var pair in services.ControllerContext.Controllers)
-            {
-                if (pair.Value == null) continue;
-                var owner = pair.Key is Animator animator && animator != null ? animator.transform : root;
-                var clips = pair.Value.AllReachableNodes().OfType<VirtualClip>().Distinct();
-                foreach (var clip in clips)
-                foreach (var binding in clip.GetFloatCurveBindings())
-                {
-                    if (!IsShapeKey(binding)) continue;
-                    var target = owner == root
-                        ? (remapper.GetObjectForPath(binding.path)?.transform ?? Resolve(root, binding.path))
-                        : Resolve(owner, binding.path);
-                    if (target == null) continue;
-                    var curve = clip.GetFloatCurve(binding);
-                    if (curve == null) continue;
-                    yield return new ShapeKeyBinding(PathOf(root, target), binding.propertyName.Substring(BlendShapePrefix.Length),
-                        ShapeKeyClassifier.CurveValues(curve));
-                }
-            }
-        }
+        /// <summary>Every shape-key curve in every controller NDMF holds; see <see cref="AnimatedCurves.FromAnimatorServices"/>.</summary>
+        public static IEnumerable<ShapeKeyBinding> FromAnimatorServices(AnimatorServicesContext services, Transform root) =>
+            AnimatedCurves.FromAnimatorServices(services, root, IsShapeKey).Select(c => Binding(root, c));
 
-        /// <summary>Legacy Animation components, which NDMF does not virtualize. Paths are relative to the component.</summary>
-        public static IEnumerable<ShapeKeyBinding> FromLegacyAnimations(Transform root)
-        {
-            foreach (var animation in root.GetComponentsInChildren<Animation>(true))
-            foreach (var clip in AnimationUtility.GetAnimationClips(animation.gameObject).Where(c => c != null).Distinct())
-            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
-            {
-                if (!IsShapeKey(binding)) continue;
-                var target = Resolve(animation.transform, binding.path);
-                if (target == null) continue;
-                yield return new ShapeKeyBinding(PathOf(root, target), binding.propertyName.Substring(BlendShapePrefix.Length),
-                    ShapeKeyClassifier.CurveValues(AnimationUtility.GetEditorCurve(clip, binding)));
-            }
-        }
+        /// <summary>Shape-key curves in legacy Animation components, which NDMF does not virtualize.</summary>
+        public static IEnumerable<ShapeKeyBinding> FromLegacyAnimations(Transform root) =>
+            AnimatedCurves.FromLegacyAnimations(root, IsShapeKey).Select(c => Binding(root, c));
+
+        static ShapeKeyBinding Binding(Transform root, AnimatedCurve c) =>
+            new ShapeKeyBinding(PathOf(root, c.Target), c.Binding.propertyName.Substring(BlendShapePrefix.Length),
+                ShapeKeyClassifier.CurveValues(c.Curve));
 
         /// <summary>The descriptor's visemes, jaw flap and eyelids, which VRChat drives without a clip.</summary>
         public static IEnumerable<DrivenKey> FromDescriptor(Transform root)
@@ -142,9 +111,6 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 if (MmdMorphs.Names.Contains(name)) yield return new DrivenKey("Body", name);
             }
         }
-
-        /// <summary>A path relative to a component's transform; the empty path is that transform itself.</summary>
-        static Transform Resolve(Transform owner, string path) => path.Length == 0 ? owner : owner.Find(path);
 
         static bool IsShapeKey(EditorCurveBinding binding) =>
             binding.type == typeof(SkinnedMeshRenderer) && binding.propertyName.StartsWith(BlendShapePrefix);
