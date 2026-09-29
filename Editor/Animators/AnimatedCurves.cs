@@ -7,18 +7,21 @@ using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Animators
 {
-    /// <summary>One float curve in a clip, with the Transform its binding path resolves to.</summary>
+    /// <summary>One float curve in a clip, with the Transform its binding path resolves to and the clip it is in.</summary>
     internal readonly struct AnimatedCurve
     {
         public readonly Transform Target;
         public readonly EditorCurveBinding Binding;
         public readonly AnimationCurve Curve;
+        /// <summary>The clip, by identity: NDMF's <see cref="VirtualClip"/> for a controller, the <see cref="AnimationClip"/> for a legacy Animation.</summary>
+        public readonly object Clip;
 
-        public AnimatedCurve(Transform target, EditorCurveBinding binding, AnimationCurve curve)
+        public AnimatedCurve(Transform target, EditorCurveBinding binding, AnimationCurve curve, object clip)
         {
             Target = target;
             Binding = binding;
             Curve = curve;
+            Clip = clip;
         }
     }
 
@@ -53,7 +56,7 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
                     if (target == null) continue;
                     var curve = clip.GetFloatCurve(binding);
                     if (curve == null) continue;
-                    yield return new AnimatedCurve(target, binding, curve);
+                    yield return new AnimatedCurve(target, binding, curve, clip);
                 }
             }
         }
@@ -70,7 +73,7 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
                 if (target == null) continue;
                 var curve = AnimationUtility.GetEditorCurve(clip, binding);
                 if (curve == null) continue;
-                yield return new AnimatedCurve(target, binding, curve);
+                yield return new AnimatedCurve(target, binding, curve, clip);
             }
         }
 
