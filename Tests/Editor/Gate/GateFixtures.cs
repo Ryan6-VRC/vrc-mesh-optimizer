@@ -1,12 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Writing;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 {
+    /// <summary>A pose that bends the joint at Armature/Lower and then fails, for proving a channel leaves the avatar as it found it.</summary>
+    internal sealed class ThrowingPose : GatePose
+    {
+        public ThrowingPose() : base("throws") { }
+        internal override bool NeedsHumanoid => false;
+
+        internal override void Apply(Transform root, HumanPoseHandler humanoid)
+        {
+            root.Find("Armature/Lower").localRotation *= Quaternion.Euler(30, 0, 0);
+            throw new InvalidOperationException("forced failure mid-run");
+        }
+    }
+
     /// <summary>Synthetic avatars for the gate: hierarchies, meshes and skins built in code, destroyed on dispose.</summary>
     internal sealed class GateScene : IDisposable
     {
@@ -207,31 +221,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
                 Bone(scene, Side(HumanBodyBones.LeftToes, HumanBodyBones.RightToes), foot, new Vector3(0, -0.05f, 0.12f));
             }
 
-            var description = new HumanDescription
-            {
-                human = Bones.Select(kv => new HumanBone
-                {
-                    humanName = HumanTrait.BoneName[(int)kv.Key],
-                    boneName = kv.Value.name,
-                    limit = new HumanLimit { useDefaultValues = true },
-                }).ToArray(),
-                skeleton = Root.GetComponentsInChildren<Transform>(true).Select(t => new SkeletonBone
-                {
-                    name = t.name,
-                    position = t.localPosition,
-                    rotation = t.localRotation,
-                    scale = t.localScale,
-                }).ToArray(),
-                upperArmTwist = 0.5f,
-                lowerArmTwist = 0.5f,
-                upperLegTwist = 0.5f,
-                lowerLegTwist = 0.5f,
-                armStretch = 0.05f,
-                legStretch = 0.05f,
-                feetSpacing = 0f,
-                hasTranslationDoF = false,
-            };
-            var avatar = scene.Track(AvatarBuilder.BuildHumanAvatar(Root.gameObject, description));
+            var avatar = scene.Track(Integration.Humanoid.BuildAvatar(Root.gameObject, Bones));
             avatar.name = "synthetic-humanoid";
             Root.gameObject.AddComponent<Animator>().avatar = avatar;
         }

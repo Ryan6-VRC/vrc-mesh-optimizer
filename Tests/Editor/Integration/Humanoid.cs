@@ -44,15 +44,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 t.localPosition = local;
                 Bones[bone] = t;
             }
+            var avatar = a.Made(BuildAvatar(a.Root, Bones));
+            Assert.That(avatar.isValid && avatar.isHuman, Is.True, "the fixture skeleton must build a humanoid avatar");
+            if (!a.Root.TryGetComponent<Animator>(out var animator)) animator = a.Root.AddComponent<Animator>();
+            animator.avatar = avatar;
+        }
+
+        /// <summary>An Avatar mapping <paramref name="bones"/> under <paramref name="root"/> as they stand, with default limits.</summary>
+        internal static Avatar BuildAvatar(GameObject root, IReadOnlyDictionary<HumanBodyBones, Transform> bones)
+        {
             var description = new HumanDescription
             {
-                human = Bones.Select(kv => new HumanBone
+                human = bones.Select(kv => new HumanBone
                 {
                     humanName = HumanTrait.BoneName[(int)kv.Key],
                     boneName = kv.Value.name,
                     limit = new HumanLimit { useDefaultValues = true },
                 }).ToArray(),
-                skeleton = a.Root.GetComponentsInChildren<Transform>(true).Select(t => new SkeletonBone
+                skeleton = root.GetComponentsInChildren<Transform>(true).Select(t => new SkeletonBone
                 {
                     name = t.name,
                     position = t.localPosition,
@@ -62,10 +71,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 upperArmTwist = 0.5f, lowerArmTwist = 0.5f, upperLegTwist = 0.5f, lowerLegTwist = 0.5f,
                 armStretch = 0.05f, legStretch = 0.05f, feetSpacing = 0f,
             };
-            var avatar = a.Made(AvatarBuilder.BuildHumanAvatar(a.Root, description));
-            Assert.That(avatar.isValid && avatar.isHuman, Is.True, "the fixture skeleton must build a humanoid avatar");
-            if (!a.Root.TryGetComponent<Animator>(out var animator)) animator = a.Root.AddComponent<Animator>();
-            animator.avatar = avatar;
+            return AvatarBuilder.BuildHumanAvatar(root, description);
         }
     }
 }

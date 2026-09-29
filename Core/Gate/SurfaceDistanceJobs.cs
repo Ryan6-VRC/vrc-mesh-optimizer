@@ -1,3 +1,4 @@
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -12,12 +13,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         [ReadOnly] public NativeArray<float3> Positions;
         [ReadOnly] public NativeArray<int3> Triangles;
         [ReadOnly] public NativeArray<bool> Excluded;
-        public bool HasExcluded;
         public NativeArray<float3> Normals;
         public NativeArray<TriangleKey> Keys;
         public NativeParallelHashMap<TriangleKey, int> Lookup;
+        /// <summary>Out: the taking-part prims first, PrimCount of them, in the tree's leaf order.</summary>
         public NativeArray<TreePrim> Prims;
         public NativeReference<int> PrimCount;
+        public NativeList<TreeNode> Nodes;
 
         public void Execute()
         {
@@ -27,7 +29,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 var tri = Triangles[t];
                 float3 a = Positions[tri.x], b = Positions[tri.y], c = Positions[tri.z];
                 Keys[t] = TriangleKey.Of(a, b, c);
-                if (HasExcluded && Excluded[t]) continue;
+                if (Excluded[t]) continue;
                 var n = math.normalizesafe(math.cross(b - a, c - a));
                 Normals[t] = n;
                 // A repeated triangle keeps its first index.
@@ -35,16 +37,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 Prims[count++] = new TreePrim { A = a, B = b, C = c, N = n, Triangle = t };
             }
             PrimCount.Value = count;
+            TriangleTree.Build(Prims.GetSubArray(0, count), Nodes);
         }
-    }
-
-    [BurstCompile(CompileSynchronously = true)]
-    internal struct TreeJob : IJob
-    {
-        public NativeArray<TreePrim> Prims;
-        public NativeList<TreeNode> Nodes;
-
-        public void Execute() => TriangleTree.Build(Prims, Nodes);
     }
 
     /// <summary>Per sampled triangle: whether it takes part, its lattice, its area, and its twin on the other side.</summary>

@@ -1,8 +1,8 @@
 using Unity.Mathematics;
 
-namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
+namespace Ryan6Vrc.MeshOptimizer.Core.Geometry
 {
-    /// <summary>Exact distances between triangles and segments, for clearance between surfaces.</summary>
+    /// <summary>Exact distances between triangles, segments and points, for clearance between surfaces and the gate's measures.</summary>
     internal static class TriangleDistance
     {
         /// <summary>
@@ -31,7 +31,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         /// <summary>
         /// Metres a triangle must reach past the other's plane, on both sides, for the two to cross, and the shortest
         /// crossing counted: a triangle sewn to another along an edge, resting an edge or a corner on it, or lying in its
-        /// plane touches it and reaches past by rounding only. The value and the rule are the gate's crossing measure's
+        /// plane touches it and reaches past by rounding only. The gate's crossing measure reads its default from here
         /// (<c>CrossingSettings.Default.Touch</c>), so the rule and the gate that judges it agree on what crosses.
         /// </summary>
         public const float Touch = 1e-5f;
