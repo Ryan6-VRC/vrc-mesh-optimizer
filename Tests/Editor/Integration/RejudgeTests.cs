@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
@@ -16,10 +17,11 @@ using static Ryan6Vrc.MeshOptimizer.Tests.Integration.AvatarFixture;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 {
-    // A body under an always-on garment on the same chest bone, 5 mm apart. Coarsened far enough, the garment's faces cut
-    // in through the body they covered at the source, and a triangle occlusion removed there shows through; judged again
-    // against the garment as written, it must be written back. The body carries a key that swells its lower half, so the
-    // verdict holds in a configuration as well as at rest.
+    // A body under an always-on garment on the same chest bone, 5 mm apart. Coarsened far enough, the garment gives way in
+    // two ways. Where its rim draws back, a triangle occlusion removed there is no longer covered and shows; judged again
+    // against the garment as written, it must be written back. Where its faces sink past the body, the cover moved but did
+    // not go: a viewer still sees the garment, so the triangle stays removed. The body carries a key that swells its lower
+    // half, so each verdict holds in a configuration as well as at rest.
     public class RejudgeTests
     {
         AvatarFixture a;
@@ -74,19 +76,31 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         }
 
         /// <summary>
+        /// The body and garment as written, to the checker: with <paramref name="setback"/>, by the rule the re-judge asks,
+        /// under which the garment covers the body from as far behind as its cut's error; without, by the rule itself.
+        /// </summary>
+        CoverChecker.Report CheckWritten(OptimizationReport report, bool setback = false)
+        {
+            var check = CheckWritten(report, new Renderer[] { body, garment }, setback ? new[] { 1UL << 1, 0UL } : null, out var meshes);
+            Assert.That(meshes[0].Mesh.Frames.Length, Is.GreaterThan(0), "the body's key is a configuration the checker judges");
+            return check;
+        }
+
+        /// <summary>
         /// The avatar as written, handed to the independent checker: each renderer's evaluation mesh at its source, with the
         /// triangles the pass wrote, named by source vertex, beside every triangle the report says it removed, which are the
-        /// ones the checker owes cover.
+        /// ones the checker owes cover. With <paramref name="behind"/>, per renderer the ones whose faces cover it from
+        /// behind, each always-on renderer does so to its cut's error.
         /// </summary>
-        CoverChecker.Report CheckWritten(OptimizationReport report)
+        CoverChecker.Report CheckWritten(OptimizationReport report, Renderer[] renderers, ulong[] behind, out List<OcclusionMesh> meshes)
         {
             var bones = new AvatarBones(a.Root.transform);
             var owned = new List<IDisposable>();
-            var meshes = new List<OcclusionMesh>();
+            meshes = new List<OcclusionMesh>();
             var results = new List<OcclusionResult>();
             try
             {
-                foreach (var r in new Renderer[] { body, garment })
+                foreach (var r in renderers)
                 {
                     var rr = Of(report, r);
                     var skinned = (SkinnedMeshRenderer)r;
@@ -132,8 +146,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                     owned.Add(result);
                     results.Add(result);
                 }
-                Assert.That(meshes[0].Mesh.Frames.Length, Is.GreaterThan(0), "the body's key is a configuration the checker judges");
-                return CoverChecker.Check(meshes, bones.Parents.ToArray(), null, OcclusionSettings.Default, results.ToArray(), maxViolations: 1000);
+                var setback = behind != null ? renderers.Select(r => Of(report, r).Occludes ? Of(report, r).Error : 0f).ToArray() : null;
+                return CoverChecker.Check(meshes, bones.Parents.ToArray(), null, OcclusionSettings.Default, results.ToArray(), maxViolations: 1000, setback, behind);
             }
             finally
             {
@@ -150,20 +164,20 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return drawn;
         }
 
-        // At a 6 mm tolerance the bowl's faces sag past the body. Switched off, the checker finds removed triangles the
-        // written garment no longer covers; on, they are written back as authored and every triangle still removed is
-        // covered, at rest and with the body's key applied.
+        // At a 6 mm tolerance the bowl's rim draws back. Switched off, the checker finds removed triangles the written
+        // garment no longer covers; on, they are written back as authored and every triangle still removed is covered, at
+        // rest and with the body's key applied, by the garment where it stands or where its cut moved it past them.
         [Test]
         public void ACoarsenedGarment_GivesBackWhatItNoLongerCovers_AndWhatStaysRemovedIsCovered()
         {
             Build(garmentFrom: 60f);
 
             var off = Run(TargetKind.Tolerance, 6f, rejudge: false);
-            Assert.That(CheckWritten(off).Ok, Is.False, "the coarsened garment uncovers some of what occlusion removed");
+            Assert.That(CheckWritten(off, setback: true).Ok, Is.False, "the coarsened garment uncovers some of what occlusion removed");
             Assert.That(off.RejudgePasses, Is.Zero);
 
             var on = Run(TargetKind.Tolerance, 6f, rejudge: true);
-            var check = CheckWritten(on);
+            var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
             Assert.That(check.HiddenChecked, Is.GreaterThan(0), "some triangles stay removed");
 
@@ -185,6 +199,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 Assert.That(drawn.Contains(authored), Is.EqualTo(!r.HiddenSourceTriangles[t]), $"triangle {t} is drawn, at its authored corners, exactly when it is not reported removed");
             }
             StringAssert.Contains($"{r.HiddenRestored} hidden triangles kept because decimation took their cover", on.Summary());
+        }
+
+        // A closed garment cut at 6 mm sinks past body it hid. Judged by the rule from where each triangle stood, the
+        // triangles it sank past are uncovered; the cover moved, it did not go, so they stay removed, and the triangles
+        // written back are fewer than those the rule alone would write back.
+        [Test]
+        public void ACoverTheCutMovedPastATriangle_StillCoversIt()
+        {
+            Build(garmentFrom: 0f);
+
+            var off = Run(TargetKind.Tolerance, 6f, rejudge: false);
+            var on = Run(TargetKind.Tolerance, 6f, rejudge: true);
+
+            var moved = CheckWritten(off);
+            Assert.That(moved.Ok, Is.False, "the cut garment sank past body it hid");
+            Assert.That(CheckWritten(on).Ok, Is.False, "and what it sank past stays removed");
+            var check = CheckWritten(on, setback: true);
+            Assert.That(check.Ok, Is.True, check.ToString());
+            Assert.That(on.HiddenRestored, Is.LessThan(moved.Violations.Select(v => v.Split(',')[0]).Distinct().Count()),
+                "fewer triangles come back than the rule, judging from where each stood, finds uncovered");
         }
 
         // A closed garment cut at 2 mm still covers everything it covered: the judge runs, restores nothing, and every
@@ -211,6 +245,53 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             }
         }
 
+        // Tights under the rim of an always-on boot, always-on skin half a millimetre under the tights. The tights are not
+        // always on, so they hide none of the skin; the boot rides a bone four steps from the skin's, so it hides none of
+        // the skin either; the tights ride both, so the boot hides them. Cut at 6 mm, the boot's rim draws back, and the
+        // skin, cut too, may cover from as far behind as the boot may: the tights the rim uncovers must come back, though
+        // the skin lies within that setback under them, where a setback alone reads it as their cover and a viewer would
+        // see it through the hole. The clearance rule is off, since it holds this rim where it stands; the rule under
+        // test does not read it.
+        [Test]
+        public void ALayerUnderATriangle_ThatNeverCoveredIt_DoesNotStandInForTheCoverItLost()
+        {
+            a = new AvatarFixture();
+            chest = a.Bone("Armature/Hips/Chest");
+            var foot = a.Bone("Armature/Hips/Leg/Knee/Foot");
+            var skin = a.Skinned("Skin", Welded(a.Sphere(0.1f, 16, 32, name: "skin")), new[] { foot });
+            var tightsMesh = Welded(a.Sphere(0.1005f, 16, 32, name: "tights"));
+            tightsMesh.boneWeights = tightsMesh.vertices.Select(_ => new BoneWeight { boneIndex0 = 0, weight0 = 0.5f, boneIndex1 = 1, weight1 = 0.5f }).ToArray();
+            var tights = a.Skinned("Tights", tightsMesh, new[] { chest, foot });
+            var boot = a.Skinned("Boot", Welded(a.Sphere(0.105f, 24, 48, 60f, 180f, name: "boot")), new[] { chest });
+            var c = a.Optimizer(decimate: true);
+            c.alwaysOn.Add(boot);
+            c.alwaysOn.Add(skin);
+            c.renderers.Add(new RendererSettings { renderer = tights, excludeFromDecimation = true });
+            var renderers = new Renderer[] { skin, tights, boot };
+            var bootOnly = new[] { 0UL, 1UL << 2, 0UL };
+            var anyMesh = new[] { ulong.MaxValue, ulong.MaxValue, ulong.MaxValue };
+            var decimation = DecimationSettings.Default;
+            decimation.Clearance.Enabled = false;
+
+            OptimizationReport off, on;
+            using (BuildSettings.Override(decimation))
+            {
+                off = Run(TargetKind.Tolerance, 6f, rejudge: false);
+                on = Run(TargetKind.Tolerance, 6f, rejudge: true);
+            }
+
+            Assert.That(Of(off, skin).HiddenRemoved, Is.Zero, "the boot hides none of the skin");
+            Assert.That(Of(off, tights).HiddenRemoved, Is.GreaterThan(0), "and hides the tights");
+            Assert.That(Of(on, skin).Error, Is.GreaterThan(0.0005f), "the skin's setback reaches past the half millimetre");
+            var lost = CheckWritten(off, renderers, bootOnly, out _).Violations.Count;
+            Assert.That(lost, Is.GreaterThan(CheckWritten(off, renderers, anyMesh, out _).Violations.Count),
+                "the cut boot uncovers tights that only the skin under them covers from behind");
+            Assert.That(Of(on, tights).HiddenRestored, Is.EqualTo(lost), "every one of them comes back");
+            var check = CheckWritten(on, renderers, bootOnly, out _);
+            Assert.That(check.Ok, Is.True, check.ToString());
+            Assert.That(check.HiddenChecked, Is.GreaterThan(0), "some of the tights stay removed");
+        }
+
         // A finer body, decimated too, at a budget of 800: the first cut uncovers triangles, the budget pays for them by
         // cutting deeper, and what the deeper cut uncovers is judged again, until the written avatar is inside the budget
         // and covered.
@@ -220,7 +301,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Build(garmentFrom: 60f, rings: 32, bodyDecimated: true);
 
             var off = Run(TargetKind.TriangleBudget, 800, rejudge: false);
-            Assert.That(CheckWritten(off).Ok, Is.False, "the cut the budget alone chooses uncovers some of what occlusion removed");
+            Assert.That(CheckWritten(off, setback: true).Ok, Is.False, "the cut the budget alone chooses uncovers some of what occlusion removed");
 
             var on = Run(TargetKind.TriangleBudget, 800, rejudge: true);
 
@@ -228,9 +309,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(on.RejudgePasses, Is.GreaterThan(1), "the restored triangles were paid for by a deeper cut");
             Assert.That(on.TargetMet, Is.True);
             Assert.That(on.TrianglesAfter, Is.LessThanOrEqualTo(800));
-            Assert.That(Of(on, garment).TrianglesAfter, Is.LessThan(Of(off, garment).TrianglesAfter));
+            Assert.That(on.TrianglesAfter - on.HiddenRestored, Is.LessThan(off.TrianglesAfter), "the cut keeps fewer to pay for them");
             Assert.That(on.Diagnostics.Any(d => d.Key == DiagnosticKeys.BudgetNotMet), Is.False);
-            var check = CheckWritten(on);
+            var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 
@@ -246,7 +327,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(on.TargetMet, Is.False);
             Assert.That(on.RejudgePasses, Is.GreaterThan(1));
             Assert.That(on.Diagnostics.Count(d => d.Key == DiagnosticKeys.BudgetNotMet), Is.EqualTo(1));
-            var check = CheckWritten(on);
+            var check = CheckWritten(on, setback: true);
+            Assert.That(check.Ok, Is.True, check.ToString());
+        }
+
+        // At 635 the first cut lands a triangle under what it was asked for and restores two, one over. Asking the next
+        // pass for the overage less than before hands that slack back and cuts the same again; asking it for this cut less
+        // the overage moves it, and the budget is met.
+        [Test]
+        public void ABudgetTheCutLandsUnder_IsNotHandedBackItsSlack_AndIsMet()
+        {
+            Build(garmentFrom: 60f, rings: 32, bodyDecimated: true);
+
+            var on = Run(TargetKind.TriangleBudget, 635, rejudge: true);
+
+            Assert.That(on.HiddenRestored, Is.GreaterThan(0));
+            Assert.That(on.TargetMet, Is.True, $"{on.TrianglesAfter} after {on.RejudgePasses} passes");
+            Assert.That(on.TrianglesAfter, Is.LessThanOrEqualTo(635));
+            var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 

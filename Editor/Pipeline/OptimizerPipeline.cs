@@ -244,8 +244,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// How many times at most a budget is allocated, kept and judged again to pay for the triangles re-judging restores.
-        /// Each pass after the first withholds from the allocation what the pass before went over. When none meets the budget,
-        /// the pass that came nearest is written and the budget reported not met.
+        /// Each pass after the first withholds from the allocation what the pass before restored, and at least what it withheld
+        /// plus what it went over. When none meets the budget, the pass that came nearest is written and the budget reported
+        /// not met.
         /// </summary>
         const int BudgetPasses = 4;
 
@@ -398,7 +399,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     // that came nearest.
                     if (best == null || after <= best.TrianglesAfter(prepared.Renderers)) best = pass;
                     if (report.RejudgePasses == BudgetPasses) return best;
-                    var deeper = CutAt(prepared, pass.Reserve + over, report);
+                    // The allocation can land under what it was given, and withholding only the overage from that would
+                    // hand the slack back: the next cut would be this one again. So the next cut is asked for this cut
+                    // less the overage, which is the budget less what this pass restored, and never less than before.
+                    var deeper = CutAt(prepared, Math.Max(pass.Reserve + over, pass.RestoredCount), report);
                     if (!Rejudges(prepared, deeper)) return deeper;
                     pass = deeper;
                 }
@@ -422,10 +426,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// bone table and configurations, with the triangles the always-on renderers are written with as the only blockers.
         /// A renderer the pass leaves as it was draws its whole source and removes nothing. What is no longer hidden goes
         /// into <see cref="Pass.Restored"/>.
+        ///
+        /// A removed triangle comes back when its cover is gone, not when the cut moved its cover past it. So each cut
+        /// always-on renderer blocks from as far behind a sample as its cut's recorded error (<see cref="OcclusionMesh.Setback"/>),
+        /// but only a sample it covered in the first solve (<see cref="PreparedRenderer.CoveredBy"/>): a layer that lies
+        /// just under a triangle and never covered it does not stand in for the cover it lost. Every extracted renderer is
+        /// entered at its index in the first solve, so the solve's names for what covered each sample hold here.
         /// </summary>
         static void RejudgeOnce(PreparedAvatar prepared, Pass pass)
         {
             var jobs = prepared.Renderers;
+            var live = prepared.Extracted;
             var owned = new List<IDisposable>();
             OcclusionResult[] results = null;
             try
@@ -433,17 +444,25 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 var meshes = new List<OcclusionMesh>();
                 var renderer = new List<int>();
                 var sources = new List<int[]>();
-                for (var i = 0; i < jobs.Count; i++)
+                foreach (var job in live)
                 {
-                    var job = jobs[i];
-                    if (!job.Extracted) continue;
+                    var i = jobs.IndexOf(job);
                     var kept = pass.Kept[i];
                     var removed = kept != null && job.HiddenCount > 0 ? job.Hidden : null;
-                    // Neither judged nor blocking, a renderer changes no verdict.
-                    if (!job.Occludes && removed == null) continue;
-                    var drawn = kept?.Triangles ?? job.Eval.Triangles.ToArray();
-                    var drawnSource = kept?.Source ?? Enumerable.Range(0, drawn.Length).ToArray();
-                    meshes.Add(OcclusionInput.Rejudged(job.Eval, job.Mirrored, job.Occludes, job.OccluderSubmeshes, removed, drawn, drawnSource, owned, out var source));
+                    // Neither judged nor blocking, a renderer changes no verdict, and holds its index with no triangles.
+                    var bystander = !job.Occludes && removed == null;
+                    var drawn = bystander ? Array.Empty<int3>() : kept?.Triangles ?? job.Eval.Triangles.ToArray();
+                    var drawnSource = bystander ? Array.Empty<int>() : kept?.Source ?? Enumerable.Range(0, drawn.Length).ToArray();
+                    var mesh = OcclusionInput.Rejudged(job.Eval, job.Mirrored, job.Occludes, job.OccluderSubmeshes, removed, drawn, drawnSource, owned, out var source);
+                    if (job.Occludes && job.Decimated) mesh.Setback = job.Sequence.ErrorAt(pass.Steps[i]);
+                    if (removed != null)
+                    {
+                        mesh.CoveredBy = job.CoveredBy;
+                        mesh.InteriorCoveredBy = new ulong[source.Length];
+                        for (var e = 0; e < source.Length; e++)
+                            if (mesh.Candidate[e]) mesh.InteriorCoveredBy[e] = job.InteriorCoveredBy[source[e]];
+                    }
+                    meshes.Add(mesh);
                     renderer.Add(i);
                     sources.Add(source);
                 }
@@ -786,6 +805,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     var job = jobs[i];
                     job.OccluderSubmeshes = meshes[i].Submeshes;
                     job.Hidden = results[i].HiddenTriangles.ToArray();
+                    job.CoveredBy = results[i].CoveredBy.ToArray();
+                    job.InteriorCoveredBy = results[i].InteriorCoveredBy.ToArray();
                     job.KeptOnUnstableBones = UnstableBones.Keep(job.Eval, job.Hidden, unstable);
                     job.KeptForFur = MaterialFur.Keep(job.Renderer, job.Source.subMeshCount, job.Eval, job.Hidden);
                     job.KeptForOutline = outlines ? OccluderMaterials.KeptForOutline(job.Renderer, job.Source.subMeshCount, job.Eval, results[i]) : 0;
@@ -800,6 +821,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 foreach (var job in jobs)
                 {
                     job.Hidden = null;
+                    job.CoveredBy = job.InteriorCoveredBy = null;
                     job.OccluderSubmeshes = null;
                 }
                 prepared.OcclusionRan = false;
