@@ -3,6 +3,7 @@ using NUnit.Framework;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests
@@ -68,18 +69,21 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
             using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
             var protection = new Ryan6Vrc.MeshOptimizer.Core.Decimation.VertexProtection { CostMultiplier = multArray, Locked = lockArray };
-            var held = BurstCompiler.Options.EnableBurstCompilation;
+            // Managed code by the job system's switch, which lives and dies with this process. Burst's own option would save an
+            // Editor preference every Editor of the user's on the machine reads, so a run killed before the restore would leave
+            // them all without Burst.
+            var held = JobsUtility.JobCompilerEnabled;
             Assume.That(held, "Burst is off in this Editor, so there is no compiled code to compare");
             Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst = default, managed = default;
             try
             {
                 burst = Record(b, protection);
-                BurstCompiler.Options.EnableBurstCompilation = false;
+                JobsUtility.JobCompilerEnabled = false;
                 managed = Record(b, protection);
             }
             finally
             {
-                BurstCompiler.Options.EnableBurstCompilation = held;
+                JobsUtility.JobCompilerEnabled = held;
             }
             try
             {
