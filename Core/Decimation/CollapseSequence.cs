@@ -48,12 +48,24 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public CutResult Cut(int stepCount, Allocator allocator)
         {
             if (stepCount < 0 || stepCount > Length) throw new ArgumentOutOfRangeException(nameof(stepCount), stepCount, $"a cut lies in 0..{Length}");
-            var result = new CutResult
+            var result = new CutResult();
+            try
             {
-                Triangles = new NativeList<int3>(TriangleCountAt(stepCount), allocator),
-                SourceTriangle = new NativeList<int>(TriangleCountAt(stepCount), allocator),
-                KeptVertices = new NativeList<int>(allocator),
-            };
+                result.Triangles = new NativeList<int3>(TriangleCountAt(stepCount), allocator);
+                result.SourceTriangle = new NativeList<int>(TriangleCountAt(stepCount), allocator);
+                result.KeptVertices = new NativeList<int>(allocator);
+                RunCut(stepCount, result);
+            }
+            catch
+            {
+                result.Dispose();
+                throw;
+            }
+            return result;
+        }
+
+        void RunCut(int stepCount, CutResult result)
+        {
             new CutJob
             {
                 Steps = Steps,
@@ -66,7 +78,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 SourceTriangle = result.SourceTriangle,
                 KeptVertices = result.KeptVertices,
             }.Run();
-            return result;
         }
 
         public void Dispose()

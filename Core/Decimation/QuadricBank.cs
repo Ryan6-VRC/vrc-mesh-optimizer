@@ -53,16 +53,28 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         public static QuadricBank Build(in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, Allocator allocator)
         {
+            var bank = new QuadricBank();
+            try
+            {
+                Fill(ref bank, mesh, topo, settings, allocator);
+                return bank;
+            }
+            catch
+            {
+                bank.Dispose();
+                throw;
+            }
+        }
+
+        static void Fill(ref QuadricBank bank, in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, Allocator allocator)
+        {
             var w = topo.WorkingVertexCount;
             using var uv0 = new OptionalArray<float2>(mesh.Uv0);
-            var bank = new QuadricBank
-            {
-                Rest = new NativeArray<Quadric>(w, allocator),
-                Uv = new NativeArray<UvQuadric>(w, allocator),
-                SparseStart = new NativeArray<int>(w, allocator),
-                SparseCount = new NativeArray<int>(w, allocator),
-                NormalRest = new NativeArray<float3>(w, allocator),
-            };
+            bank.Rest = new NativeArray<Quadric>(w, allocator);
+            bank.Uv = new NativeArray<UvQuadric>(w, allocator);
+            bank.SparseStart = new NativeArray<int>(w, allocator);
+            bank.SparseCount = new NativeArray<int>(w, allocator);
+            bank.NormalRest = new NativeArray<float3>(w, allocator);
 
             using var triStart = new NativeArray<int>(w + 1, Allocator.Persistent);
             using var tris = new NativeArray<int>(topo.LiveTriangleCount * 3, Allocator.Persistent);
@@ -101,7 +113,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }.ScheduleBatch(w, 64).Complete();
             bank.NormalStart = new NativeArray<int>(bank.SparseStart, allocator);
             bank.NormalCount = new NativeArray<int>(bank.SparseCount, allocator);
-            return bank;
         }
 
         /// <summary>Working vertex to incident live triangles, as offsets into a flat list.</summary>

@@ -90,9 +90,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
 
         public static MeshTopology Build(in EvalMesh mesh, in TopologySettings settings, Allocator allocator)
         {
+            var topo = new MeshTopology { SourceVertexCount = mesh.VertexCount };
+            try
+            {
+                Fill(ref topo, mesh, settings, allocator);
+                return topo;
+            }
+            catch
+            {
+                topo.Dispose();
+                throw;
+            }
+        }
+
+        static void Fill(ref MeshTopology topo, in EvalMesh mesh, in TopologySettings settings, Allocator allocator)
+        {
             var sourceCount = mesh.VertexCount;
             var triCount = mesh.TriangleCount;
-            var topo = new MeshTopology { SourceVertexCount = sourceCount };
             using var submesh = new OptionalArray<int>(mesh.TriangleSubmesh);
             using var frames = new OptionalArray<ShapeFrame>(mesh.Frames);
             using var deltas = new OptionalArray<ShapeDelta>(mesh.Deltas);
@@ -177,7 +191,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }.Schedule(w, 256).Complete();
 
             new FinishJob { Triangles = topo.Triangles, Kind = topo.Kind, Partner = topo.Partner, EdgeFlags = topo.EdgeFlags }.Run();
-            return topo;
         }
 
         [BurstCompile]

@@ -49,6 +49,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         }
 
         [Test]
+        public void StepsThatTieTheLevel_AreAllTaken_WhateverTheEntryOrder()
+        {
+            // Two identical renderers: one common level cuts both alike, not whichever came first.
+            var r = BudgetAllocator.ForBudget(new[] { AllocationEntry.From(_flat), AllocationEntry.From(_flat) }, 2 * _flat.InitialTriangleCount - 2);
+            Assert.That(r.Cuts[0], Is.EqualTo(r.Cuts[1]));
+            for (var i = 0; i < 2; i++)
+                if (r.Cuts[i] < _flat.Length) Assert.That(_flat.Steps[r.Cuts[i]].Error, Is.GreaterThan(r.Level));
+        }
+
+        [Test]
         public void AFloor_IsHonoured_AndTheOtherMeshMakesUpTheDifference()
         {
             var free = BudgetAllocator.ForBudget(new[] { AllocationEntry.From(_flat), AllocationEntry.From(_curved) }, Total / 2);

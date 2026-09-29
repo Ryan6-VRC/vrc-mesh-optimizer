@@ -98,6 +98,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         }
 
         [Test]
+        public void AnErrorLimit_StopsTheSequenceWithinIt()
+        {
+            var b = BumpPatch(out _);
+            const float limit = 1e-4f;
+            using var full = Fixtures.Decimate(b);
+            using var limited = Fixtures.Decimate(b, s => { s.MaxError = limit; return s; });
+            Assert.That(limited.ErrorAt(limited.Length), Is.LessThanOrEqualTo(limit));
+            Assert.That(limited.TriangleCountAt(limited.Length), Is.LessThanOrEqualTo(full.TriangleCountAt(Fixtures.CutAtError(full, limit))));
+        }
+
+        [Test]
         public void EveryAggregation_KeepsTheBump()
         {
             var b = BumpPatch(out var frame);
