@@ -5,7 +5,7 @@
   least one test.
 
   The venue, its provisioner and the runner belong to the Atelier workspace this repo is developed
-  in, and have no version to ship, so the gate reaches up for them through -AtelierRoot and refuses
+  in (https://github.com/Ryan6-VRC/atelier), and have no version to ship, so the gate reaches up for them through -AtelierRoot and refuses
   by name when the workspace is absent. Outside that workspace, run the suite from Unity's Test
   Runner window instead.
 
@@ -78,7 +78,7 @@ if ($changed) {
 Write-Host "[gate] tree under test: $root"
 Write-Host "[gate] venue: $Venue"
 
-$before = @(& git -C $root status --porcelain)
+$before = @(& git -C $root status --porcelain --untracked-files=all)
 $runArgs = @('-NoProfile', '-File', $runner, '-Project', $Venue, '-Assemblies', $Assembly,
              '-Tag', $Tag, '-TimeoutSec', $TimeoutSec)
 if ($Filter) { $runArgs += @('-Filter', $Filter) }
@@ -87,7 +87,7 @@ $code = $LASTEXITCODE
 
 # Unity writes a .meta beside every new file in a mounted package. An uncommitted one gets a fresh
 # GUID in the next project that imports the package, so name them.
-$after = @(& git -C $root status --porcelain)
+$after = @(& git -C $root status --porcelain --untracked-files=all)
 $new = @($after | Where-Object { $_ -notin $before })
 if ($new.Count -gt 0) {
   Write-Warning ("the run wrote into this tree; commit any .meta among these so its GUID holds:`n  " + ($new -join "`n  "))
@@ -96,10 +96,11 @@ if ($new.Count -gt 0) {
 if ($code -eq 0) {
   $line = @($out | Select-String 'OUTCOME=COMPLETED .*total=(\d+) passed=(\d+) failed=(\d+) skipped=(\d+)') | Select-Object -Last 1
   if (-not $line) { Write-Host "[gate] FAIL: the runner exited 0 without an OUTCOME=COMPLETED line."; exit 2 }
-  $total = [int]$line.Matches[0].Groups[1].Value
-  $skipped = [int]$line.Matches[0].Groups[4].Value
+  $total, $passed, $failed, $skipped = $line.Matches[0].Groups[1..4] | ForEach-Object { [int]$_.Value }
   if ($total -eq 0) { Write-Host "[gate] FAIL: no test ran; '$Assembly' must be the test asmdef's name, and that assembly must compile in the venue."; exit 2 }
   if ($skipped -gt 0 -and -not $AllowSkips) { Write-Host "[gate] FAIL: $skipped skipped, and a skip is not a pass; -AllowSkips accepts them."; exit 6 }
+  # An inconclusive test is counted in none of failed, skipped or passed, and it is not a pass.
+  if ($failed -gt 0 -or $passed + $skipped -ne $total) { Write-Host "[gate] FAIL: $passed of $total passed with $failed failed and $skipped skipped; every test must pass."; exit 2 }
 }
 Write-Host "[gate] results: $(Join-Path $AtelierRoot "test-output/results-$Tag.xml")"
 exit $code
