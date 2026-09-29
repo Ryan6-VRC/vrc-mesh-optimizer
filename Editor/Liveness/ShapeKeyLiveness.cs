@@ -168,12 +168,19 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 foreach (var values in curves)
                 foreach (var v in values)
                 {
+                    // Any value away from where the renderer holds the key makes it live, whatever its sign or
+                    // direction: a value away from zero, or zero itself when the renderer holds the key elsewhere.
+                    // Only a curve that holds the key where it already is leaves it frozen or dead, and a dead key
+                    // is one no curve ever moves off zero.
                     if (Mathf.Abs(v - key.Weight) <= HoldTolerance) continue;
                     live = true;
                     if (Mathf.Abs(v) > Mathf.Abs(extreme)) extreme = v;
                 }
             }
 
+            // One signed extreme is kept: a key that reaches both signs (held at -100, driven to +50) is evaluated
+            // on the larger side only. Evaluating both sides means carrying a driven minimum here as well and
+            // emitting its configurations in MeshExtractor.Configurations.
             if (live) return ShapeKeyLiveness.Live(extreme / full);
             if (Mathf.Abs(key.Weight) > HoldTolerance) return ShapeKeyLiveness.Frozen(key.Weight);
             return ShapeKeyLiveness.Dead;

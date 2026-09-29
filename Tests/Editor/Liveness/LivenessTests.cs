@@ -63,6 +63,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         }
 
         [Test]
+        public void KeyDrivenOnlyNegative_IsLive_AtItsLargestMagnitude()
+        {
+            var body = new RendererShapeKeys("Body", new[] { Key("dent") });
+            var result = Classify(new[] { body }, new[] { new ShapeKeyBinding("Body", "dent", new[] { 0f, -20f, -50f }) });
+
+            Assert.That(result[0][0], Is.EqualTo(ShapeKeyLiveness.Live(-0.5f)));
+        }
+
+        [Test]
+        public void KeyDrivenBelowItsOwnWeight_IsLive_AtItsOwnWeight()
+        {
+            var body = new RendererShapeKeys("Body", new[] { Key("chest", 80f) });
+            var result = Classify(new[] { body }, new[] { new ShapeKeyBinding("Body", "chest", new[] { 30f }) });
+
+            Assert.That(result[0][0], Is.EqualTo(ShapeKeyLiveness.Live(0.8f)));
+        }
+
+        [Test]
         public void DrivenMaximum_IsAFractionOfTheKeysFullWeight()
         {
             var body = new RendererShapeKeys("Body", new[] { Key("wide", 0f, fullWeight: 50f) });
