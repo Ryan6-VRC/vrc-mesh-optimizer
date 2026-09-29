@@ -912,7 +912,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         /// <summary>
         /// No triangle that moves with u may flip or collapse to a sliver, at rest or in any live frame that
-        /// moves u's one-ring (every other frame leaves the ring as it is at rest).
+        /// moves one of its corners (every other frame leaves it as it is at rest). u's frames cover the source
+        /// surface it stands for, but a corner reached through earlier collapses need not be a corner of that
+        /// surface, so the frames moving v and the triangle's other corners are checked too.
         /// </summary>
         bool NoFlip(int u, int v)
         {
@@ -930,16 +932,49 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var reference = _normalRest[v] + _normalRest[x] + _normalRest[y];
                 if (!TriangleHolds(_p[u], _p[v], _p[x], _p[y], reference)) return false;
                 for (var i = fs; i < fe; i++)
-                {
-                    var f = _sparse[i].Frame;
-                    reference = NormalIn(v, f) + NormalIn(x, f) + NormalIn(y, f);
-                    if (!TriangleHolds(
-                            _p[u] + (double3)Delta(u, f), _p[v] + (double3)Delta(v, f),
-                            _p[x] + (double3)Delta(x, f), _p[y] + (double3)Delta(y, f), reference))
-                        return false;
-                }
+                    if (!HoldsIn(u, v, x, y, _sparse[i].Frame)) return false;
+                if (!HoldsInFramesOf(v, u, v, x, y, fs, fe)) return false;
+                if (!HoldsInFramesOf(x, u, v, x, y, fs, fe)) return false;
+                if (!HoldsInFramesOf(y, u, v, x, y, fs, fe)) return false;
             }
             return true;
+        }
+
+        /// <summary>The moved triangle (u, x, y) becoming (v, x, y) holds in frame f.</summary>
+        bool HoldsIn(int u, int v, int x, int y, int f)
+        {
+            var reference = NormalIn(v, f) + NormalIn(x, f) + NormalIn(y, f);
+            return TriangleHolds(
+                _p[u] + (double3)Delta(u, f), _p[v] + (double3)Delta(v, f),
+                _p[x] + (double3)Delta(x, f), _p[y] + (double3)Delta(y, f), reference);
+        }
+
+        /// <summary>The moved triangle holds in every frame that moves corner w and is not among u's frames, Sparse[fs .. fe).</summary>
+        bool HoldsInFramesOf(int w, int u, int v, int x, int y, int fs, int fe)
+        {
+            var o = _origin[w];
+            for (var j = _deltaStart[o]; j < _deltaStart[o + 1]; j++)
+            {
+                var f = _deltaFrame[j];
+                if (HasFrame(fs, fe, f)) continue;
+                if (!HoldsIn(u, v, x, y, f)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Whether frame f is among Sparse[lo .. hi), which is frame ascending.</summary>
+        bool HasFrame(int lo, int hi, int f)
+        {
+            hi--;
+            while (lo <= hi)
+            {
+                var mid = (lo + hi) >> 1;
+                var m = _sparse[mid].Frame;
+                if (m == f) return true;
+                if (m < f) lo = mid + 1;
+                else hi = mid - 1;
+            }
+            return false;
         }
 
         /// <summary>The source surface's normal at w in a frame: as at rest unless the frame moves w's ring.</summary>
