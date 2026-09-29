@@ -64,6 +64,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int FloorTriangles { get; internal set; }
         public float Weight { get; internal set; }
         public int LockedVertices { get; internal set; }
+        /// <summary>Vertices with another layer near enough for the clearance rule to act on them; 0 when it did not run.</summary>
+        public int NearVertices { get; internal set; }
+        /// <summary>Collapses the clearance rule refused because they came too near another layer.</summary>
+        public long ClearanceRefused { get; internal set; }
         /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
         public int KeptOnUnstableBones { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
@@ -82,6 +86,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public double Liveness;
         public double Extraction;
         public double Occlusion;
+        /// <summary>Building the surface every layer keeps its clearance from.</summary>
+        public double Clearance;
         public double Decimation;
         public double Allocation;
         public double Writing;
@@ -138,6 +144,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 ? $"Budget {TriangleBudget} {(TargetMet ? "met" : "NOT met")}"
                 : $"Tolerance {Tolerance.ToString("0.###", c)} mm");
             sb.Append($", error level {(ErrorLevel * 1000f).ToString("0.###", c)} mm, {Times.Total.ToString("0", c)} ms.");
+            var refused = Renderers.Sum(r => r.ClearanceRefused);
+            if (refused > 0)
+                sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
             foreach (var m in UnmatchedMaterialOverrides)

@@ -5,6 +5,7 @@ using System.Linq;
 using nadena.dev.ndmf;
 using nadena.dev.ndmf.runtime;
 using Ryan6Vrc.MeshOptimizer.Core.Allocation;
+using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
@@ -68,6 +69,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             public bool[] Hidden;
             public CollapseSequence Sequence;
             public bool Decimated;
+            /// <summary>Per triangle occlusion kept, its layer in the clearance surface; not created when the rule is off.</summary>
+            public NativeArray<int> Layers;
             /// <summary>Per triangle the decimator saw, the extracted triangle it is.</summary>
             public int[] Reduced;
             public int Cut;
@@ -78,6 +81,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 Extracted = false;
                 if (Decimated) Sequence.Dispose();
                 Decimated = false;
+                if (Layers.IsCreated) Layers.Dispose();
+                Layers = default;
             }
         }
 
@@ -380,18 +385,28 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (s != null && s.renderer != null) perRenderer[s.renderer] = s;
 
             var stage = Stopwatch.StartNew();
-            foreach (var job in live)
+            var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live) : default;
+            report.Times.Clearance = stage.Elapsed.TotalMilliseconds;
+            try
             {
-                perRenderer.TryGetValue(job.Renderer, out var own);
-                job.Report.Weight = Mathf.Max(own?.protection ?? 1f, MinWeight);
-                if (own != null && own.excludeFromDecimation)
+                stage.Restart();
+                foreach (var job in live)
                 {
-                    job.Report.ExcludedFromDecimation = true;
-                    continue;
+                    perRenderer.TryGetValue(job.Renderer, out var own);
+                    job.Report.Weight = Mathf.Max(own?.protection ?? 1f, MinWeight);
+                    if (own != null && own.excludeFromDecimation)
+                    {
+                        job.Report.ExcludedFromDecimation = true;
+                        continue;
+                    }
+                    DecimateOne(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, report);
                 }
-                DecimateOne(job, input, protection, report);
+                report.Times.Decimation = stage.Elapsed.TotalMilliseconds;
             }
-            report.Times.Decimation = stage.Elapsed.TotalMilliseconds;
+            finally
+            {
+                surface.Dispose();
+            }
 
             stage.Restart();
             var decimated = live.Where(j => j.Decimated).ToList();
@@ -424,6 +439,39 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             report.Times.Allocation = stage.Elapsed.TotalMilliseconds;
         }
 
+        /// <summary>
+        /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
+        /// each renderer's layer per kept triangle in <see cref="Job.Layers"/>. Kept means what occlusion left: a triangle
+        /// it deleted is not there to be passed through. A renderer off at build is in it like any other, since whatever
+        /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved.
+        /// </summary>
+        static ClearanceSurface ClearanceSurfaceOf(List<Job> live)
+        {
+            var sources = new List<ClearanceLayerSource>();
+            var owned = new List<IDisposable>();
+            try
+            {
+                var next = 0;
+                foreach (var job in live)
+                {
+                    var eval = job.Eval;
+                    var kept = new NativeArray<int3>(eval.TriangleCount - HiddenCount(job), Allocator.Persistent);
+                    owned.Add(kept);
+                    for (int t = 0, i = 0; t < eval.TriangleCount; t++)
+                        if (job.Hidden == null || !job.Hidden[t]) kept[i++] = eval.Triangles[t];
+                    job.Layers = Layers.Pieces(eval.Positions, kept, Allocator.Persistent, out var pieces);
+                    for (var i = 0; i < job.Layers.Length; i++) job.Layers[i] += next;
+                    next += pieces;
+                    sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = kept, TriangleLayer = job.Layers });
+                }
+                return ClearanceSurface.Build(sources, Allocator.Persistent);
+            }
+            finally
+            {
+                foreach (var o in owned) o.Dispose();
+            }
+        }
+
         static int HiddenCount(Job job)
         {
             if (job.Hidden == null) return 0;
@@ -432,7 +480,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return n;
         }
 
-        static void DecimateOne(Job job, PipelineInput input, Protection protection, OptimizationReport report)
+        static void DecimateOne(Job job, PipelineInput input, Protection protection, in ClearanceInput clearance, OptimizationReport report)
         {
             var owned = new List<IDisposable>();
             try
@@ -466,9 +514,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 job.Report.LockedVertices = lockedCount;
                 job.Report.FloorTriangles = protection.FloorFor(job.Renderer, reduced.Count);
 
-                job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, Allocator.Persistent);
+                job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, clearance, Allocator.Persistent, out var clearanceStats);
                 job.Decimated = true;
                 job.Report.SequenceLength = job.Sequence.Length;
+                job.Report.NearVertices = clearanceStats.NearVertices;
+                job.Report.ClearanceRefused = clearanceStats.Refused;
             }
             catch (Exception e)
             {

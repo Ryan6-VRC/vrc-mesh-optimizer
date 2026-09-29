@@ -15,6 +15,8 @@ Projects this work studies and builds on, credited by name:
 
 The decimation cost rests on published work: Garland & Heckbert 1997 (quadric error metrics), Hoppe 1999 (attribute quadrics, here for UV0), Mohr & Gleicher 2003 (one quadric per deformed configuration, here per live shape frame), and Knodt 2025 (a skin-weight-gradient edge term).
 
+Decimation keeps layers of clothing from being driven through one another. Making decimation aware of nearby meshes follows Ghazanfarpour, Mellado, Himeur, Barthe & Jessel 2020 (proximity-aware decimation of multiple meshes), which penalises collapses where meshes come close; here it is a hard limit instead, each layer keeping to its share of the gap to its neighbours. The triangle distance tests follow Ericson, Real-Time Collision Detection (2005).
+
 The visual-error gate's geometric channel, a two-sided distance between the source and optimized surfaces sampled over their area, follows Metro (Cignoni, Rocchini & Scopigno 1998).
 
 Anything copied rather than re-derived carries its license text in `NOTICE`.
