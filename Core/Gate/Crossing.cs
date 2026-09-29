@@ -96,8 +96,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             Run(a, b, false, settings, segments);
 
         /// <summary>
-        /// Where a surface crosses itself: every pair of its triangles sharing no vertex, each pair once, the lower
-        /// triangle index as A. A skirt and its lining are often one mesh.
+        /// Where a surface crosses itself: every pair of its triangles, each pair once, the lower triangle index as A.
+        /// A skirt and its lining are often one mesh. Neighbours meet without crossing under the same rule as any pair.
         /// </summary>
         public static CrossingStats MeasureSelf(in Surface a, in CrossingSettings settings, NativeList<CrossingSegment> segments) =>
             Run(a, a, true, settings, segments);
@@ -132,7 +132,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                     PositionsA = a.Positions,
                     TrianglesA = a.Triangles,
                     ExcludedA = excludedA,
-                    TrianglesB = b.Triangles,
                     Nodes = nodes.AsArray(),
                     Prims = prims.GetSubArray(0, count.Value),
                     Self = self,
@@ -157,7 +156,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// <summary>
         /// Compares the crossing between one pair of surfaces before and after an optimizer pass, in one configuration and
         /// one space: how much of the after crossing has nothing before within <see cref="CrossingSettings.Nearness"/>, and
-        /// where its longest connected run is. Each after segment is judged in pieces a quarter of Nearness long.
+        /// where its longest connected run is. The new part of each after segment is found exactly, not sampled.
         /// </summary>
         public static CrossingChange Compare(NativeArray<CrossingSegment> before, NativeArray<CrossingSegment> after, in CrossingSettings settings)
         {

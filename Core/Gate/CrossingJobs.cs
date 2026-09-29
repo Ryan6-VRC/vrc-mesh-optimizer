@@ -140,10 +140,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         [ReadOnly] public NativeArray<float3> PositionsA;
         [ReadOnly] public NativeArray<int3> TrianglesA;
         [ReadOnly] public NativeArray<bool> ExcludedA;
-        [ReadOnly] public NativeArray<int3> TrianglesB;
         [ReadOnly] public NativeArray<TreeNode> Nodes;
         [ReadOnly] public NativeArray<TreePrim> Prims;
-        /// <summary>A against itself: each pair once, lower index as A, and never two triangles sharing a vertex.</summary>
+        /// <summary>
+        /// A against itself, each pair once, lower index as A. Neighbours sharing a vertex are measured like any pair:
+        /// two triangles fanned round a shared vertex cut the common line from that vertex in opposite directions, so the
+        /// overlap is the vertex alone and reads as touching, while two that fold through each other overlap beyond it.
+        /// </summary>
         public bool Self;
         public float Touch;
         public NativeQueue<CrossingSegment>.ParallelWriter Found;
@@ -171,7 +174,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 for (var p = node.Start; p < node.Start + node.Count; p++)
                 {
                     var prim = Prims[p];
-                    if (Self && (prim.Triangle <= i || Shares(tri, TrianglesB[prim.Triangle]))) continue;
+                    if (Self && prim.Triangle <= i) continue;
                     var pmin = math.min(prim.A, math.min(prim.B, prim.C));
                     var pmax = math.max(prim.A, math.max(prim.B, prim.C));
                     if (math.any(pmin > hi) || math.any(pmax < lo)) continue;
@@ -182,8 +185,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 }
             }
         }
-
-        static bool Shares(int3 a, int3 b) => math.any(a.x == b) || math.any(a.y == b) || math.any(a.z == b);
     }
 
     struct ByTrianglePair : System.Collections.Generic.IComparer<CrossingSegment>
@@ -208,18 +209,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         }
     }
 
+    /// <summary>A stretch of one after segment with no before crossing within Nearness, from parameter T0 to T1 along it.</summary>
     internal struct CrossingPiece
     {
         public float3 A;
         public float3 B;
         public int Segment;
-        public bool New;
+        public float T0;
+        public float T1;
     }
 
     /// <summary>
-    /// Judges each after segment in pieces against the before segments near it, found through a grid of Nearness cells
-    /// holding each before segment in every cell within Nearness of it; then joins new pieces into runs, along each segment
-    /// and across segments whose ends meet.
+    /// Finds the new stretches of each after segment exactly: the points of a line within Nearness of a segment form one
+    /// interval along it, because distance to a segment is convex along a line, so the new part of an after segment is
+    /// what the union of those intervals leaves. Before segments are found through a grid of Nearness cells holding each
+    /// in every cell within Nearness of it. New stretches join into runs where they reach a segment end that meets another's.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct CrossingChangeJob : IJob
@@ -246,53 +250,61 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             for (var i = 0; i < Before.Length; i++)
             {
                 var s = Before[i];
-                var lo = (int3)math.floor((math.min(s.Start, s.End) - Nearness) / Nearness);
-                var hi = (int3)math.floor((math.max(s.Start, s.End) + Nearness) / Nearness);
+                var lo = Cell(math.min(s.Start, s.End) - Nearness);
+                var hi = Cell(math.max(s.Start, s.End) + Nearness);
                 for (var x = lo.x; x <= hi.x; x++)
                 for (var y = lo.y; y <= hi.y; y++)
                 for (var z = lo.z; z <= hi.z; z++)
                     grid.Add(new int3(x, y, z), i);
             }
 
-            var pieces = new NativeList<CrossingPiece>(After.Length * 2, Allocator.Temp);
-            var first = new NativeArray<int>(After.Length + 1, Allocator.Temp);
-            var step = Nearness * 0.25f;
+            var pieces = new NativeList<CrossingPiece>(math.max(After.Length, 1), Allocator.Temp);
+            var candidates = new NativeParallelHashSet<int>(64, Allocator.Temp);
+            var near = new NativeList<float2>(16, Allocator.Temp);
             for (var s = 0; s < After.Length; s++)
             {
-                first[s] = pieces.Length;
                 var g = After[s];
-                var k = math.max(1, (int)math.ceil(g.Length / step));
-                for (var j = 0; j < k; j++)
+                // Every before segment within Nearness of any point of g sits in the cell of that point.
+                candidates.Clear();
+                var lo = Cell(math.min(g.Start, g.End));
+                var hi = Cell(math.max(g.Start, g.End));
+                for (var x = lo.x; x <= hi.x; x++)
+                for (var y = lo.y; y <= hi.y; y++)
+                for (var z = lo.z; z <= hi.z; z++)
                 {
-                    var a = j == 0 ? g.Start : math.lerp(g.Start, g.End, (float)j / k);
-                    var b = j == k - 1 ? g.End : math.lerp(g.Start, g.End, (float)(j + 1) / k);
-                    var isNew = !Near((a + b) * 0.5f, grid);
-                    pieces.Add(new CrossingPiece { A = a, B = b, Segment = s, New = isNew });
-                    if (!isNew) continue;
-                    double length = math.distance(a, b);
-                    r.New += length;
-                    if (g.SameFacing) r.NewSameFacing += length;
+                    if (!grid.TryGetFirstValue(new int3(x, y, z), out var b, out var it)) continue;
+                    do candidates.Add(b);
+                    while (grid.TryGetNextValue(out b, ref it));
+                }
+                near.Clear();
+                foreach (var b in candidates)
+                    if (Within(g.Start, g.End, Before[b].Start, Before[b].End, Nearness, out var t0, out var t1)) near.Add(new float2(t0, t1));
+                near.Sort(new ByStart());
+
+                // What the union of the near intervals leaves of [0, 1].
+                var from = 0f;
+                for (var k = 0; k <= near.Length; k++)
+                {
+                    var to = k < near.Length ? near[k].x : 1f;
+                    if (to > from) AddPiece(pieces, g, s, from, to, ref r);
+                    if (k < near.Length) from = math.max(from, near[k].y);
                 }
             }
-            first[After.Length] = pieces.Length;
 
             var parent = new NativeArray<int>(pieces.Length, Allocator.Temp);
             for (var i = 0; i < parent.Length; i++) parent[i] = i;
-            for (var i = 0; i + 1 < pieces.Length; i++)
-                if (pieces[i].Segment == pieces[i + 1].Segment && pieces[i].New && pieces[i + 1].New) Union(parent, i, i + 1);
-
-            // The new ends of segments, joined where they meet.
             var ends = new NativeList<float3>(Allocator.Temp);
             var endPiece = new NativeList<int>(Allocator.Temp);
-            var endGrid = new NativeParallelMultiHashMap<int3, int>(math.max(After.Length * 2, 16), Allocator.Temp);
-            for (var s = 0; s < After.Length; s++)
+            var endGrid = new NativeParallelMultiHashMap<int3, int>(math.max(pieces.Length * 2, 16), Allocator.Temp);
+            for (var i = 0; i < pieces.Length; i++)
             {
-                AddEnd(pieces, first[s], After[s].Start, ends, endPiece, endGrid);
-                AddEnd(pieces, first[s + 1] - 1, After[s].End, ends, endPiece, endGrid);
+                var piece = pieces[i];
+                if (piece.T0 == 0f) AddEnd(piece.A, i, ends, endPiece, endGrid);
+                if (piece.T1 == 1f) AddEnd(piece.B, i, ends, endPiece, endGrid);
             }
             for (var e = 0; e < ends.Length; e++)
             {
-                var c = Cell(ends[e]);
+                var c = JoinCell(ends[e]);
                 for (var x = -1; x <= 1; x++)
                 for (var y = -1; y <= 1; y++)
                 for (var z = -1; z <= 1; z++)
@@ -306,12 +318,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             }
 
             var runLength = new NativeArray<double>(pieces.Length, Allocator.Temp);
-            for (var i = 0; i < pieces.Length; i++)
-                if (pieces[i].New) runLength[Find(parent, i)] += math.distance(pieces[i].A, pieces[i].B);
+            for (var i = 0; i < pieces.Length; i++) runLength[Find(parent, i)] += math.distance(pieces[i].A, pieces[i].B);
             var longest = -1;
             for (var i = 0; i < pieces.Length; i++)
             {
-                if (!pieces[i].New || Find(parent, i) != i) continue;
+                if (Find(parent, i) != i) continue;
                 r.Runs++;
                 if (longest < 0 || runLength[i] > runLength[longest]) longest = i;
             }
@@ -321,7 +332,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 var best = -1;
                 for (var i = 0; i < pieces.Length; i++)
                 {
-                    if (!pieces[i].New || Find(parent, i) != longest) continue;
+                    if (Find(parent, i) != longest) continue;
                     if (best < 0 || math.distance(pieces[i].A, pieces[i].B) > math.distance(pieces[best].A, pieces[best].B)) best = i;
                 }
                 var piece = pieces[best];
@@ -333,7 +344,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
 
             grid.Dispose();
             pieces.Dispose();
-            first.Dispose();
+            candidates.Dispose();
+            near.Dispose();
             parent.Dispose();
             ends.Dispose();
             endPiece.Dispose();
@@ -341,23 +353,74 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             runLength.Dispose();
         }
 
-        bool Near(float3 p, NativeParallelMultiHashMap<int3, int> grid)
+        static void AddPiece(NativeList<CrossingPiece> pieces, CrossingSegment g, int s, float t0, float t1, ref CrossingChange r)
         {
-            if (!grid.TryGetFirstValue((int3)math.floor(p / Nearness), out var i, out var it)) return false;
-            do
-            {
-                if (TriangleCrossing.DistanceToSegment(p, Before[i].Start, Before[i].End) <= Nearness) return true;
-            } while (grid.TryGetNextValue(out i, ref it));
-            return false;
+            var a = t0 == 0f ? g.Start : math.lerp(g.Start, g.End, t0);
+            var b = t1 == 1f ? g.End : math.lerp(g.Start, g.End, t1);
+            pieces.Add(new CrossingPiece { A = a, B = b, Segment = s, T0 = t0, T1 = t1 });
+            double length = math.distance(a, b);
+            r.New += length;
+            if (g.SameFacing) r.NewSameFacing += length;
         }
 
-        static int3 Cell(float3 p) => (int3)math.floor(p / JoinTolerance);
-
-        static void AddEnd(NativeList<CrossingPiece> pieces, int piece, float3 at, NativeList<float3> ends, NativeList<int> endPiece,
-            NativeParallelMultiHashMap<int3, int> endGrid)
+        /// <summary>
+        /// The parameters along p0-p1 within <paramref name="radius"/> of segment q0-q1, as [t0, t1], if any. The distance
+        /// is convex in the parameter, so its nearest point splits the line into a falling side and a rising side, and each
+        /// boundary is found by bisection on its side.
+        /// </summary>
+        static bool Within(float3 p0, float3 p1, float3 q0, float3 q1, float radius, out float t0, out float t1)
         {
-            if (!pieces[piece].New) return;
-            endGrid.Add(Cell(at), ends.Length);
+            t0 = t1 = 0f;
+            var tn = Nearest(p0, p1, q0, q1);
+            if (Distance(p0, p1, q0, q1, tn) > radius) return false;
+            t0 = Distance(p0, p1, q0, q1, 0f) <= radius ? 0f : Boundary(p0, p1, q0, q1, radius, 0f, tn);
+            t1 = Distance(p0, p1, q0, q1, 1f) <= radius ? 1f : Boundary(p0, p1, q0, q1, radius, 1f, tn);
+            return true;
+        }
+
+        static float Distance(float3 p0, float3 p1, float3 q0, float3 q1, float t) =>
+            TriangleCrossing.DistanceToSegment(math.lerp(p0, p1, t), q0, q1);
+
+        /// <summary>Between <paramref name="outside"/>, beyond the radius, and <paramref name="inside"/>, within it, the parameter where the distance is the radius.</summary>
+        static float Boundary(float3 p0, float3 p1, float3 q0, float3 q1, float radius, float outside, float inside)
+        {
+            for (var k = 0; k < 40; k++)
+            {
+                var mid = 0.5f * (outside + inside);
+                if (Distance(p0, p1, q0, q1, mid) <= radius) inside = mid;
+                else outside = mid;
+            }
+            return inside;
+        }
+
+        /// <summary>The parameter along p0-p1 of its point nearest segment q0-q1 (Ericson, Real-Time Collision Detection, 5.1.9).</summary>
+        static float Nearest(float3 p0, float3 p1, float3 q0, float3 q1)
+        {
+            var d1 = p1 - p0;
+            var d2 = q1 - q0;
+            var rr = p0 - q0;
+            var a = math.dot(d1, d1);
+            var e = math.dot(d2, d2);
+            var f = math.dot(d2, rr);
+            if (!(a > 0f)) return 0f;
+            var c = math.dot(d1, rr);
+            if (!(e > 0f)) return math.saturate(-c / a);
+            var b = math.dot(d1, d2);
+            var denom = a * e - b * b;
+            var s = denom > 0f ? math.saturate((b * f - c * e) / denom) : 0f;
+            var t = (b * s + f) / e;
+            if (t < 0f) s = math.saturate(-c / a);
+            else if (t > 1f) s = math.saturate((b - c) / a);
+            return s;
+        }
+
+        int3 Cell(float3 p) => (int3)math.floor(p / Nearness);
+
+        static int3 JoinCell(float3 p) => (int3)math.floor(p / JoinTolerance);
+
+        static void AddEnd(float3 at, int piece, NativeList<float3> ends, NativeList<int> endPiece, NativeParallelMultiHashMap<int3, int> endGrid)
+        {
+            endGrid.Add(JoinCell(at), ends.Length);
             ends.Add(at);
             endPiece.Add(piece);
         }
@@ -381,5 +444,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             if (a < b) parent[b] = a;
             else parent[a] = b;
         }
+    }
+
+    struct ByStart : System.Collections.Generic.IComparer<float2>
+    {
+        public int Compare(float2 x, float2 y) => x.x != y.x ? x.x.CompareTo(y.x) : x.y.CompareTo(y.y);
     }
 }

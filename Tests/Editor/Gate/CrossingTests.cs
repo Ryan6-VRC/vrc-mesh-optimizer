@@ -175,6 +175,50 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         }
 
         [Test]
+        public void TwoTrianglesOfOneMeshSharingAVertex_CrossingAwayFromIt_Cross()
+        {
+            // One triangle in the XY plane, one in the XZ plane, both from the origin: they cross along the X axis for 1 cm.
+            var p = new[]
+            {
+                float3.zero, new float3(0.01f, 0.01f, 0f), new float3(0.01f, -0.01f, 0f), new float3(0.01f, 0f, 0.01f), new float3(0.01f, 0f, -0.01f),
+            };
+            var t = new[] { new int3(0, 1, 2), new int3(0, 3, 4) };
+
+            var (stats, _) = CrossSelf((p, t));
+
+            Assert.That(stats.Length, Is.EqualTo(0.01).Within(1e-6));
+        }
+
+        static CrossingSegment Segment(float3 start, float3 end) => new CrossingSegment { Start = start, End = end, SameFacing = true };
+
+        [Test]
+        public void NewCrossingRunningAwayFromAShippedOne_IsNewFromWhereItLeavesNearness()
+        {
+            var before = new[] { Segment(new float3(-0.01f, 0, 0), float3.zero) };
+            var justPast = new[] { Segment(float3.zero, new float3(0.0055f, 0, 0)) };
+            var farOut = new[] { Segment(float3.zero, new float3(0.01f, 0, 0)), Segment(new float3(0.01f, 0, 0), new float3(0.02f, 0, 0)) };
+
+            Assert.That(Compare(before, justPast).New, Is.EqualTo(0.0005).Within(1e-6), "the half millimetre past 5 mm");
+            var far = Compare(before, farOut);
+            Assert.That(far.New, Is.EqualTo(0.015).Within(1e-6));
+            Assert.That(far.Runs, Is.EqualTo(1), "one run across the two segments");
+            Assert.That(far.LongestRun, Is.EqualTo(0.015).Within(1e-6));
+        }
+
+        [Test]
+        public void OneShortBeforeSegment_SpanningMoreCellsThanItsShareOfTheGrid_IsFound()
+        {
+            // Expanded by Nearness, this segment touches 27 cells of the before grid.
+            var before = new[] { Segment(new float3(0.0025f, 0.0025f, 0.0025f), new float3(0.003f, 0.0025f, 0.0025f)) };
+            var after = new[] { Segment(new float3(0.0025f, 0.004f, 0.0025f), new float3(0.003f, 0.004f, 0.0025f)) };
+
+            var change = Compare(before, after);
+
+            Assert.That(change.New, Is.Zero);
+            Assert.That(change.After.Length, Is.EqualTo(0.0005).Within(1e-7));
+        }
+
+        [Test]
         public void ExcludedTriangles_TakeNoPart()
         {
             var inner = Sheet(0f, patch: 0.002f);
