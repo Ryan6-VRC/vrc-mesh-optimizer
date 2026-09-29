@@ -101,5 +101,35 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             TestContext.WriteLine(line);
             UnityEngine.Debug.Log("[benchmark] " + line);
         }
+
+        [Test, Explicit("a measurement, not a check; run by name")]
+        public void Crossing_SixteenRenderers_140kTriangles_OnePose()
+        {
+            // Sixteen concentric skinned layers 1.5 mm apart over the whole length, 8750 triangles each, so every pair
+            // overlaps and passes the broad phase: heavier than an avatar, whose renderers mostly lie apart.
+            using var scene = new GateScene();
+            var root = scene.Node("Avatar", null, Vector3.zero);
+            var lower = scene.Node("Lower", root, Vector3.zero);
+            var upper = scene.Node("Upper", lower, new Vector3(0, 0.75f, 0));
+            var inputs = new List<GateInput>();
+            for (var layer = 0; layer < 16; layer++)
+            {
+                var tube = new Tube(Vector3.zero, Vector3.up, 1.5f, 0.15f + 0.0015f * layer, 125, 35);
+                var source = scene.Track(tube.Mesh($"layer{layer}", r => (tube.AlongAxis(r) - 0.6f) / 0.3f));
+                var renderer = scene.Skin(scene.Node($"Layer{layer}", root, Vector3.zero), source, lower, upper);
+                var optimized = scene.Optimized(source, tube.TrianglesBetween(tube.AllRings().Where(r => r % 2 == 0 || r == tube.Rings).ToArray()));
+                inputs.Add(new GateInput(renderer, source, optimized, null, System.Array.Empty<ShapeKeyLiveness>()));
+            }
+            var poses = new GatePose[] { new BoneRotationPose("bent", ("Lower/Upper", Quaternion.Euler(0, 0, 45))) };
+
+            var sw = Stopwatch.StartNew();
+            var report = CrossingGate.Measure(root, inputs, poses, null, CrossingSettings.Default);
+            var ms = sw.Elapsed.TotalMilliseconds;
+            var worst = report.Pairs[report.Worst()];
+            var line = $"crossing, {inputs.Sum(i => i.Source.triangles.Length / 3)} source tris over {inputs.Count} renderers, {report.Configurations.Count} configurations, " +
+                       $"{report.Pairs.Count} pair measures: {ms:0} ms, {ms / report.Configurations.Count:0} ms each; worst new {worst.Change.New * 100:0.#} cm";
+            TestContext.WriteLine(line);
+            UnityEngine.Debug.Log("[benchmark] " + line);
+        }
     }
 }
