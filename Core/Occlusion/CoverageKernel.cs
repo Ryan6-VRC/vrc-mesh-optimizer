@@ -28,6 +28,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// <summary>A texel byte below this is see-through.</summary>
         public int ThresholdByte;
         public float4 ScaleOffset;
+        public AlphaWrap WrapU;
+        public AlphaWrap WrapV;
     }
 
     internal static class Cone
@@ -330,7 +332,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             var tri = Tris[OccTri[occ]];
             var uv = (1f - bu - bv) * Uv[tri.x] + bu * Uv[tri.y] + bv * Uv[tri.z];
             uv = uv * a.ScaleOffset.xy + a.ScaleOffset.zw;
-            uv -= math.floor(uv);
+            // A repeating axis is brought into one tile first, which keeps a far-out coordinate precise.
+            if (a.WrapU == AlphaWrap.Repeat) uv.x -= math.floor(uv.x);
+            if (a.WrapV == AlphaWrap.Repeat) uv.y -= math.floor(uv.y);
             var x = uv.x * a.Width - 0.5f;
             var y = uv.y * a.Height - 0.5f;
             var x0 = (int)math.floor(x);
@@ -338,17 +342,32 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             for (var dy = 0; dy <= 1; dy++)
             for (var dx = 0; dx <= 1; dx++)
             {
-                var tx = Wrap(x0 + dx, a.Width);
-                var ty = Wrap(y0 + dy, a.Height);
+                var tx = Wrap(x0 + dx, a.Width, a.WrapU);
+                var ty = Wrap(y0 + dy, a.Height, a.WrapV);
                 if (Texels[a.Offset + ty * a.Width + tx] < a.ThresholdByte) return true;
             }
             return false;
         }
 
-        static int Wrap(int i, int n)
+        static int Wrap(int i, int n, AlphaWrap mode)
         {
-            var r = i % n;
-            return r < 0 ? r + n : r;
+            switch (mode)
+            {
+                case AlphaWrap.Clamp:
+                    return math.clamp(i, 0, n - 1);
+                case AlphaWrap.Mirror:
+                {
+                    var period = ((i % (2 * n)) + 2 * n) % (2 * n);
+                    return period < n ? period : 2 * n - 1 - period;
+                }
+                case AlphaWrap.MirrorOnce:
+                    return math.min(i < 0 ? -i - 1 : i, n - 1);
+                default:
+                {
+                    var r = i % n;
+                    return r < 0 ? r + n : r;
+                }
+            }
         }
     }
 }

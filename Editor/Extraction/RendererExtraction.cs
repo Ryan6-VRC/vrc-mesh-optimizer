@@ -19,6 +19,17 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         };
 
         /// <summary>
+        /// Whether Unity draws the renderer with its winding reversed, as it does for a transform that mirrors. A
+        /// MeshRenderer's own transform decides; a SkinnedMeshRenderer's root bone decides, or its own transform when
+        /// it has none, and not the bones: a mirroring bone mirrors the skinned faces without reversing the winding.
+        /// </summary>
+        public static bool DrawsMirrored(Renderer renderer)
+        {
+            var drawnBy = renderer is SkinnedMeshRenderer skinned && skinned.rootBone != null ? skinned.rootBone : renderer.transform;
+            return drawnBy.localToWorldMatrix.determinant < 0f;
+        }
+
+        /// <summary>
         /// Avatar-root space: the root's position and rotation, in metres. The root's own scale is left out so an
         /// error measured in it is a distance in the world.
         /// </summary>

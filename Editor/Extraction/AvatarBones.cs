@@ -32,6 +32,34 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
 
         public NativeArray<int> ParentArray(Allocator allocator) => new NativeArray<int>(_parents.ToArray(), allocator);
 
+        /// <summary>Per bone id, true when the bone or any ancestor is flagged: what rides a bone goes where it goes.</summary>
+        public bool[] CarryDown(bool[] flags)
+        {
+            var result = new bool[flags.Length];
+            var known = new bool[flags.Length];
+            var chain = new List<int>();
+            for (var b = 0; b < flags.Length; b++)
+            {
+                // Walk up to the nearest settled ancestor, then settle the chain on the way back down.
+                chain.Clear();
+                var at = b;
+                while (at >= 0 && at < flags.Length && !known[at])
+                {
+                    chain.Add(at);
+                    at = _parents[at];
+                }
+                var inherited = at >= 0 && at < flags.Length && result[at];
+                for (var i = chain.Count - 1; i >= 0; i--)
+                {
+                    var c = chain[i];
+                    inherited |= flags[c];
+                    result[c] = inherited;
+                    known[c] = true;
+                }
+            }
+            return result;
+        }
+
         int Add(Transform t, int parent)
         {
             var id = _transforms.Count;

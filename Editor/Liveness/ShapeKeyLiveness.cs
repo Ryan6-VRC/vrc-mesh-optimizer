@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Liveness
 {
-    internal enum ShapeKeyState : byte
+    public enum ShapeKeyState : byte
     {
         /// <summary>Zero on the renderer and driven by nothing: it never deforms the mesh at runtime.</summary>
         Dead,
@@ -14,7 +14,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         Live,
     }
 
-    internal readonly struct ShapeKeyLiveness : IEquatable<ShapeKeyLiveness>
+    public readonly struct ShapeKeyLiveness : IEquatable<ShapeKeyLiveness>
     {
         public readonly ShapeKeyState State;
         /// <summary>For a frozen key, the weight it holds, in the renderer's units (0 to 100 for a usual key).</summary>
