@@ -266,6 +266,53 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         }
 
         [Test]
+        public void SliverAFrameOpensAndTurns_IsJudgedByTheFacingItTakes()
+        {
+            // A triangle with next to no area at rest faces +Z, under a plate 1 cm up; nothing is below it. Its frame
+            // pulls the third corner down to make a real triangle facing -Z, open to anyone below. The frame's cone
+            // must follow the face it now has, whatever the rest normal was.
+            var skin = new MeshBuilder();
+            skin.AddVertex(float3.zero, float3.zero, float2.zero, MeshBuilder.On(1));
+            skin.AddVertex(new float3(0.01f, 0, 0), float3.zero, float2.zero, MeshBuilder.On(1));
+            skin.AddVertex(new float3(0, 1e-11f, 0), float3.zero, float2.zero, MeshBuilder.On(1));
+            skin.AddTriangle(0, 1, 2);
+            skin.AddFrame().Add(new ShapeDelta { Vertex = 2, Delta = new float3(0, -0.01f, 0) });
+            scene.Add(skin, occludes: false);
+            var cover = new MeshBuilder();
+            foreach (var c in new[] { new float3(-0.2f, -0.2f, 0.01f), new float3(0.2f, -0.2f, 0.01f), new float3(-0.2f, 0.2f, 0.01f), new float3(0.2f, 0.2f, 0.01f) })
+                cover.AddVertex(c, new float3(0, 0, 1), float2.zero, MeshBuilder.On(1));
+            cover.AddTriangle(0, 1, 2);
+            cover.AddTriangle(2, 1, 3);
+            scene.Add(cover, occludes: true, new OccluderSubmesh { Culling = FaceCulling.Off });
+            var r = SolveAndCheck("sliver");
+            Assert.That(r[0].HiddenTriangles[0], Is.False, "in its frame the triangle faces -Z, where nothing covers it");
+        }
+
+        [Test]
+        public void MeshWithNoSubmeshInformation_ReadsBackCulled_NotAnotherMeshsMaterial([Values(false, true)] bool last)
+        {
+            // A plate with no per-triangle submesh and no submesh materials, under a cover; a double-sided plate
+            // elsewhere. The first is back-culled by default and goes; it must not borrow the other's culling or fail.
+            var bare = Plate(0f, 0.1f);
+            var other = Plate(0f, 0.05f);
+            if (last) scene.Add(ShiftX(other, 1f), occludes: false, new OccluderSubmesh { Culling = FaceCulling.Off });
+            // The scene still owns and disposes the array; the solver is shown a mesh without it.
+            scene.Add(bare, occludes: false).Mesh.TriangleSubmesh = default;
+            if (!last) scene.Add(ShiftX(other, 1f), occludes: false, new OccluderSubmesh { Culling = FaceCulling.Off });
+            scene.Add(Plate(0.01f, 0.2f), occludes: true);
+            var r = SolveAndCheck($"bare plate {(last ? "after" : "before")} a double-sided one");
+            Assert.That(r[last ? 1 : 0].HiddenCount, Is.EqualTo(bare.TriangleCount), "back-culled, its covered front is all that shows");
+        }
+
+        static MeshBuilder ShiftX(MeshBuilder b, float dx)
+        {
+            var s = new MeshBuilder();
+            for (var v = 0; v < b.VertexCount; v++) s.AddVertex(b.Position(v) + new float3(dx, 0, 0), Up, float2.zero, MeshBuilder.On(1));
+            for (var t = 0; t < b.TriangleCount; t++) { var tri = b.Triangle(t); s.AddTriangle(tri.x, tri.y, tri.z); }
+            return s;
+        }
+
+        [Test]
         public void TiltedAuthoredNormals_DoNotHideASurfaceSeenThroughAWindow([Values(0f, 30f)] float tilt)
         {
             // The 1 mm skin faces +Y, but its authored normals lean 30 degrees toward +X, so a cone about them

@@ -256,6 +256,42 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             if (!hides) Assert.That(cup.sharedMesh.triangles.Length, Is.EqualTo(r.HiddenSourceTriangles.Length * 3), "every triangle of the cup is drawn");
         }
 
+        // A shader that states no cull property but draws both sides, and the MToon and UTS convention _CullMode.
+        [TestCase("Shader \"Hidden/MeshOptimizerTests/HardCullOff\" { SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull Off } } }", -1, false)]
+        [TestCase("Shader \"Hidden/MeshOptimizerTests/CullMode\" { Properties { _CullMode (\"Cull\", Float) = 2 } SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_CullMode] } } }", 0, false)]
+        [TestCase("Shader \"Hidden/MeshOptimizerTests/CullMode\" { Properties { _CullMode (\"Cull\", Float) = 2 } SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_CullMode] } } }", 2, true)]
+        public void CandidateWhoseShaderCullingIsNotRead_IsTakenAsDrawingItsBack(string source, int cullMode, bool hides)
+        {
+            var material = a.Made(new Material(a.Made(ShaderUtil.CreateShaderAsset(source, true))));
+            if (cullMode >= 0) material.SetFloat("_CullMode", cullMode);
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: material);
+            Garment(chest);
+
+            var report = a.Run();
+
+            Assert.That(Of(report, cup).HiddenRemoved > 0, Is.EqualTo(hides));
+        }
+
+        // Unity draws a material slot past the last submesh over the last submesh again: here a second, double-sided
+        // material over the cup's one submesh.
+        [Test]
+        public void CandidateWithASurplusMaterialSlotDrawingItsBack_IsKept()
+        {
+            Material Cull(int cull)
+            {
+                var m = a.Made(new Material(CullShader()));
+                m.SetFloat(OccluderMaterials.CullProperty, cull);
+                return m;
+            }
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: Cull(2));
+            cup.sharedMaterials = new[] { Cull(2), Cull(0) };
+            Garment(chest);
+
+            var report = a.Run();
+
+            Assert.That(Of(report, cup).HiddenRemoved, Is.Zero, "the surplus slot draws the cup's inside, open to the top");
+        }
+
         Shader CullShader() => a.Made(ShaderUtil.CreateShaderAsset(
             "Shader \"Hidden/MeshOptimizerTests/Cull\" { Properties { [Enum(UnityEngine.Rendering.CullMode)] _Cull (\"Cull\", Float) = 2 } " +
             "SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_Cull] } } }", true));
