@@ -73,7 +73,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 {
                     var o = order[i];
                     var t = Tris[OccTri[o]];
-                    Prims[start + i] = new BvhTri { V0 = Pos[t.x], E1 = Pos[t.y] - Pos[t.x], E2 = Pos[t.z] - Pos[t.x], Occ = o };
+                    Prims[start + i] = new BvhTri { V0 = Pos[t.x], V1 = Pos[t.y], V2 = Pos[t.z], Occ = o };
                 }
                 order.Dispose();
             }
@@ -82,7 +82,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
     }
 
-    /// <summary>One sample per vertex: its position, a usable normal, and its bones.</summary>
+    /// <summary>
+    /// One sample per vertex: its position, a usable normal, and its bones. Then, after all of them, a back
+    /// sample for each vertex of a triangle whose material renders its back: the same point and bones, facing
+    /// the other way, so that side is owed cover too.
+    /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct VertexSamplesJob : IJob
     {
@@ -92,8 +96,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int> VertMesh;
         [ReadOnly] public NativeArray<int> WeightStart;
         [ReadOnly] public NativeArray<BoneInfluence> Weights;
+        [ReadOnly] public NativeArray<bool> NeedsBack;
         public float MinRawWeight;
         public float MinInfluence;
+        /// <summary>Out: per vertex, its back sample, or -1.</summary>
+        public NativeArray<int> VertBack;
         public NativeList<float3> SamplePos;
         public NativeList<float3> SampleNrm;
         public NativeList<int> SampleMesh;
@@ -101,6 +108,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public NativeList<int> SampleBones;
         public NativeList<byte> SampleState;
         public NativeList<float3> SampleBary;
+        public NativeList<bool> SampleBack;
 
         public void Execute()
         {
@@ -127,6 +135,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 SampleMesh.Add(VertMesh[v]);
                 SampleState.Add(raw < MinRawWeight || kept == 0 ? Reason.Unweighted : ok ? Reason.Covered : Reason.Escaped);
                 SampleBary.Add(float3.zero);
+                SampleBack.Add(false);
+            }
+            for (var v = 0; v < Pos.Length; v++)
+            {
+                VertBack[v] = -1;
+                if (!NeedsBack[v]) continue;
+                VertBack[v] = SamplePos.Length;
+                for (var k = SampleBoneStart[v]; k < SampleBoneStart[v + 1]; k++) SampleBones.Add(SampleBones[k]);
+                SampleBoneStart.Add(SampleBones.Length);
+                SamplePos.Add(Pos[v]);
+                SampleNrm.Add(-SampleNrm[v]);
+                SampleMesh.Add(VertMesh[v]);
+                SampleState.Add(SampleState[v]);
+                SampleBary.Add(float3.zero);
+                SampleBack.Add(true);
             }
         }
     }
@@ -149,7 +172,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 
     /// <summary>
     /// Interior samples on a lattice over each large triangle whose corners are all covered, so a hole
-    /// in the cover smaller than the triangle and away from its corners still keeps it.
+    /// in the cover smaller than the triangle and away from its corners still keeps it. A triangle that
+    /// renders its back gets the lattice on each side.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct InteriorSamplesJob : IJob
@@ -157,6 +181,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<float3> Pos;
         [ReadOnly] public NativeArray<int3> Tris;
         [ReadOnly] public NativeArray<int> TriMesh;
+        [ReadOnly] public NativeArray<bool> TriTwoSided;
+        [ReadOnly] public NativeArray<int> VertBack;
         [ReadOnly] public NativeArray<int> WeightStart;
         [ReadOnly] public NativeArray<BoneInfluence> Weights;
         [ReadOnly] public NativeArray<bool> Covered;
@@ -175,6 +201,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public NativeList<int> SampleBones;
         public NativeList<byte> SampleState;
         public NativeList<float3> SampleBary;
+        public NativeList<bool> SampleBack;
 
         public void Execute()
         {
@@ -182,7 +209,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             for (var t = 0; t < Tris.Length; t++)
             {
                 var tri = Tris[t];
+                var twoSided = TriTwoSided[t];
                 if (!Covered[tri.x] || !Covered[tri.y] || !Covered[tri.z]) continue;
+                if (twoSided && (!Covered[VertBack[tri.x]] || !Covered[VertBack[tri.y]] || !Covered[VertBack[tri.z]])) continue;
                 float3 a = Pos[tri.x], b = Pos[tri.y], c = Pos[tri.z];
                 var longest = math.sqrt(math.max(math.distancesq(a, b), math.max(math.distancesq(b, c), math.distancesq(c, a))));
                 if (longest <= Spacing) continue;
@@ -195,25 +224,27 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 TriSubdivision[t] = n;
                 TriSampleStart[t] = SamplePos.Length;
                 var added = 0;
+                for (var side = 0; side < (twoSided ? 2 : 1); side++)
                 for (var i = 0; i <= n; i++)
                 for (var j = 0; j <= n - i; j++)
                 {
                     var k = n - i - j;
                     if (i == n || j == n || k == n) continue;
                     var bary = new float3(i, j, k) / n;
-                    Add(t, tri, bary);
+                    Add(t, tri, bary, side == 1);
                     added++;
                 }
                 TriSampleCount[t] = added;
             }
         }
 
-        void Add(int t, int3 tri, float3 bary)
+        void Add(int t, int3 tri, float3 bary, bool back)
         {
             // The point as the triangle carries it: corners' positions and normals blended.
             var p = bary.x * Pos[tri.x] + bary.y * Pos[tri.y] + bary.z * Pos[tri.z];
             var n = bary.x * SampleNrm[tri.x] + bary.y * SampleNrm[tri.y] + bary.z * SampleNrm[tri.z];
             var geo = math.cross(Pos[tri.y] - Pos[tri.x], Pos[tri.z] - Pos[tri.x]);
+            if (back) { n = -n; geo = -geo; }
             n = Samples.UsableNormal(n, geo, out var ok);
 
             // The point skins as the blend of its corners; its bones are the blend's, above the floor.
@@ -254,6 +285,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             SampleMesh.Add(TriMesh[t]);
             SampleState.Add(kept == 0 ? Reason.Unweighted : ok ? Reason.Covered : Reason.Escaped);
             SampleBary.Add(bary);
+            SampleBack.Add(back);
         }
     }
 
@@ -312,6 +344,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public bool MeshOccludes;
         public float MoveEpsilon;
         public float Reach;
+        public float OriginOffset;
         public float ConeRadians;
         public BvhSplit Split;
         [ReadOnly] public NativeArray<ShapeDelta> Deltas;
@@ -329,6 +362,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<float3> SamplePos;
         [ReadOnly] public NativeArray<float3> SampleNrm;
         [ReadOnly] public NativeArray<float3> SampleBary;
+        [ReadOnly] public NativeArray<bool> SampleBack;
+        [ReadOnly] public NativeArray<int> VertBack;
         [ReadOnly] public NativeArray<int> SampleMesh;
         [ReadOnly] public NativeArray<ulong> Witness;
         [ReadOnly] public NativeArray<bool> Covered;
@@ -412,10 +447,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 NormalScratch[a] = Rotate(SampleNrm[a], GeoN[a], g);
             }
 
-            // The mesh's own samples the frame changes.
+            // The mesh's own samples the frame changes, each side of each.
             foreach (var a in affected)
+            {
                 if (Relevant[a] && Covered[a])
                     Work.Add(new FrameWork { Sample = a, Pos = At(a), Nrm = NormalScratch[a] });
+                var back = VertBack[a];
+                if (back >= 0 && Relevant[back] && Covered[back])
+                    Work.Add(new FrameWork { Sample = back, Pos = At(a), Nrm = -NormalScratch[a] });
+            }
             var tris2 = new NativeList<int>(Allocator.Temp);
             foreach (var a in affected)
                 for (var k = VTStart[a]; k < VTStart[a + 1]; k++)
@@ -432,6 +472,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         var p = b.x * At(tri.x) + b.y * At(tri.y) + b.z * At(tri.z);
                         var n = b.x * NormalAt(tri.x) + b.y * NormalAt(tri.y) + b.z * NormalAt(tri.z);
                         if (math.lengthsq(n) <= 1e-12f) n = math.cross(At(tri.y) - At(tri.x), At(tri.z) - At(tri.x));
+                        if (SampleBack[s]) n = -n;
                         // Still degenerate, the triangle has no area in the frame and renders nothing.
                         Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = math.lengthsq(n) > 1e-24f ? math.normalize(n) : SampleNrm[s] });
                     }
@@ -456,10 +497,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     float3 p0 = At(tri.x), p1 = At(tri.y), p2 = At(tri.z);
                     bmin.Add(math.min(p0, math.min(p1, p2)));
                     bmax.Add(math.max(p0, math.max(p1, p2)));
-                    FramePrims.Add(new BvhTri { V0 = p0, E1 = p1 - p0, E2 = p2 - p0, Occ = occ });
+                    FramePrims.Add(new BvhTri { V0 = p0, V1 = p1, V2 = p2, Occ = occ });
                 }
                 if (MovedOcc.Length > 0)
                 {
+                    // Padded past float noise, so a ray that met a moved face at rest cannot slip outside the
+                    // box it is tested against and be taken as still blocked.
+                    var pad = 1e-5f + 1e-5f * math.cmax(hi - lo);
+                    lo -= pad;
+                    hi += pad;
                     RiskBox[0] = lo;
                     RiskBox[1] = hi;
                     var order = new NativeArray<int>(MovedOcc.Length, Allocator.Temp);
@@ -479,7 +525,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         var p = SamplePos[s];
                         var to = centre - p;
                         var dist = math.length(to);
-                        if (dist - radius > Reach) continue;
+                        // A ray starts OriginOffset along the normal, so it reaches that much past Reach from the sample.
+                        if (dist - radius > Reach + OriginOffset) continue;
                         if (dist > radius)
                         {
                             var off = math.acos(math.clamp(math.dot(to / dist, SampleNrm[s]), -1f, 1f));
@@ -585,6 +632,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     internal struct CandidatesJob : IJob
     {
         [ReadOnly] public NativeArray<int3> Tris;
+        [ReadOnly] public NativeArray<bool> TriTwoSided;
+        [ReadOnly] public NativeArray<int> VertBack;
         [ReadOnly] public NativeArray<bool> Eligible;
         [ReadOnly] public NativeArray<bool> TriVeto;
         [ReadOnly] public NativeArray<bool> Covered;
@@ -601,11 +650,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             for (var t = 0; t < Tris.Length; t++)
             {
                 var tri = Tris[t];
+                var twoSided = TriTwoSided[t];
                 var ok = Eligible[t] && !TriVeto[t] && Covered[tri.x] && Covered[tri.y] && Covered[tri.z];
+                if (ok && twoSided) ok = Covered[VertBack[tri.x]] && Covered[VertBack[tri.y]] && Covered[VertBack[tri.z]];
                 for (var s = TriSampleStart[t]; ok && s < TriSampleStart[t] + TriSampleCount[t]; s++) ok = Covered[s];
                 Candidate[t] = ok;
                 if (!ok) continue;
-                for (var c = 0; c < 3; c++) Mark(tri[c]);
+                for (var c = 0; c < 3; c++)
+                {
+                    Mark(tri[c]);
+                    if (twoSided) Mark(VertBack[tri[c]]);
+                }
                 for (var s = TriSampleStart[t]; s < TriSampleStart[t] + TriSampleCount[t]; s++) Mark(s);
             }
         }

@@ -71,7 +71,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
     }
 
-    /// <summary>One occluder submesh's material, as occlusion reads it.</summary>
+    /// <summary>One submesh's material, as occlusion reads it: how it blocks rays as an occluder, and, by its culling, which sides of its own triangles must be covered to hide them.</summary>
     public sealed class OccluderSubmesh
     {
         public OccluderMode Mode = OccluderMode.Auto;
@@ -87,7 +87,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public EvalMesh Mesh;
         /// <summary>True only for a renderer that is always on. Every mesh is a candidate to be hidden; only these block rays.</summary>
         public bool Occludes;
-        /// <summary>Per submesh index. A missing or null entry reads as Auto, back-culled, opaque.</summary>
+        /// <summary>Per submesh index, for every renderer, occluder or not: culling Off or Front owes a triangle cover on both sides. A missing or null entry reads as Auto, back-culled, opaque.</summary>
         public OccluderSubmesh[] Submeshes;
     }
 
@@ -194,7 +194,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     {
         /// <summary>Per triangle: true when it is hidden in every configuration and may be deleted.</summary>
         public NativeArray<bool> HiddenTriangles;
-        /// <summary>Per vertex: covered in every configuration it was evaluated in. Informational; a triangle's verdict is <see cref="HiddenTriangles"/>.</summary>
+        /// <summary>Per vertex: covered in every configuration it was evaluated in, on each side a triangle using it renders. Informational; a triangle's verdict is <see cref="HiddenTriangles"/>.</summary>
         public NativeArray<bool> CoveredVertices;
         public DeclineCounts Declined;
 

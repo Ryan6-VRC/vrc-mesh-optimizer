@@ -64,6 +64,31 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             math.min(24, math.max(8, (int)math.round(8f * math.sin(theta) / math.sin(step))));
     }
 
+    /// <summary>A ray set up for the watertight test: its dominant axis becomes z, and a shear takes it onto z.</summary>
+    internal struct ShearedRay
+    {
+        public int Kx, Ky, Kz;
+        public float Sx, Sy, Sz;
+
+        public ShearedRay(float3 d)
+        {
+            var a = math.abs(d);
+            Kz = a.x > a.y ? (a.x > a.z ? 0 : 2) : (a.y > a.z ? 1 : 2);
+            Kx = Kz == 2 ? 0 : Kz + 1;
+            Ky = Kx == 2 ? 0 : Kx + 1;
+            // Swapping x and y for a ray down its axis keeps each face's winding.
+            if (d[Kz] < 0f)
+            {
+                var k = Kx;
+                Kx = Ky;
+                Ky = k;
+            }
+            Sx = d[Kx] / d[Kz];
+            Sy = d[Ky] / d[Kz];
+            Sz = 1f / d[Kz];
+        }
+    }
+
     /// <summary>
     /// The shared-weights rule for one sample. A ray is blocked only by an occluder face whose weight share
     /// on the sample's bones, widened by kin steps, reaches the share threshold and which renders opaque
@@ -72,8 +97,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// </summary>
     internal struct CoverageKernel
     {
-        const float BaryEps = 1e-6f;
-
         [ReadOnly] public NativeArray<float3> Cone;
         [ReadOnly] public NativeArray<int> BoneParent;
         [ReadOnly] public NativeArray<int> WeightStart;
@@ -188,15 +211,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         {
             bool metAny = false, metCoMoving = false;
             var inv = new float3(SafeInv(d.x), SafeInv(d.y), SafeInv(d.z));
+            var ray = new ShearedRay(d);
             // In a frame, the rays re-cast are those toward the moved faces, which are then their likeliest blocker.
             if (FrameMesh >= 0 && FrameMesh != ownMesh && FrameNodes.Length > 0 &&
-                Traverse(FrameNodes, FramePrims, 0, false, o, d, inv, ref allowed, ref metAny, ref metCoMoving))
+                Traverse(FrameNodes, FramePrims, 0, false, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving))
             {
                 witness |= Bit(FrameMesh);
                 return Reason.Covered;
             }
             // The mesh that blocked the previous ray usually blocks this one.
-            if (last >= 0 && Traverse(Nodes, Prims, MeshRoot[last], true, o, d, inv, ref allowed, ref metAny, ref metCoMoving))
+            if (last >= 0 && Traverse(Nodes, Prims, MeshRoot[last], true, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving))
             {
                 witness |= Bit(last);
                 return Reason.Covered;
@@ -205,7 +229,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 var m = MeshOrder[k];
                 if (m == ownMesh || m == last) continue;
-                if (!Traverse(Nodes, Prims, MeshRoot[m], true, o, d, inv, ref allowed, ref metAny, ref metCoMoving)) continue;
+                if (!Traverse(Nodes, Prims, MeshRoot[m], true, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving)) continue;
                 last = m;
                 witness |= Bit(m);
                 return Reason.Covered;
@@ -213,19 +237,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             return metCoMoving ? Reason.SeeThrough : metAny ? Reason.Swings : Reason.Escaped;
         }
 
-        static float SafeInv(float x) => math.abs(x) < 1e-12f ? (x < 0f ? -1e12f : 1e12f) : 1f / x;
+        // Exact but for a zero component, which reads as a huge finite one so a box face through the origin
+        // gives 0 rather than NaN.
+        static float SafeInv(float x) => math.abs(x) < 1e-30f ? (x < 0f ? -1e30f : 1e30f) : 1f / x;
 
+        // Conservative (Ize, 2013): the far distance is stretched past float rounding, so a ray that grazes a box
+        // is let in; a box let in wrongly costs only time.
         bool Slab(in BvhNode node, float3 o, float3 inv, out float tNear)
         {
             var t0 = (node.Min - o) * inv;
             var t1 = (node.Max - o) * inv;
             tNear = math.cmax(math.min(t0, t1));
-            var tFar = math.cmin(math.max(t0, t1));
+            var tFar = math.cmin(math.max(t0, t1)) * 1.000001f;
             return tNear <= tFar && tFar >= 0f && tNear <= Reach;
         }
 
         unsafe bool Traverse(NativeArray<BvhNode> nodes, NativeArray<BvhTri> prims, int root, bool skipMoved,
-                             float3 o, float3 d, float3 inv, ref FixedList512Bytes<int2> allowed,
+                             float3 o, float3 d, float3 inv, in ShearedRay ray, ref FixedList512Bytes<int2> allowed,
                              ref bool metAny, ref bool metCoMoving)
         {
             if (root < 0 || !Slab(nodes[root], o, inv, out _)) return false;
@@ -240,12 +268,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     for (var i = node.First; i < node.First + node.Count; i++)
                     {
                         var t = prims[i];
-                        if (!Intersect(t, o, d, out var det, out var bu, out var bv)) continue;
+                        if (!Intersect(t, o, ray, out var bu, out var bv)) continue;
                         var occ = t.Occ;
                         if (Disabled[occ] || (skipMoved && Moved[occ])) continue;
                         metAny = true;
                         if (FaceShare(occ, ref allowed) < Share) continue;
-                        if (!Renders(occ, det) || SeeThrough(occ, bu, bv))
+                        if (!Renders(occ, math.dot(d, math.cross(t.V1 - t.V0, t.V2 - t.V0))) || SeeThrough(occ, bu, bv))
                         {
                             metCoMoving = true;
                             continue;
@@ -269,23 +297,38 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             return false;
         }
 
-        // Moller-Trumbore, both sides. det = -dot(d, cross(E1, E2)), and cross(E1, E2) is the face's front
-        // normal under clockwise winding, so det < 0 means the front looks along the ray.
-        bool Intersect(in BvhTri t, float3 o, float3 d, out float det, out float u, out float v)
+        /// <summary>
+        /// Watertight, both sides (Woop, Benthin and Wald, 2013). The edge tests run on the corners as stored,
+        /// in a frame sheared so the ray is its z axis, so an edge two faces share is tested on the same floats
+        /// from each and a ray along it meets at least one of them, while a ray outside a face by any margin
+        /// misses it. <paramref name="u"/> and <paramref name="v"/> are the weights of corners y and z.
+        /// </summary>
+        bool Intersect(in BvhTri t, float3 o, in ShearedRay r, out float u, out float v)
         {
             u = v = 0f;
-            var pv = math.cross(d, t.E2);
-            det = math.dot(t.E1, pv);
-            if (math.abs(det) < 1e-18f) return false;
-            var invDet = 1f / det;
-            var tv = o - t.V0;
-            u = math.dot(tv, pv) * invDet;
-            if (u < -BaryEps || u > 1f + BaryEps) return false;
-            var qv = math.cross(tv, t.E1);
-            v = math.dot(d, qv) * invDet;
-            if (v < -BaryEps || u + v > 1f + BaryEps) return false;
-            var dist = math.dot(t.E2, qv) * invDet;
-            return dist > 0f && dist <= Reach;
+            float3 a = t.V0 - o, b = t.V1 - o, c = t.V2 - o;
+            float ax = a[r.Kx] - r.Sx * a[r.Kz], ay = a[r.Ky] - r.Sy * a[r.Kz];
+            float bx = b[r.Kx] - r.Sx * b[r.Kz], by = b[r.Ky] - r.Sy * b[r.Kz];
+            float cx = c[r.Kx] - r.Sx * c[r.Kz], cy = c[r.Ky] - r.Sy * c[r.Kz];
+            var e0 = cx * by - cy * bx;
+            var e1 = ax * cy - ay * cx;
+            var e2 = bx * ay - by * ax;
+            if (e0 == 0f || e1 == 0f || e2 == 0f)
+            {
+                // On an edge in single precision: decide its side in double.
+                e0 = (float)((double)cx * by - (double)cy * bx);
+                e1 = (float)((double)ax * cy - (double)ay * cx);
+                e2 = (float)((double)bx * ay - (double)by * ax);
+            }
+            if ((e0 < 0f || e1 < 0f || e2 < 0f) && (e0 > 0f || e1 > 0f || e2 > 0f)) return false;
+            var det = e0 + e1 + e2;
+            if (det == 0f) return false;
+            // The hit is tz / det along the ray; it must lie past the origin and within reach.
+            var tz = r.Sz * (e0 * a[r.Kz] + e1 * b[r.Kz] + e2 * c[r.Kz]);
+            if (det > 0f ? tz <= 0f || tz > Reach * det : tz >= 0f || tz < Reach * det) return false;
+            u = e1 / det;
+            v = e2 / det;
+            return true;
         }
 
         /// <summary>The face's weight share on the allowed bones: the mean over its weighted corners of each corner's share.</summary>
@@ -312,13 +355,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             return weighted > 0 ? total / weighted : 0f;
         }
 
-        bool Renders(int occ, float det)
+        /// <summary>
+        /// Whether the face renders to a viewer down the ray. <paramref name="facing"/> is dot(ray, cross(y - x, z - x)),
+        /// and cross(y - x, z - x) is the front normal under clockwise winding, so a positive value means the
+        /// front looks along the ray toward that viewer.
+        /// </summary>
+        bool Renders(int occ, float facing)
         {
             switch (OccMat[occ].Culling)
             {
                 case FaceCulling.Off: return true;
-                case FaceCulling.Front: return det > 0f;
-                default: return det < 0f;
+                case FaceCulling.Front: return facing < 0f;
+                default: return facing > 0f;
             }
         }
 
