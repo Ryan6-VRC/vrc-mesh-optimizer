@@ -79,18 +79,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(UnsafeUtility.CheckForLeaks(), Is.Zero);
         }
 
+        PipelineInput Input() => new PipelineInput
+        {
+            Root = a.Root.transform,
+            Settings = a.Root.GetComponent<AvatarMeshOptimizer>(),
+            Liveness = new Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]>(),
+        };
+
         // Cutting reads the prepared avatar and changes nothing in it, so a second cut writes the same meshes.
         [Test]
         public void APreparedAvatar_CutTwice_WritesTheSameMeshes_AndDisposingItFreesEverything()
         {
-            var input = new PipelineInput
-            {
-                Root = a.Root.transform,
-                Settings = a.Root.GetComponent<AvatarMeshOptimizer>(),
-                Liveness = new Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]>(),
-            };
             OptimizationReport first, second;
-            using (var prepared = OptimizerPipeline.Prepare(input))
+            using (var prepared = OptimizerPipeline.Prepare(Input()))
             {
                 first = OptimizerPipeline.Cut(prepared);
                 second = OptimizerPipeline.Cut(prepared);
@@ -98,6 +99,40 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             foreach (var r in first.Renderers.Concat(second.Renderers)) if (r.OutputMesh != null) a.Made(r.OutputMesh);
 
             Assert.That(UnsafeUtility.CheckForLeaks(), Is.Zero);
+            AssertSameCut(first, second);
+        }
+
+        // A report is the caller's to keep and read. Nothing it hands out is the prepared avatar's own state, so whatever
+        // the caller does with the first report, the next cut writes what the first did.
+        [Test]
+        public void AReportChangedAfterACut_LeavesTheNextCutAsTheFirst()
+        {
+            OptimizationReport first, second;
+            using (var prepared = OptimizerPipeline.Prepare(Input()))
+            {
+                first = OptimizerPipeline.Cut(prepared);
+                Assert.That(Of(first, body).HiddenRemoved, Is.GreaterThan(0), "the garment hides some of the body");
+                foreach (var r in first.Renderers)
+                    if (r.HiddenSourceTriangles != null) Array.Clear(r.HiddenSourceTriangles, 0, r.HiddenSourceTriangles.Length);
+                second = OptimizerPipeline.Cut(prepared);
+            }
+            foreach (var r in first.Renderers.Concat(second.Renderers)) if (r.OutputMesh != null) a.Made(r.OutputMesh);
+
+            AssertSameCut(first, second);
+        }
+
+        [Test]
+        public void ADisposedPreparedAvatar_RefusesToCut()
+        {
+            var prepared = OptimizerPipeline.Prepare(Input());
+            prepared.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() => OptimizerPipeline.Cut(prepared));
+            Assert.That(UnsafeUtility.CheckForLeaks(), Is.Zero);
+        }
+
+        static void AssertSameCut(OptimizationReport first, OptimizationReport second)
+        {
             Assert.That(first.Renderers.Count(r => r.OutputMesh != null), Is.GreaterThanOrEqualTo(2), "both renderers were written");
             Assert.That(second.ErrorLevel, Is.EqualTo(first.ErrorLevel));
             for (var i = 0; i < first.Renderers.Count; i++)
@@ -108,7 +143,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 Assert.That(y.KeptVertices, Is.EqualTo(x.KeptVertices));
                 if (x.OutputMesh == null) continue;
                 Assert.That(y.OutputMesh, Is.Not.SameAs(x.OutputMesh));
-                Assert.That(y.OutputMesh.triangles, Is.EqualTo(x.OutputMesh.triangles));
+                Assert.That(y.OutputMesh.subMeshCount, Is.EqualTo(x.OutputMesh.subMeshCount));
+                for (var s = 0; s < x.OutputMesh.subMeshCount; s++)
+                    Assert.That(y.OutputMesh.GetIndices(s), Is.EqualTo(x.OutputMesh.GetIndices(s)), $"submesh {s}");
+                Assert.That(y.OutputMesh.vertices, Is.EqualTo(x.OutputMesh.vertices));
+                Assert.That(y.OutputMesh.normals, Is.EqualTo(x.OutputMesh.normals));
             }
         }
     }

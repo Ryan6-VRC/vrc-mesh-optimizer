@@ -171,11 +171,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// Spends the component's target over the prepared sequences, cuts each and writes the meshes, and reports it all.
-        /// Reads <paramref name="prepared"/> and changes nothing in it. A renderer whose writing fails is left as it was.
+        /// Reads <paramref name="prepared"/> and changes nothing in it; whatever of it the report holds and a cut reads is a
+        /// copy, so nothing done to one report changes the next cut. A renderer whose writing fails is left as it was.
+        /// Throws once <paramref name="prepared"/> is disposed.
         /// </summary>
         public static OptimizationReport Cut(PreparedAvatar prepared)
         {
             if (prepared == null) throw new ArgumentNullException(nameof(prepared));
+            if (prepared.Disposed) throw new ObjectDisposedException(nameof(PreparedAvatar), "a disposed prepared avatar has nothing left to cut; prepare the avatar again");
             var input = prepared.Input;
             var settings = input.Settings;
             var total = Stopwatch.StartNew();
@@ -293,7 +296,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 KeptForFur = job.KeptForFur,
                 KeptForOutline = job.KeptForOutline,
                 Declined = job.Declined,
-                HiddenSourceTriangles = job.Hidden,
+                // A copy: the prepared flags are what the next cut reads.
+                HiddenSourceTriangles = (bool[])job.Hidden?.Clone(),
                 KeptVertices = written ? outcome.KeptVertices : null,
                 Liveness = job.Liveness,
             };
@@ -572,12 +576,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var stage = Stopwatch.StartNew();
             input.BeforeStep?.Invoke(AvatarStep.Clearance);
             var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : default;
-            prepared.Times.Clearance = stage.Elapsed.TotalMilliseconds;
-            var rig = BendRigs.Of(bones, BendRigs.SkinWeightPerBone(live.Select(j => j.Eval), bones.Count));
+            BendRig rig = default;
             try
             {
-                stage.Restart();
+                prepared.Times.Clearance = stage.Elapsed.TotalMilliseconds;
                 input.BeforeStep?.Invoke(AvatarStep.Recording);
+                rig = BendRigs.Of(bones, BendRigs.SkinWeightPerBone(live.Select(j => j.Eval), bones.Count));
+                stage.Restart();
                 foreach (var job in live)
                 {
                     perRenderer.TryGetValue(job.Renderer, out var own);
@@ -594,10 +599,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             finally
             {
                 surface.Dispose();
-                rig.Parent.Dispose();
-                rig.Position.Dispose();
-                rig.Axis.Dispose();
-                rig.Right.Dispose();
+                if (rig.Parent.IsCreated) rig.Parent.Dispose();
+                if (rig.Position.IsCreated) rig.Position.Dispose();
+                if (rig.Axis.IsCreated) rig.Axis.Dispose();
+                if (rig.Right.IsCreated) rig.Right.Dispose();
                 // Only the clearance rule reads a renderer's layers, and only while its sequence is recorded.
                 foreach (var job in live)
                 {

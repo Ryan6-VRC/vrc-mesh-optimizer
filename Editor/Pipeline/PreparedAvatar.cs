@@ -26,7 +26,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         public readonly List<LinkReport> Links = new List<LinkReport>();
         public readonly List<ConfigurationReport> Configurations = new List<ConfigurationReport>();
-        /// <summary>Per reason, how many keys the pass evaluates moved alone though the same clips drive them with another.</summary>
+        /// <summary>Per reason, the count <see cref="OptimizationReport.LinkRefusals"/> reports.</summary>
         public readonly Dictionary<LinkRefusal, int> LinkRefusals = new Dictionary<LinkRefusal, int>();
         public readonly List<Material> UnmatchedMaterialOverrides = new List<Material>();
         public bool OcclusionRan;
@@ -40,11 +40,15 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Wall-clock preparing took, in milliseconds, without the caller's liveness.</summary>
         public double PrepareMs;
 
+        /// <summary>True once disposed, when nothing is left to cut.</summary>
+        public bool Disposed { get; private set; }
+
         public PreparedAvatar(PipelineInput input) => Input = input;
 
         public void Dispose()
         {
             foreach (var r in Renderers) r.Dispose();
+            Disposed = true;
         }
     }
 
