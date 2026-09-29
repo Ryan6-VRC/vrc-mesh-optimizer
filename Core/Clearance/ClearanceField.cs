@@ -133,8 +133,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         [BurstCompile(CompileSynchronously = true)]
         struct VertexJob : IJobParallelFor
         {
-            [ReadOnly] public NativeArray<Gate.TreeNode> Nodes;
-            [ReadOnly] public NativeArray<Gate.TreePrim> Prims;
+            [ReadOnly] public NativeArray<Geometry.TreeNode> Nodes;
+            [ReadOnly] public NativeArray<Geometry.TreePrim> Prims;
             [ReadOnly] public NativeArray<int> PrimLayer;
             [ReadOnly] public NativeArray<int> NodeLayer;
             [ReadOnly] public NativeArray<float3> Positions;
@@ -152,8 +152,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         [BurstCompile(CompileSynchronously = true)]
         struct TriangleJob : IJobParallelFor
         {
-            [ReadOnly] public NativeArray<Gate.TreeNode> Nodes;
-            [ReadOnly] public NativeArray<Gate.TreePrim> Prims;
+            [ReadOnly] public NativeArray<Geometry.TreeNode> Nodes;
+            [ReadOnly] public NativeArray<Geometry.TreePrim> Prims;
             [ReadOnly] public NativeArray<int> PrimLayer;
             [ReadOnly] public NativeArray<int> NodeLayer;
             [ReadOnly] public NativeArray<float3> Positions;

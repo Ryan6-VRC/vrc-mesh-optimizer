@@ -1,3 +1,4 @@
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;

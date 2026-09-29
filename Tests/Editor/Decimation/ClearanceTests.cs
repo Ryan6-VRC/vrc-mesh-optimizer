@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Collections;
 using Unity.Mathematics;
 using static Ryan6Vrc.MeshOptimizer.Tests.Decimation.LayerFixtures;

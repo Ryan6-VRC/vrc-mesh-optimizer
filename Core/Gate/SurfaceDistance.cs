@@ -1,4 +1,5 @@
 using System;
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;

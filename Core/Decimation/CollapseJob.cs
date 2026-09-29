@@ -1,5 +1,5 @@
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
-using Ryan6Vrc.MeshOptimizer.Core.Gate;
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Topology;
 using Unity.Burst;

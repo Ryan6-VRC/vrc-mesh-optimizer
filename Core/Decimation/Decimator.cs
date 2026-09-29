@@ -115,8 +115,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             in Bends bends, Allocator allocator, out CollapseStats stats)
         {
             var active = field.Triangle.IsCreated;
-            using var nodes = new OptionalArray<Core.Gate.TreeNode>(active ? clearance.Surface.Nodes : default);
-            using var prims = new OptionalArray<Core.Gate.TreePrim>(active ? clearance.Surface.Prims : default);
+            using var nodes = new OptionalArray<Core.Geometry.TreeNode>(active ? clearance.Surface.Nodes : default);
+            using var prims = new OptionalArray<Core.Geometry.TreePrim>(active ? clearance.Surface.Prims : default);
             using var primLayer = new OptionalArray<int>(active ? clearance.Surface.PrimLayer : default);
             using var nodeLayer = new OptionalArray<int>(active ? clearance.Surface.NodeLayer : default);
             using var primClearance = new OptionalArray<float>(active ? clearance.Surface.PrimClearance : default);

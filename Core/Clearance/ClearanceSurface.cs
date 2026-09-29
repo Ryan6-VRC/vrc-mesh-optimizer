@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Ryan6Vrc.MeshOptimizer.Core.Gate;
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Ryan6Vrc.MeshOptimizer.Core.Topology;
 using Unity.Burst;
 using Unity.Collections;
@@ -336,10 +336,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 
         // ---------------------------------------------------------------- queries, callable from Burst
 
-        const int StackSize = 64;
-
-        static float BoxPointSq(float3 p, in TreeNode node) => math.lengthsq(math.max(math.max(node.Min - p, p - node.Max), 0f));
-
         /// <summary>
         /// A query triangle and four axes that often separate it from what is near it: its normal, and in its plane the
         /// direction square to each edge. Along any axis at all, two sets whose projections lie more than a gap apart are
@@ -415,7 +411,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         {
             var best = cap * cap;
             if (nodes.Length == 0) return cap;
-            var stack = stackalloc int[StackSize];
+            var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)
@@ -423,7 +419,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 var i = stack[--top];
                 if (nodeLayer[i] == layer) continue;
                 var node = nodes[i];
-                if (BoxPointSq(p, node) >= best) continue;
+                if (TriangleTree.BoxPointSq(p, node) >= best) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
@@ -435,7 +431,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                     continue;
                 }
                 var l = node.Start;
-                if (BoxPointSq(p, nodes[l]) <= BoxPointSq(p, nodes[l + 1]))
+                if (TriangleTree.BoxPointSq(p, nodes[l]) <= TriangleTree.BoxPointSq(p, nodes[l + 1]))
                 {
                     stack[top++] = l + 1;
                     stack[top++] = l;
@@ -459,7 +455,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             var best = cap * cap;
             if (nodes.Length == 0) return cap;
             var q = new Query(a, b, c);
-            var stack = stackalloc int[StackSize];
+            var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0 && best > 0f)
@@ -500,7 +496,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         {
             var best = cap * cap;
             if (nodes.Length == 0) return cap;
-            var stack = stackalloc int[StackSize];
+            var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)
@@ -509,7 +505,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 var only = nodeLayer[i];
                 if (only >= 0 && only != layer) continue;
                 var node = nodes[i];
-                if (BoxPointSq(p, node) >= best) continue;
+                if (TriangleTree.BoxPointSq(p, node) >= best) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
@@ -543,7 +539,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             if (nodes.Length == 0) return 0f;
             var total = 0f;
             var q = new Query(a, b, c);
-            var stack = stackalloc int[StackSize];
+            var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)
@@ -587,7 +583,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         {
             if (nodes.Length == 0 || !(keep > 0f)) return false;
             var q = new Query(a, b, c);
-            var stack = stackalloc int[StackSize];
+            var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)
