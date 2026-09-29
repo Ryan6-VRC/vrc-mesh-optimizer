@@ -272,6 +272,22 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Of(report, cup).HiddenRemoved > 0, Is.EqualTo(hides));
         }
 
+        // The same unread culling on an always-on cup: as a cover it blocks as back-culled, but as something that might be
+        // hidden it is taken to draw both sides.
+        [Test]
+        public void AlwaysOnCandidateWhoseShaderCullingIsNotRead_IsTakenAsDrawingItsBack()
+        {
+            var shader = a.Made(ShaderUtil.CreateShaderAsset(
+                "Shader \"Hidden/MeshOptimizerTests/HardCullOff\" { SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull Off } } }", true));
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: a.Made(new Material(shader)));
+            Garment(chest);
+            a.Optimizer().alwaysOn.Add(cup);
+
+            var report = a.Run();
+
+            Assert.That(Of(report, cup).HiddenRemoved, Is.Zero);
+        }
+
         // Unity draws a material slot past the last submesh over the last submesh again: here a second, double-sided
         // material over the cup's one submesh.
         [Test]

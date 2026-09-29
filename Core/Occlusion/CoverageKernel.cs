@@ -18,6 +18,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public OccluderMode Mode;
         public FaceCulling Culling;
         public int Alpha;
+        /// <summary>The submesh's own triangles draw their back, so each is owed cover on both sides.</summary>
+        public bool DrawsBack;
     }
 
     internal struct AlphaInfo

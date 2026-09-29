@@ -166,7 +166,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     w += e.Weights.Length;
                     WeightStart[vb + v] = w;
 
-                    var subCount = om.Submeshes?.Length ?? 0;
+                    // A mesh with triangles has at least the implicit submesh 0, material or not.
+                    var subCount = math.max(om.Submeshes?.Length ?? 0, e.TriangleCount > 0 ? 1 : 0);
                     for (var t = 0; t < e.TriangleCount; t++)
                         if (e.TriangleSubmesh.IsCreated) subCount = math.max(subCount, e.TriangleSubmesh[t] + 1);
                     matBase[m] = mats.Count;
@@ -179,7 +180,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                             alpha = maps.IndexOf(sub.Alpha);
                             if (alpha < 0) { alpha = maps.Count; maps.Add(sub.Alpha); }
                         }
-                        mats.Add(new OccMaterial { Mode = sub?.Mode ?? OccluderMode.Auto, Culling = sub?.Culling ?? FaceCulling.Back, Alpha = alpha });
+                        mats.Add(new OccMaterial
+                        {
+                            Mode = sub?.Mode ?? OccluderMode.Auto, Culling = sub?.Culling ?? FaceCulling.Back, Alpha = alpha,
+                            DrawsBack = (sub?.CandidateCulling ?? sub?.Culling ?? FaceCulling.Back) != FaceCulling.Back,
+                        });
                     }
 
                     for (var t = 0; t < e.TriangleCount; t++)
@@ -189,7 +194,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         Tris[tb + t] = tri + vb;
                         TriMesh[tb + t] = m;
                         // A material that renders a face's back shows it to a viewer behind the face.
-                        if (mats[matBase[m] + (e.TriangleSubmesh.IsCreated ? e.TriangleSubmesh[t] : 0)].Culling == FaceCulling.Back) continue;
+                        if (!mats[matBase[m] + (e.TriangleSubmesh.IsCreated ? e.TriangleSubmesh[t] : 0)].DrawsBack) continue;
                         TriTwoSided[tb + t] = true;
                         NeedsBack[vb + tri.x] = NeedsBack[vb + tri.y] = NeedsBack[vb + tri.z] = true;
                     }

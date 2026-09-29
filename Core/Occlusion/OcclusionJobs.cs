@@ -559,7 +559,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 
         static float3 Rotate(float3 n, float3 from, float3 to)
         {
-            if (math.lengthsq(from) < 1e-24f || math.lengthsq(to) < 1e-24f) return n;
+            // No area in the frame: the face draws nothing there, and keeps its cone.
+            if (math.lengthsq(to) <= 1e-30f) return n;
+            // No area at rest gave nothing to turn from: the frame's own face decides.
+            if (math.lengthsq(from) <= 1e-30f) return math.normalize(to);
             var a = math.normalize(from);
             var b = math.normalize(to);
             var d = math.dot(a, b);

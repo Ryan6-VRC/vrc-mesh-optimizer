@@ -24,7 +24,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     internal static class CoverChecker
     {
         /// <summary>A hit this far outside a face, in barycentric terms, still blocks.</summary>
-        const double EdgeSlack = 1e-5;
+        const double EdgeSlack = 1e-7;
 
         public sealed class Report
         {
@@ -270,7 +270,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 
             static double3 Turn(double3 n, double3 from, double3 to)
             {
-                if (math.lengthsq(from) < 1e-24 || math.lengthsq(to) < 1e-24) return n;
+                if (math.lengthsq(to) <= 1e-30) return n;
+                if (math.lengthsq(from) <= 1e-30) return math.normalize(to);
                 var a = math.normalize(from);
                 var b = math.normalize(to);
                 var cos = math.dot(a, b);
@@ -319,7 +320,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 var d = M[m];
                 var tri = d.Tris[t];
                 var sub = Sub(d, t);
-                var culling = sub?.Culling ?? FaceCulling.Back;
+                var culling = sub?.CandidateCulling ?? sub?.Culling ?? FaceCulling.Back;
                 var sides = culling == FaceCulling.Back ? new[] { false } : culling == FaceCulling.Front ? new[] { true } : new[] { false, true };
 
                 // The lattice the rule samples inside the triangle, fixed by its rest shape.

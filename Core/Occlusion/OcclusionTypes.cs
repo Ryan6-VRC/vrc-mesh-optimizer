@@ -88,6 +88,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     {
         public OccluderMode Mode = OccluderMode.Auto;
         public FaceCulling Culling = FaceCulling.Back;
+        /// <summary>
+        /// Which sides of this submesh's own triangles draw, where that reading differs from <see cref="Culling"/>:
+        /// a culling that cannot be read is taken as back-culled when it blocks rays, which blocks less, but as
+        /// drawing both sides when its triangles might be hidden, which keeps more. Null reads as <see cref="Culling"/>.
+        /// </summary>
+        public FaceCulling? CandidateCulling;
         /// <summary>Sampled when <see cref="Mode"/> is Auto; null reads as opaque.</summary>
         public AlphaMap Alpha;
     }
