@@ -61,7 +61,10 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
     {
         public Renderer renderer;
         public bool excludeFromDecimation;
-        /// <summary>Relative weight of this renderer's error when the triangle budget is shared out. 1 is neutral.</summary>
+        /// <summary>
+        /// How many times over this renderer's error counts against the target, a budget or a tolerance alike. 1 is
+        /// neutral; higher keeps more of it.
+        /// </summary>
         [Min(0)] public float protection = 1f;
     }
 }

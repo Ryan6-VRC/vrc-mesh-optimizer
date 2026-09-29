@@ -237,6 +237,27 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             AssertAll(r[0], TrianglesWithin(inner, 90f, 180f), true, "alpha 0.9 is over it");
         }
 
+        // The shell's UV v runs from 0.5 at the bottom to 1 at the top; an offset of 0.2 carries everything within
+        // 72 degrees of +Y past v = 1. The map is see-through only in its top rows. Clamped, those coordinates read
+        // the top rows and the cap shows through; repeated, they wrap to the opaque bottom rows.
+        [TestCase(AlphaWrap.Clamp, false)]
+        [TestCase(AlphaWrap.Repeat, true)]
+        public void CoordinatesPastTheSquare_ReadTheTexelTheirWrapModeReaches(AlphaWrap wrap, bool capHidden)
+        {
+            const int w = 8, h = 40;
+            var alpha = new byte[w * h];
+            for (var y = 0; y < h; y++)
+                for (var x = 0; x < w; x++)
+                    alpha[y * w + x] = (y + 0.5f) / h > 0.97f ? (byte)0 : (byte)255;
+            var map = new AlphaMap(w, h, alpha, 0.5f) { ScaleOffset = new float4(1, 1, 0, 0.2f), WrapV = wrap };
+            var inner = InnerSphere();
+            scene.Add(inner, occludes: true);
+            scene.Add(OuterSphere(MeshBuilder.On(1)), occludes: true, new OccluderSubmesh { Alpha = map });
+            var r = scene.Solve(Defaults, Bones);
+            AssertAll(r[0], TrianglesWithin(inner, 0f, 40f), capHidden, $"{wrap} decides what the cap reads");
+            AssertAll(r[0], TrianglesWithin(inner, 110f, 180f), true, "the lower shell reads opaque rows either way");
+        }
+
         static MeshBuilder ShellWithDetachedCap(out int capFirst, out int capEnd)
         {
             // The cap within 35 degrees of +Y has its own vertices, so a frame can move it away and open a hole.
