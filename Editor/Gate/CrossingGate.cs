@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
+using Ryan6Vrc.MeshOptimizer.Extraction;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
@@ -241,9 +242,9 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 {
                     for (var i = 0; i < n; i++)
                     {
-                        Source[i].Triangles = new NativeArray<int3>(GeometryGate.ReadTriangles(inputs[i].Source), Allocator.Persistent);
+                        Source[i].Triangles = new NativeArray<int3>(MeshTriangles.Read(inputs[i].Source).triangles, Allocator.Persistent);
                         if (inputs[i].RemovedTriangles != null) Source[i].Excluded = new NativeArray<bool>(inputs[i].RemovedTriangles, Allocator.Persistent);
-                        Optimized[i].Triangles = new NativeArray<int3>(GeometryGate.ReadTriangles(inputs[i].Optimized), Allocator.Persistent);
+                        Optimized[i].Triangles = new NativeArray<int3>(MeshTriangles.Read(inputs[i].Optimized).triangles, Allocator.Persistent);
                     }
                 }
                 catch

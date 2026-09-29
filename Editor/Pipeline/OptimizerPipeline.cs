@@ -231,7 +231,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 r.Skip = SkipReason.NoMesh;
                 return job;
             }
-            r.TrianglesBefore = r.TrianglesAfter = TriangleCount(mesh);
+            r.TrianglesBefore = r.TrianglesAfter = MeshTriangles.Count(mesh);
             if (renderer.GetComponent<Cloth>() != null)
             {
                 r.Skip = SkipReason.Cloth;
@@ -276,15 +276,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             for (var k = 0; k < mesh.blendShapeCount; k++)
                 if (!names.Add(mesh.GetBlendShapeName(k))) return mesh.GetBlendShapeName(k);
             return null;
-        }
-
-        /// <summary>Triangles in the mesh's triangle submeshes; other topologies are not triangles.</summary>
-        static int TriangleCount(Mesh mesh)
-        {
-            long count = 0;
-            for (var s = 0; s < mesh.subMeshCount; s++)
-                if (mesh.GetTopology(s) == UnityEngine.MeshTopology.Triangles) count += mesh.GetIndexCount(s) / 3;
-            return (int)count;
         }
 
         /// <summary>
@@ -924,7 +915,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 for (var s = 0; s < indices.Length; s++)
                 {
                     // A submesh of lines or points is passed through whole, with its vertices.
-                    var isTriangles = mesh.GetTopology(s) == UnityEngine.MeshTopology.Triangles;
+                    var isTriangles = MeshTriangles.IsTriangles(mesh, s);
                     indices[s] = isTriangles ? perSubmesh[s].ToArray() : mesh.GetIndices(s, true);
                     if (isTriangles) triangles += indices[s].Length / 3;
                     foreach (var i in indices[s]) used[i] = true;

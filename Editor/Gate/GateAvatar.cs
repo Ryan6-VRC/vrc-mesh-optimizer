@@ -69,7 +69,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             }
             if (RemovedTriangles != null)
             {
-                var triangles = GeometryGate.ReadTriangles(Source).Length;
+                var triangles = MeshTriangles.Count(Source);
                 if (RemovedTriangles.Length != triangles)
                     throw new ArgumentException($"{RemovedTriangles.Length} removed-triangle flags for a source mesh with {triangles} triangles", "removedTriangles");
             }

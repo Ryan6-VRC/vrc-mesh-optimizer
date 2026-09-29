@@ -204,8 +204,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var sides = new Sides();
             try
             {
-                sides.A.Triangles = new NativeArray<int3>(ReadTriangles(source), Allocator.Persistent);
-                sides.B.Triangles = new NativeArray<int3>(ReadTriangles(optimized), Allocator.Persistent);
+                sides.A.Triangles = new NativeArray<int3>(MeshTriangles.Read(source).triangles, Allocator.Persistent);
+                sides.B.Triangles = new NativeArray<int3>(MeshTriangles.Read(optimized).triangles, Allocator.Persistent);
                 if (removedTriangles != null) sides.A.Excluded = new NativeArray<bool>(removedTriangles, Allocator.Persistent);
                 return input.Skinned != null
                     ? MeasureSkinned(input, avatarRoot, poses, settings, ref sides)
@@ -315,19 +315,6 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         {
             if (array.IsCreated) array.Dispose();
             array = with;
-        }
-
-        /// <summary>Every triangle submesh's triangles, in submesh order: the order the evaluation mesh numbers them in.</summary>
-        internal static int3[] ReadTriangles(Mesh mesh)
-        {
-            var triangles = new List<int3>();
-            for (var s = 0; s < mesh.subMeshCount; s++)
-            {
-                if (mesh.GetTopology(s) != MeshTopology.Triangles) continue;
-                var indices = mesh.GetIndices(s, true);
-                for (var i = 0; i + 2 < indices.Length; i += 3) triangles.Add(new int3(indices[i], indices[i + 1], indices[i + 2]));
-            }
-            return triangles.ToArray();
         }
     }
 }
