@@ -44,6 +44,9 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
                 if (!_neverByName.TryGetValue(name, out var list)) _neverByName[name] = list = new List<Object>();
                 list.Add(kv.Key);
             }
+            // A name another kind of override also carries cannot say whose clone a material is, so it matches nothing.
+            foreach (var kv in _overrides)
+                if (kv.Value.mode != OcclusionMode.NeverOccludes) _neverByName.Remove(CloneName(kv.Value.named.name));
         }
 
         /// <summary>
@@ -69,7 +72,8 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
                 return o.mode;
             }
             if (!PlausibleClone(material, out var named)) return OcclusionMode.Automatic;
-            foreach (var n in named) _matched.Add(n);
+            // Several never-occludes overrides on one name all apply, but none can be said to have matched.
+            if (named.Count == 1) _matched.Add(named[0]);
             return OcclusionMode.NeverOccludes;
         }
 

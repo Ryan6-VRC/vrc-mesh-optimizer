@@ -213,6 +213,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             return lo <= hi;
         }
 
+        /// <summary>
+        /// The gate's reading of what a pass did to the crossing between two meshes: metres of crossing after with no
+        /// crossing before within the gate's nearness, at its default settings.
+        /// </summary>
+        public static float NewCrossing(MeshBuilder a, int3[] afterA, MeshBuilder b, int3[] afterB)
+        {
+            var pa = a.Positions.ToArray();
+            var pb = b.Positions.ToArray();
+            var settings = Core.Gate.CrossingSettings.Default;
+            using var before = new NativeList<Core.Gate.CrossingSegment>(Allocator.Persistent);
+            using var after = new NativeList<Core.Gate.CrossingSegment>(Allocator.Persistent);
+            using (var sa = new Gate.SurfaceDistanceTests.Side(pa, a.Triangles.ToArray(), null))
+            using (var sb = new Gate.SurfaceDistanceTests.Side(pb, b.Triangles.ToArray(), null))
+                Core.Gate.Crossing.Measure(sa.Surface, sb.Surface, settings, before);
+            using (var sa = new Gate.SurfaceDistanceTests.Side(pa, afterA, null))
+            using (var sb = new Gate.SurfaceDistanceTests.Side(pb, afterB, null))
+                Core.Gate.Crossing.Measure(sa.Surface, sb.Surface, settings, after);
+            return (float)Core.Gate.Crossing.Compare(before.AsArray(), after.AsArray(), settings).New;
+        }
+
         /// <summary>Crossing length between two meshes' cuts.</summary>
         public static float Crossing(MeshBuilder a, in CutResult ca, MeshBuilder b, in CutResult cb) =>
             CrossingLength(a.Positions.ToArray(), Fixtures.ToArray(ca.Triangles), b.Positions.ToArray(), Fixtures.ToArray(cb.Triangles));

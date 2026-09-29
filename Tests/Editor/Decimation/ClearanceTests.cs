@@ -154,6 +154,65 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
         }
 
+        /// <summary>New crossing, as the gate reads it, between the two meshes cut at each pair of levels.</summary>
+        static Dictionary<(float, float), float> NewCrossingAtLevels(Scene scene, bool rule)
+        {
+            using var a = scene.Decimate(0, rule, out _);
+            using var b = scene.Decimate(1, rule, out _);
+            var result = new Dictionary<(float, float), float>();
+            foreach (var la in Levels)
+            foreach (var lb in Levels)
+            {
+                using var ca = a.Cut(Fixtures.CutAtError(a, la), Allocator.Persistent);
+                using var cb = b.Cut(Fixtures.CutAtError(b, lb), Allocator.Persistent);
+                result[(la, lb)] = NewCrossing(scene.Builders[0], Fixtures.ToArray(ca.Triangles), scene.Builders[1], Fixtures.ToArray(cb.Triangles));
+            }
+            return result;
+        }
+
+        // Where two layers touch or cross, the surface around the line still has a gap a short way off, and both layers
+        // must keep their share of it: judging the surface near the line only against the other layer's source lets
+        // both reach the other's source there, and meet each other.
+        [TestCase(-0.0015f, 0.0015f, TestName = "{m}(crossing along a ring)")]
+        [TestCase(0f, 0.002f, TestName = "{m}(touching along an edge)")]
+        public void LayersThatAlreadyCrossOrTouch_GainNoNewCrossingNearTheLine(float from, float to)
+        {
+            using var scene = SkinAndSlopedLayer(from, to);
+            var on = NewCrossingAtLevels(scene, true);
+            TestContext.WriteLine($"new crossing with the rule: {Describe(on)}");
+            foreach (var kv in on)
+                Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
+        }
+
+        // Occlusion deletes the skin under a garment, leaving a hole with an open border that the garment passes over.
+        // A border collapse straightens the border across the hole, off the skin's source, where only the garment's own
+        // source was judged; the garment may sag there. The two must still not meet.
+        [TestCase(0.001f)]
+        [TestCase(0.0005f)]
+        public void ALayerOverAHoleInTheSkin_GainsNoNewCrossingAtTheBorder(float gap)
+        {
+            var skin = SkinTube();
+            // An elliptical hole in angle and height: its grid border is a staircase that decimation straightens.
+            var keep = skin.Triangles.Select(t =>
+            {
+                var c = (skin.Positions[t.x] + skin.Positions[t.y] + skin.Positions[t.z]) / 3f;
+                var a = math.atan2(c.z, c.x);
+                return math.lengthsq(new float2(a / 1.2f, (c.y - Length / 2f) / 0.06f)) > 1f;
+            }).ToArray();
+            var holed = new MeshBuilder();
+            for (var v = 0; v < skin.VertexCount; v++) holed.Add(skin.Positions[v], skin.Uvs[v]);
+            for (var t = 0; t < skin.Triangles.Count; t++)
+                if (keep[t]) holed.Tri(skin.Triangles[t].x, skin.Triangles[t].y, skin.Triangles[t].z);
+            using var scene = new Scene();
+            scene.Add(holed);
+            scene.Add(LayerTube(Over(gap)));
+            scene.BuildSurface();
+            var on = NewCrossingAtLevels(scene, true);
+            TestContext.WriteLine($"new crossing with the rule: {Describe(on)}");
+            foreach (var kv in on)
+                Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
+        }
+
         // Neighbours are the surface that remains. Skin deleted under the layer is not there to be passed through, so
         // the layer decimates exactly as if it were alone; kept, the same skin holds it back.
         [TestCase(true)]

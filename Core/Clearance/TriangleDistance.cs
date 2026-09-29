@@ -156,6 +156,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             return math.lengthsq(p1 + d1 * s - (p2 + d2 * t));
         }
 
+        static float3 NearestOnEdges(float3 p, float3 a, float3 b, float3 c)
+        {
+            var best = OnSegment(p, a, b);
+            var q = OnSegment(p, b, c);
+            if (math.lengthsq(q - p) < math.lengthsq(best - p)) best = q;
+            q = OnSegment(p, c, a);
+            return math.lengthsq(q - p) < math.lengthsq(best - p) ? q : best;
+        }
+
+        static float3 OnSegment(float3 p, float3 a, float3 b)
+        {
+            var ab = b - a;
+            var l = math.lengthsq(ab);
+            return l > 0f ? a + math.saturate(math.dot(p - a, ab) / l) * ab : a;
+        }
+
         /// <summary>
         /// The closest point on triangle abc to p (Ericson, Real-Time Collision Detection, 5.1.5). A triangle with no
         /// area has no interior, and the region tests then end on a corner or an edge.
@@ -183,7 +199,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             var va = d3 * d6 - d5 * d4;
             if (va <= 0f && d4 - d3 >= 0f && d5 - d6 >= 0f) return b + (d4 - d3) / (d4 - d3 + (d5 - d6)) * (c - b);
             var sum = va + vb + vc;
-            if (!(sum > 0f)) return a;
+            // A sliver that rounds past every region test has no interior to speak of: its nearest point is on an edge.
+            if (!(sum > 0f)) return NearestOnEdges(p, a, b, c);
             var denom = 1f / sum;
             return a + ab * (vb * denom) + ac * (vc * denom);
         }

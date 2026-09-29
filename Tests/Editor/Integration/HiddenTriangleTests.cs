@@ -244,6 +244,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(report.Diagnostics.Any(d => d.Key == DiagnosticKeys.NeverOccludesUnmatched), Is.False, "only a never-occludes override is warned about");
         }
 
+        // A name two overrides share cannot say whose clone a material is. The never-occludes override on the other
+        // material must not count as matched through it, or its warning goes quiet while nothing honours it.
+        [Test]
+        public void NeverOccludesOverride_IsNotCreditedThroughANameAnotherOverrideShares()
+        {
+            var never = a.Made(new Material(CullShader()) { name = "Veil" });
+            var opaque = a.Made(new Material(CullShader()) { name = "Veil", renderQueue = 3000 });
+            var clone = a.Made(new Material(opaque) { name = opaque.name });
+            Garment(chest, material: clone);
+            a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = never, mode = Runtime.OcclusionMode.NeverOccludes });
+            a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = opaque, mode = Runtime.OcclusionMode.ForceOpaque });
+
+            var report = a.Run();
+
+            Assert.That(HiddenOnBody(report), Is.Zero, "the clone is judged by its own see-through material");
+            Assert.That(report.Diagnostics.Count(d => d.Key == DiagnosticKeys.NeverOccludesUnmatched && ReferenceEquals(d.Args[0], never)), Is.EqualTo(1));
+        }
+
         // Occlusion reads the front of a face by Unity's winding, and a back-culled material draws only its front.
         // An inward-facing bowl shows its back to anyone outside, so it covers only when its material draws the back:
         // culling off, or culling the front.

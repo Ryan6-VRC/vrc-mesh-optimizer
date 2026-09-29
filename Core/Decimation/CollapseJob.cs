@@ -148,8 +148,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         const double TinyWeight = 1e-30;
         const float TieBreak = 1e-4f;
-        /// <summary>Metres of crossing a collapse may add without counting as lengthening it: float noise on a line
-        /// through a few triangles, far below anything a viewer sees.</summary>
+        /// <summary>The fraction of its crossing a collapse may add without counting as lengthening it: above the float
+        /// rounding of a sum of segment lengths, and relative, so ten thousand collapses on one crossing lengthen it by
+        /// at most a hundredth, where an absolute allowance would add up without bound.</summary>
         const float CrossingSlack = 1e-6f;
 
         public CollapseEngine(ref CollapseJob job)
@@ -558,13 +559,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         /// <summary>
         /// The clearance rule (see <see cref="ClearanceSettings"/>): no triangle the collapse of u onto v makes may come
-        /// nearer a source triangle of another layer than (1 - Share) of the gap there. A surface that touches or crosses
-        /// another layer anywhere under u's triangles goes to <see cref="CrossingHolds"/> instead. The corners' own
-        /// clearances settle most triangles without a search.
+        /// nearer a source triangle of another layer than (1 - Share) of the gap there, and, where the surface under u's
+        /// triangles or around a new triangle's corners touches or crosses another layer, no collapse may lengthen the
+        /// crossing either. The gap is kept even beside a crossing, since a little way off there is one, and a layer
+        /// judged only by the crossing could reach the other's source there and meet it. The corners' own clearances
+        /// settle most triangles without a search.
         /// </summary>
         bool ClearanceHolds(int u, int v)
         {
-            if (!(FanClearance(u) > 0f)) return CrossingHolds(u, v);
+            var touches = !(FanClearance(u) > 0f);
             var keep = 1f - _s.Clearance.Share;
             var pv = _positions[_origin[v]];
             var cv = _vertexClearance[_origin[v]];
@@ -583,14 +586,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 // more than P's distance to a corner (the corners lie on this layer's source): d + the longest edge. So
                 // nothing nearer than keep * min(Reach, edge / (1 - keep)) can be refused, and the corner bound often
                 // proves that.
+                var least = math.min(_star[_origin[v]], math.min(_star[x], _star[y]));
+                // A source triangle that touches or crosses a layer has no gap to hold a new triangle to; where a corner's
+                // surroundings touch too, the search below cannot see it, and the crossing check must.
+                if (!(least > 0f)) touches = true;
                 var edge = math.max(math.distance(pv, px), math.max(math.distance(px, py), math.distance(py, pv)));
                 var most = keep * math.min(_s.Clearance.Reach, edge / (1f - keep));
                 if (ClearanceBound.Of(pv, px, py, cv, _vertexClearance[x], _vertexClearance[y]) >= most) continue;
-                var least = math.min(_star[_origin[v]], math.min(_star[x], _star[y]));
                 if (ClearanceSurface.AnyWithin(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, _clearPrimClearance, _clearNodeClearance,
                         pv, px, py, _triLayer[t], keep, least)) return false;
             }
-            return true;
+            return !touches || CrossingHolds(u, v);
         }
 
         /// <summary>
@@ -617,7 +623,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var py = _positions[_origin[tri[(k + 2) % 3]]];
                 after += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, pv, px, py, layer);
             }
-            return after <= before + CrossingSlack;
+            return after <= before * (1f + CrossingSlack) + 1e-9f;
         }
 
         /// <summary>
