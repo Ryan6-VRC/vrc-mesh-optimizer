@@ -6,7 +6,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
     /// <summary>How a shader family combines its alpha inputs.</summary>
     internal enum AlphaFormula
     {
-        /// <summary>_MainTex alpha times _Color alpha, times _AlphaMask red where the shader has one.</summary>
+        /// <summary>Unity's Standard and legacy transparent shaders: _MainTex alpha times _Color alpha.</summary>
         Plain,
         /// <summary>lilToon: _AlphaMaskMode, _AlphaMaskScale, _AlphaMaskValue, the mask sampled at the main texture's UV.</summary>
         LilToon,
@@ -39,37 +39,68 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         public readonly float[] Alpha;
         /// <summary>The main texture's scale (xy) and offset (zw), applied to UV0 before sampling.</summary>
         public readonly Vector4 MainST;
-        public readonly TextureWrapMode Wrap;
-        /// <summary>The material's _Cutoff, 0 when it has none. Below it an alpha-tested surface is discarded.</summary>
-        public readonly float Cutoff;
+        public readonly TextureWrapMode WrapU;
+        public readonly TextureWrapMode WrapV;
+        /// <summary>
+        /// A sample is solid where its alpha is at least this: the material's _Cutoff when it only alpha-tests,
+        /// 1 when it may blend, since a blended surface below full alpha shows what is behind it.
+        /// </summary>
+        public readonly float SolidFrom;
 
-        public AlphaMap(int width, int height, float[] alpha, Vector4 mainST, TextureWrapMode wrap, float cutoff)
+        public AlphaMap(int width, int height, float[] alpha, Vector4 mainST, TextureWrapMode wrapU, TextureWrapMode wrapV, float solidFrom)
         {
             Width = width;
             Height = height;
             Alpha = alpha;
             MainST = mainST;
-            Wrap = wrap;
-            Cutoff = cutoff;
+            WrapU = wrapU;
+            WrapV = wrapV;
+            SolidFrom = solidFrom;
         }
 
-        /// <summary>The alpha at a mesh UV0, nearest texel.</summary>
+        /// <summary>
+        /// The alpha at a mesh UV0: the least of the four texels a bilinear sample there blends, so filtering can
+        /// only make a sample read less solid than the shader sees it, never more.
+        /// </summary>
         public float Sample(Vector2 uv0)
         {
-            var u = Wrapped(uv0.x * MainST.x + MainST.z);
-            var v = Wrapped(uv0.y * MainST.y + MainST.w);
-            var x = Mathf.Min((int)(u * Width), Width - 1);
-            var y = Mathf.Min((int)(v * Height), Height - 1);
-            return Alpha[y * Width + x];
+            var fx = (uv0.x * MainST.x + MainST.z) * Width - 0.5f;
+            var fy = (uv0.y * MainST.y + MainST.w) * Height - 0.5f;
+            var x0 = Mathf.FloorToInt(fx);
+            var y0 = Mathf.FloorToInt(fy);
+            var least = 1f;
+            for (var dy = 0; dy < 2; dy++)
+            for (var dx = 0; dx < 2; dx++)
+            {
+                var x = Wrapped(x0 + dx, Width, WrapU);
+                var y = Wrapped(y0 + dy, Height, WrapV);
+                least = Mathf.Min(least, Alpha[y * Width + x]);
+            }
+            return least;
         }
 
-        float Wrapped(float t) => Wrap switch
+        public bool IsSolid(Vector2 uv0) => Sample(uv0) >= SolidFrom;
+
+        static int Wrapped(int i, int n, TextureWrapMode mode)
         {
-            TextureWrapMode.Clamp => Mathf.Clamp01(t),
-            TextureWrapMode.Mirror => Mathf.PingPong(t, 1f),
-            TextureWrapMode.MirrorOnce => Mathf.Clamp01(Mathf.Abs(t)),
-            _ => t - Mathf.Floor(t),
-        };
+            switch (mode)
+            {
+                case TextureWrapMode.Clamp:
+                    return Mathf.Clamp(i, 0, n - 1);
+                case TextureWrapMode.Mirror:
+                {
+                    var period = ((i % (2 * n)) + 2 * n) % (2 * n);
+                    return period < n ? period : 2 * n - 1 - period;
+                }
+                case TextureWrapMode.MirrorOnce:
+                {
+                    var m = i < 0 ? -i - 1 : i;
+                    return Mathf.Min(m, n - 1);
+                }
+                default:
+                    return ((i % n) + n) % n;
+            }
+        }
     }
 
     /// <summary>
@@ -100,6 +131,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
     {
         /// <summary>Unity's AlphaTest queue. Anything drawn from here on may discard or blend.</summary>
         public const int AlphaTestQueue = 2450;
+        /// <summary>The largest side of a stored map; a larger texture is shrunk keeping each block's least alpha.</summary>
         public const int MaxResolution = 1024;
 
         public static bool CanBeSeeThrough(int renderQueue, string renderType) =>
@@ -138,23 +170,20 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             if (mode == OcclusionMode.ForceOpaque) return OccluderSurface.Solid;
             if (!CanBeSeeThrough(material.renderQueue, material.GetTag("RenderType", true, ""))) return OccluderSurface.Solid;
 
-            var inputs = ReadInputs(material);
+            // A shader whose alpha math this reader does not know, or a setup it cannot place in one UV square,
+            // counts as see-through everywhere, which only ever keeps triangles that could have gone.
+            if (!TryReadInputs(material, out var inputs)) return OccluderSurface.Clear;
             var main = material.HasProperty("_MainTex") ? material.GetTexture("_MainTex") : null;
-            var mainST = material.HasProperty("_MainTex")
-                ? ScaleOffset(material, "_MainTex")
-                : new Vector4(1, 1, 0, 0);
+            var mainST = material.HasProperty("_MainTex") ? ScaleOffset(material, "_MainTex") : new Vector4(1, 1, 0, 0);
             var mask = inputs.MaskMode != 0 && material.HasProperty("_AlphaMask") ? material.GetTexture("_AlphaMask") : null;
-
-            // A setup this reader cannot place in one UV square counts as see-through everywhere, which only ever
-            // keeps triangles that could have gone.
             if (!Supported(material, inputs, mainST, main, mask)) return OccluderSurface.Clear;
 
-            var size = main != null ? main : mask;
-            var width = size != null ? Mathf.Min(size.width, MaxResolution) : 1;
-            var height = size != null ? Mathf.Min(size.height, MaxResolution) : 1;
+            // Both textures are read at the larger one's full size, then shrunk keeping each block's least alpha,
+            // so no transparent texel is averaged away.
+            var width = Mathf.Max(main != null ? main.width : 1, mask != null ? mask.width : 1);
+            var height = Mathf.Max(main != null ? main.height : 1, mask != null ? mask.height : 1);
             var mainPixels = main != null ? ReadPixels(main, width, height) : null;
             var maskPixels = mask != null ? ReadPixels(mask, width, height) : null;
-
             var alpha = new float[width * height];
             for (var i = 0; i < alpha.Length; i++)
             {
@@ -162,14 +191,53 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 var r = maskPixels != null ? maskPixels[i].r / 255f : 1f;
                 alpha[i] = Combine(inputs, a, r);
             }
-            var cutoff = material.HasProperty("_Cutoff") ? material.GetFloat("_Cutoff") : 0f;
-            var wrap = main != null ? main.wrapModeU : TextureWrapMode.Repeat;
-            return new OccluderSurface(true, new AlphaMap(width, height, alpha, mainST, wrap, cutoff));
+            alpha = Shrink(alpha, ref width, ref height);
+
+            var wrapSource = main != null ? main : mask;
+            var wrapU = wrapSource != null ? wrapSource.wrapModeU : TextureWrapMode.Repeat;
+            var wrapV = wrapSource != null ? wrapSource.wrapModeV : TextureWrapMode.Repeat;
+            return new OccluderSurface(true, new AlphaMap(width, height, alpha, mainST, wrapU, wrapV, SolidFrom(material)));
         }
 
-        internal static AlphaInputs ReadInputs(Material m)
+        /// <summary>
+        /// A material that only alpha-tests is solid from its _Cutoff; anything that may blend is solid only at full
+        /// alpha. Standard and Poiyomi name cutout as _Mode 1; lilToon and Unity's legacy shaders name it in the shader.
+        /// </summary>
+        internal static float SolidFrom(Material m)
         {
-            var p = new AlphaInputs
+            var cutoutOnly = Float(m, "_Mode", -1f) == 1f || m.shader.name.Contains("Cutout");
+            return cutoutOnly && m.HasProperty("_Cutoff") ? m.GetFloat("_Cutoff") : 1f;
+        }
+
+        /// <summary>Shrinks a map to at most <see cref="MaxResolution"/> a side, each texel the least of its block.</summary>
+        internal static float[] Shrink(float[] alpha, ref int width, ref int height)
+        {
+            var fx = (width + MaxResolution - 1) / MaxResolution;
+            var fy = (height + MaxResolution - 1) / MaxResolution;
+            if (fx == 1 && fy == 1) return alpha;
+            var w = (width + fx - 1) / fx;
+            var h = (height + fy - 1) / fy;
+            var shrunk = new float[w * h];
+            for (var i = 0; i < shrunk.Length; i++) shrunk[i] = 1f;
+            for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+            {
+                var o = y / fy * w + x / fx;
+                shrunk[o] = Mathf.Min(shrunk[o], alpha[y * width + x]);
+            }
+            width = w;
+            height = h;
+            return shrunk;
+        }
+
+        /// <summary>Unity's own shaders that take alpha from _MainTex and _Color alone.</summary>
+        static bool IsPlainShader(string name) =>
+            name == "Standard" || name == "Standard (Specular setup)" || name == "Autodesk Interactive" ||
+            name.StartsWith("Unlit/Transparent") || name.StartsWith("Legacy Shaders/Transparent/");
+
+        internal static bool TryReadInputs(Material m, out AlphaInputs p)
+        {
+            p = new AlphaInputs
             {
                 ColorAlpha = m.HasProperty("_Color") ? m.GetColor("_Color").a : 1f,
                 MaskScale = 1f,
@@ -180,8 +248,9 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 p.MaskMode = (int)m.GetFloat("_AlphaMaskMode");
                 p.MaskScale = Float(m, "_AlphaMaskScale", 1f);
                 p.MaskOffset = Float(m, "_AlphaMaskValue", 0f);
+                return true;
             }
-            else if (m.HasProperty("_MainAlphaMaskMode"))
+            if (m.HasProperty("_MainAlphaMaskMode"))
             {
                 p.Formula = AlphaFormula.Poiyomi;
                 p.MaskMode = (int)m.GetFloat("_MainAlphaMaskMode");
@@ -189,13 +258,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 p.MaskOffset = Float(m, "_AlphaMaskValue", 0f);
                 p.MaskInvert = Float(m, "_AlphaMaskInvert", 0f) != 0f;
                 p.MainAlphaFloor = Float(m, "_MainIgnoreTexAlpha", 0f);
+                return true;
             }
-            else if (m.HasProperty("_AlphaMask"))
-            {
-                p.Formula = AlphaFormula.Plain;
-                p.MaskMode = 2;
-            }
-            return p;
+            p.Formula = AlphaFormula.Plain;
+            return IsPlainShader(m.shader.name);
         }
 
         static bool Supported(Material m, in AlphaInputs p, Vector4 mainST, Texture main, Texture mask)
@@ -203,11 +269,14 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             if (main != null && main.dimension != UnityEngine.Rendering.TextureDimension.Tex2D) return false;
             if (mask != null && mask.dimension != UnityEngine.Rendering.TextureDimension.Tex2D) return false;
             if (p.Formula == AlphaFormula.Poiyomi && Float(m, "_MainTexUV", 0f) != 0f) return false;
-            // A scrolling or rotating main texture has no one alpha per mesh UV.
+            // A scrolling or rotating texture has no one alpha per mesh UV.
             if (Vector(m, "_MainTex_ScrollRotate") != Vector4.zero || Vector(m, "_MainTexPan") != Vector4.zero) return false;
             if (p.MaskMode == 0 || mask == null) return true;
 
+            if (Vector(m, "_AlphaMaskPan") != Vector4.zero) return false;
             if (m.GetTextureScale("_AlphaMask") != Vector2.one || m.GetTextureOffset("_AlphaMask") != Vector2.zero) return false;
+            // One map carries one pair of wrap modes.
+            if (main != null && (mask.wrapModeU != main.wrapModeU || mask.wrapModeV != main.wrapModeV)) return false;
             if (p.Formula == AlphaFormula.Poiyomi)
             {
                 // Poiyomi samples the mask at the mesh's UV rather than the main texture's, so the two share a

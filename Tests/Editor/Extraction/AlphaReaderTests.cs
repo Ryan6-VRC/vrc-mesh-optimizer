@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Runtime;
@@ -105,9 +106,53 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             Assert.That((surface.Alpha.Width, surface.Alpha.Height), Is.EqualTo((4, 4)));
             for (var i = 0; i < 16; i++)
                 Assert.That(surface.Alpha.Alpha[i], Is.EqualTo(i * 17 / 255f * 0.5f).Within(1f / 255f), $"texel {i}");
-            // Texel (1, 2) holds 9 * 17; UV at its centre, and one tile over, sample it.
-            Assert.That(surface.Alpha.Sample(new Vector2(1.5f / 4, 2.5f / 4)), Is.EqualTo(9 * 17 / 255f * 0.5f).Within(1f / 255f));
-            Assert.That(surface.Alpha.Sample(new Vector2(1 + 1.5f / 4, 2.5f / 4)), Is.EqualTo(9 * 17 / 255f * 0.5f).Within(1f / 255f));
+            // Alpha rises with the texel index, so the least of the four texels a bilinear sample between texels
+            // (1, 2) and (2, 3) blends is texel (1, 2), index 9; one tile over reads the same.
+            Assert.That(surface.Alpha.Sample(new Vector2(2f / 4, 3f / 4)), Is.EqualTo(9 * 17 / 255f * 0.5f).Within(1f / 255f));
+            Assert.That(surface.Alpha.Sample(new Vector2(1 + 2f / 4, 3f / 4)), Is.EqualTo(9 * 17 / 255f * 0.5f).Within(1f / 255f));
+            // A Fade or Transparent Standard material blends, so only full alpha is solid.
+            Assert.That(surface.Alpha.SolidFrom, Is.EqualTo(1f));
+        }
+
+        [Test]
+        public void CutoutMaterial_IsSolidFromItsCutoff()
+        {
+            var material = Standard(2450);
+            material.SetFloat("_Mode", 1f);
+            material.SetFloat("_Cutoff", 0.3f);
+            material.SetTexture("_MainTex", Pattern());
+
+            var surface = AlphaReader.Read(material, OcclusionMode.Automatic);
+
+            Assert.That(surface.Alpha.SolidFrom, Is.EqualTo(0.3f));
+        }
+
+        [Test]
+        public void TransparentMaterialOfAnUnknownShader_NeverOccludes()
+        {
+            // Its alpha may come from anything; counting it solid could delete what shows through it.
+            var material = new Material(Shader.Find("Sprites/Default"));
+            _made.Add(material);
+            material.renderQueue = 3000;
+            material.SetTexture("_MainTex", Pattern());
+
+            Assert.That(AlphaReader.Read(material, OcclusionMode.Automatic).Occludes, Is.False);
+        }
+
+        [Test]
+        public void ShrinkingALargeMap_KeepsASingleTransparentTexel()
+        {
+            var width = 2048;
+            var height = 2;
+            var alpha = new float[width * height];
+            for (var i = 0; i < alpha.Length; i++) alpha[i] = 1f;
+            alpha[1001] = 0f;
+
+            var shrunk = AlphaReader.Shrink(alpha, ref width, ref height);
+
+            Assert.That((width, height), Is.EqualTo((1024, 2)));
+            Assert.That(shrunk[500], Is.EqualTo(0f));
+            Assert.That(shrunk.Count(a => a == 0f), Is.EqualTo(1));
         }
 
         [Test]

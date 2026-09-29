@@ -110,6 +110,7 @@ namespace Ryan6Vrc.MeshOptimizer.Writing
 
         static void CopySkin(Mesh source, Mesh mesh, int[] kept)
         {
+            mesh.bindposes = source.bindposes;
             var bonesPerVertex = source.GetBonesPerVertex();
             if (bonesPerVertex.Length == 0) return;
             var weights = source.GetAllBoneWeights();
@@ -130,7 +131,6 @@ namespace Ryan6Vrc.MeshOptimizer.Writing
                 cursor += bonesPerVertex[v];
             }
             mesh.SetBoneWeights(keptCounts, keptWeights);
-            mesh.bindposes = source.bindposes;
         }
 
         static void CopyShapeKeys(Mesh source, Mesh mesh, int[] kept)

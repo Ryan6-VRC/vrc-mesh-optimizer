@@ -71,8 +71,8 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 {
                     if (!IsShapeKey(binding)) continue;
                     var target = owner == root
-                        ? (remapper.GetObjectForPath(binding.path)?.transform ?? root.Find(binding.path))
-                        : owner.Find(binding.path);
+                        ? (remapper.GetObjectForPath(binding.path)?.transform ?? Resolve(root, binding.path))
+                        : Resolve(owner, binding.path);
                     if (target == null) continue;
                     var curve = clip.GetFloatCurve(binding);
                     if (curve == null) continue;
@@ -90,7 +90,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             foreach (var binding in AnimationUtility.GetCurveBindings(clip))
             {
                 if (!IsShapeKey(binding)) continue;
-                var target = animation.transform.Find(binding.path);
+                var target = Resolve(animation.transform, binding.path);
                 if (target == null) continue;
                 yield return new ShapeKeyBinding(PathOf(root, target), binding.propertyName.Substring(BlendShapePrefix.Length),
                     ShapeKeyClassifier.CurveValues(AnimationUtility.GetEditorCurve(clip, binding)));
@@ -142,6 +142,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 if (MmdMorphs.Names.Contains(name)) yield return new DrivenKey("Body", name);
             }
         }
+
+        /// <summary>A path relative to a component's transform; the empty path is that transform itself.</summary>
+        static Transform Resolve(Transform owner, string path) => path.Length == 0 ? owner : owner.Find(path);
 
         static bool IsShapeKey(EditorCurveBinding binding) =>
             binding.type == typeof(SkinnedMeshRenderer) && binding.propertyName.StartsWith(BlendShapePrefix);

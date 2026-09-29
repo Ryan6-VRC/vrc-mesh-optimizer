@@ -231,6 +231,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Writing
         }
 
         [Test]
+        public void BindPoses_AreKept_EvenWhenNoVertexHasWeights()
+        {
+            var source = Made(new Mesh());
+            source.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up };
+            source.triangles = new[] { 0, 1, 2 };
+            source.bindposes = new[] { Matrix4x4.Translate(Vector3.one) };
+
+            var written = Made(MeshWriter.Write(source, SourceIndices(source), new[] { 0, 1, 2 }));
+
+            Assert.That(written.bindposes, Is.EqualTo(source.bindposes));
+        }
+
+        [Test]
         public void AnIndexToAVertexNotKept_IsRefused()
         {
             var source = RichMesh();

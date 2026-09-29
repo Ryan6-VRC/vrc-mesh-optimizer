@@ -228,9 +228,8 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 var l = new float3x3(m.c0.xyz, m.c1.xyz, m.c2.xyz);
                 linear[v] = l;
                 outPositions[v] = math.transform(m, positions[v]);
-                var det = math.determinant(l);
-                var normalMatrix = math.abs(det) > 1e-12f ? math.transpose(math.inverse(l)) : l;
-                outNormals[v] = math.normalizesafe(math.mul(normalMatrix, (float3)normals[v]));
+                // Unity skins a normal by the same blended matrix as the position, then renormalizes.
+                outNormals[v] = math.normalizesafe(math.mul(l, (float3)normals[v]));
 
                 merged.Sort((a, b) => b.Weight != a.Weight ? b.Weight.CompareTo(a.Weight) : a.Bone.CompareTo(b.Bone));
                 var sum = 0f;
