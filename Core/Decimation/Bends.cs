@@ -16,12 +16,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     public struct BendSettings
     {
         /// <summary>
-        /// Degrees each bone swings, either way about each of two axes square to its length. 0 turns swings off, and with
-        /// <see cref="TwistDegrees"/> also 0 the whole term.
+        /// Degrees each bone swings, either way about each of two axes square to its length. 0 turns bends off, and the
+        /// result is then exactly what it is without a rig. A bone is not twisted about its own length: a quarter turn of
+        /// twist collapses a linear-blend-skinned source on itself, and holding a decimated surface to that costs
+        /// triangles for a state no avatar shows.
         /// </summary>
         public float Degrees;
-        /// <summary>Degrees each bone twists either way about its own length. 0 turns twists off.</summary>
-        public float TwistDegrees;
         /// <summary>
         /// Where the surface lies near another layer, the fraction of the gap a collapse's error in any bend may reach;
         /// acts only with the clearance rule on. 0 turns it off, leaving bends to count against the error level alone. A
@@ -30,14 +30,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// more triangles near every joint a layer hugs.
         /// </summary>
         public float ClearanceShare;
-        /// <summary>
-        /// On, bends are measured only where the surface lies within the clearance reach of another layer, and cost
-        /// nothing elsewhere; acts only with the clearance rule on. Off, the default, a joint anywhere keeps what it needs
-        /// to bend within the error level.
-        /// </summary>
-        public bool NearLayersOnly;
 
-        public static BendSettings Default => new BendSettings { Degrees = 90f, TwistDegrees = 0f, ClearanceShare = 0.7f, NearLayersOnly = false };
+        public static BendSettings Default => new BendSettings { Degrees = 90f, ClearanceShare = 0.7f };
     }
 
     /// <summary>
@@ -52,7 +46,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public NativeArray<float3> Position;
         /// <summary>
         /// Per bone, the unit direction it runs along, toward its children; zero where it has none. The bone's swing
-        /// axes are square to it, its twist axis along it.
+        /// axes are square to it.
         /// </summary>
         public NativeArray<float3> Axis;
         /// <summary>Per bone, its own X axis: the first swing axis where it is not along <see cref="Axis"/>.</summary>
@@ -121,14 +115,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         };
 
         /// <summary>
-        /// Every bone the mesh is weighted to is bent, by each angle the settings turn on; one weighted to nothing moves
-        /// the mesh only through a weighted bone under it, which is bent in its own right.
+        /// Every bone the mesh is weighted to is bent, four ways; one weighted to nothing moves the mesh only through a
+        /// weighted bone under it, which is bent in its own right.
         /// </summary>
         public static Bends Build(in EvalMesh mesh, in BendRig rig, in BendSettings settings, Allocator allocator)
         {
-            var swing = settings.Degrees > 0f;
-            var twist = settings.TwistDegrees > 0f;
-            if (!rig.IsCreated || !(swing || twist) || !mesh.Weights.IsCreated || mesh.Weights.Length == 0) return None(allocator);
+            if (!rig.IsCreated || !(settings.Degrees > 0f) || !mesh.Weights.IsCreated || mesh.Weights.Length == 0) return None(allocator);
             var boneCount = rig.Parent.Length;
             if (rig.Position.Length != boneCount || rig.Axis.Length != boneCount || rig.Right.Length != boneCount)
                 throw new ArgumentException($"the rig has {boneCount} parents, {rig.Position.Length} positions, {rig.Axis.Length} axes and {rig.Right.Length} right axes; give one of each per bone");
@@ -147,32 +139,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             for (var b = 0; b < boneCount; b++)
                 if (bent[b] >= 0) bones[bent[b]] = b;
 
-            var perBone = (swing ? 4 : 0) + (twist ? 2 : 0);
+            const int perBone = 4;
             var result = new Bends { PerBone = perBone, Words = (count + 63) / 64 };
             try
             {
                 result.Pivot = new NativeArray<float3>(count, allocator);
                 result.Rotation = new NativeArray<float3x3>(count * perBone, allocator);
+                var a = math.radians(settings.Degrees);
                 for (var i = 0; i < count; i++)
                 {
                     var b = bones[i];
                     result.Pivot[i] = rig.Position[b];
-                    Axes(rig, b, out var along, out var e1, out var e2);
+                    Axes(rig, b, out var e1, out var e2);
                     var k = i * perBone;
-                    if (swing)
-                    {
-                        var a = math.radians(settings.Degrees);
-                        result.Rotation[k++] = new float3x3(quaternion.AxisAngle(e1, a));
-                        result.Rotation[k++] = new float3x3(quaternion.AxisAngle(e1, -a));
-                        result.Rotation[k++] = new float3x3(quaternion.AxisAngle(e2, a));
-                        result.Rotation[k++] = new float3x3(quaternion.AxisAngle(e2, -a));
-                    }
-                    if (twist)
-                    {
-                        var a = math.radians(settings.TwistDegrees);
-                        result.Rotation[k++] = new float3x3(quaternion.AxisAngle(along, a));
-                        result.Rotation[k] = new float3x3(quaternion.AxisAngle(along, -a));
-                    }
+                    result.Rotation[k] = new float3x3(quaternion.AxisAngle(e1, a));
+                    result.Rotation[k + 1] = new float3x3(quaternion.AxisAngle(e1, -a));
+                    result.Rotation[k + 2] = new float3x3(quaternion.AxisAngle(e2, a));
+                    result.Rotation[k + 3] = new float3x3(quaternion.AxisAngle(e2, -a));
                 }
 
                 var v = mesh.VertexCount;
@@ -206,10 +189,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        /// <summary>The bone's length axis and two swing axes square to it, the first as near its own X as that allows.</summary>
-        static void Axes(in BendRig rig, int b, out float3 along, out float3 e1, out float3 e2)
+        /// <summary>Two swing axes square to the bone's length, the first as near its own X as that allows.</summary>
+        static void Axes(in BendRig rig, int b, out float3 e1, out float3 e2)
         {
-            along = math.normalizesafe(rig.Axis[b]);
+            var along = math.normalizesafe(rig.Axis[b]);
             if (math.lengthsq(along) < 0.5f)
             {
                 var p = rig.Parent[b];
@@ -223,7 +206,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             e2 = math.cross(along, e1);
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct ShareJob : IJob
         {
             [ReadOnly] public NativeArray<int> WeightStart;

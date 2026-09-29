@@ -259,17 +259,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(all.Max(m => m[1].Area - m[0].Area), Is.GreaterThan(1e-3), "the written outer layer shows over 10 cm2 more of the source inner one than the source does");
         }
 
-        // Near layers only changes where bends count toward the error level, not what happens where layers hug.
-        [TestCase(0.03f, false)]
-        [TestCase(0.06f, false)]
-        [TestCase(0.06f, true)]
-        public void TwoLayersOverAJoint_ShowNoProtrusionWhenBent_ThatTheSourceDoesNotShow(float halfWidth, bool nearLayersOnly)
+        [TestCase(0.03f)]
+        [TestCase(0.06f)]
+        public void TwoLayersOverAJoint_ShowNoProtrusionWhenBent_ThatTheSourceDoesNotShow(float halfWidth)
         {
-            using var c = new Case(halfWidth, true, s =>
-            {
-                s.Bend.NearLayersOnly = nearLayersOnly;
-                return s;
-            });
+            using var c = new Case(halfWidth, true);
             Assert.That(c.Measure(new float3(1f, 0f, 0f), 0f)[3].Area, Is.Zero, "at rest the written layers do not show through each other");
             var all = Report(c);
             for (var i = 0; i < Poses.Length; i++)
@@ -280,11 +274,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
         }
 
-        static CollapseSequence DecimateAlone(MeshBuilder b, bool rig, bool nearLayersOnly = false)
+        static CollapseSequence DecimateAlone(MeshBuilder b, bool rig, float degrees = 90f)
         {
             using var mesh = new Disposable<Core.Model.EvalMesh>(b.Build());
             var settings = DecimationSettings.Default;
-            settings.Bend.NearLayersOnly = nearLayersOnly;
+            settings.Bend.Degrees = degrees;
             var r = rig ? BendFixtures.Rig() : default;
             try
             {
@@ -350,15 +344,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(on, Is.LessThan(0.002f), "with bends the written surface follows the joint");
         }
 
-        // With bends counted near layers only, a surface with no other layer near is decimated as without the rig.
+        // Bends turned off with the rig given record the very sequence recorded without it, collapse for collapse.
         [Test]
-        public void NearLayersOnly_ASurfaceAlone_DecimatesAsWithoutTheRig()
+        public void BendsOff_RecordTheSequenceWithoutTheRig()
         {
             var b = BendFixtures.SkinnedTube(56, 54, 0.05f, 0f, 0.03f);
             using var without = DecimateAlone(b, false);
-            using var with = DecimateAlone(b, true, true);
-            Assert.That(with.Length, Is.EqualTo(without.Length));
-            Assert.That(with.ErrorAt(with.Length), Is.EqualTo(without.ErrorAt(without.Length)));
+            using var off = DecimateAlone(b, true, 0f);
+            Assert.That(off.Length, Is.EqualTo(without.Length));
+            Assert.That(off.Records.ToArray(), Is.EqualTo(without.Records.ToArray()));
+            for (var i = 0; i < off.Length; i++) Assert.That(off.Steps[i].Error, Is.EqualTo(without.Steps[i].Error), $"step {i}");
         }
     }
 }

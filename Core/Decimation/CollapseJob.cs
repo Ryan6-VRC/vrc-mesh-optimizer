@@ -130,6 +130,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         NativeArray<byte> _removable;
         NativeArray<float> _multiplier;
         NativeArray<int> _sparseCap;
+        /// <summary>Per vertex, how many of its pool entries are shape frames; its bends follow them.</summary>
+        NativeArray<int> _shapeCount;
         NativeArray<int> _stamp;
         int _stampValue;
         long _wasted;
@@ -222,6 +224,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _removable = new NativeArray<byte>(w, Allocator.Temp);
             _multiplier = new NativeArray<float>(w, Allocator.Temp);
             _sparseCap = new NativeArray<int>(w, Allocator.Temp);
+            _shapeCount = new NativeArray<int>(w, Allocator.Temp);
             _stamp = new NativeArray<int>(w, Allocator.Temp);
             _heap = new NativeList<int>(w, Allocator.Temp);
             _heapPos = new NativeArray<int>(w, Allocator.Temp);
@@ -242,6 +245,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 _firstCorner[i] = -1;
                 _heapPos[i] = -1;
                 _sparseCap[i] = _sparseCount[i];
+                var e = _sparseStart[i] + _sparseCount[i];
+                while (e > _sparseStart[i] && _sparse[e - 1].Frame >= Bends.FrameBase) e--;
+                _shapeCount[i] = e - _sparseStart[i];
             }
             for (var i = 0; i < t; i++)
             {
@@ -413,7 +419,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 max2 = math.max(max2, e2);
                 excess += math.max(0.0, e2 - eRest2);
             }
-            if (_bent && (!_s.Bend.NearLayersOnly || NearLayer(u1, v1, u2, v2)))
+            if (_bent)
             {
                 var bend2 = 0.0;
                 BendError(u1, v1, u2, v2, eRest2, ref max2, ref excess, ref bend2);
@@ -484,32 +490,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         // ---------------------------------------------------------------- bends
 
-        /// <summary>The end of w's shape frames in the pool: its bends follow them.</summary>
-        int ShapeEnd(int w)
-        {
-            var s = _sparseStart[w];
-            var e = s + _sparseCount[w];
-            while (e > s && _sparse[e - 1].Frame >= Bends.FrameBase) e--;
-            return e;
-        }
+        /// <summary>The end of w's shape frames in the pool: its bends follow them, to the end of its list.</summary>
+        int ShapeEnd(int w) => _sparseStart[w] + _shapeCount[w];
+
+        int ListEnd(int w) => _sparseStart[w] + _sparseCount[w];
 
         /// <summary>
         /// w's quadric in a bend, in its own home: the one it holds, or else its rest quadric, since then everything it
-        /// covers moves rigidly with its home.
+        /// covers moves rigidly with its home. Frames are asked for in ascending order, so <paramref name="cursor"/>, which
+        /// starts at <see cref="ShapeEnd"/>, only ever moves forward through w's bends.
         /// </summary>
-        Quadric BendQuadric(int w, int frame)
+        Quadric BendQuadric(int w, int frame, ref int cursor)
         {
-            var lo = ShapeEnd(w);
-            var hi = _sparseStart[w] + _sparseCount[w] - 1;
-            while (lo <= hi)
-            {
-                var mid = (lo + hi) >> 1;
-                var m = _sparse[mid].Frame;
-                if (m == frame) return _sparse[mid].Q;
-                if (m < frame) lo = mid + 1;
-                else hi = mid - 1;
-            }
-            return _rest[w];
+            var end = ListEnd(w);
+            while (cursor < end && _sparse[cursor].Frame < frame) cursor++;
+            return cursor < end && _sparse[cursor].Frame == frame ? _sparse[cursor].Q : _rest[w];
         }
 
         bool HomeOf(int w, int k) => _bends.HomeIn(_origin[w], _bends.BoneOf(k));
@@ -521,15 +516,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// </summary>
         void BendFrames(int u, int v)
         {
-            for (var i = ShapeEnd(u); i < _sparseStart[u] + _sparseCount[u]; i++) _frames.Add(_sparse[i].Frame);
+            for (var i = ShapeEnd(u); i < ListEnd(u); i++) _frames.Add(_sparse[i].Frame);
             _bends.AddMixed(_origin[v], ref _frames);
             _bends.AddApart(_origin[u], _origin[v], ref _frames);
         }
 
         /// <summary>u's error in bend k with v standing where the bend puts it, both read in u's home.</summary>
-        double BendError(int u, int v, int k, out double weight)
+        double BendError(int u, int v, int k, ref int cursor, out double weight)
         {
-            var q = BendQuadric(u, Bends.FrameBase + k);
+            var q = BendQuadric(u, Bends.FrameBase + k, ref cursor);
             weight = q.W;
             return q.Evaluate(_bends.InHome(_origin[v], _p[v], k, HomeOf(u, k)));
         }
@@ -541,13 +536,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             BendFrames(u1, v1);
             if (u2 >= 0) BendFrames(u2, v2);
             SortUnique(ref _frames);
+            var c1 = ShapeEnd(u1);
+            var c2 = u2 >= 0 ? ShapeEnd(u2) : 0;
             for (var i = 0; i < _frames.Length; i++)
             {
                 var k = _frames[i] - Bends.FrameBase;
-                var e = BendError(u1, v1, k, out var wsum);
+                var e = BendError(u1, v1, k, ref c1, out var wsum);
                 if (u2 >= 0)
                 {
-                    e += BendError(u2, v2, k, out var w2);
+                    e += BendError(u2, v2, k, ref c2, out var w2);
                     wsum += w2;
                 }
                 var e2 = wsum > TinyWeight ? e / wsum : 0.0;
@@ -565,21 +562,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// </summary>
         bool BendClearanceHolds(in Candidate c)
         {
-            var gap = Gap(c.U1, c.V1, c.U2, c.V2);
+            var gap = math.min(FanClearance(c.U1), _star[_origin[c.V1]]);
+            if (c.U2 >= 0) gap = math.min(gap, math.min(FanClearance(c.U2), _star[_origin[c.V2]]));
             if (!(gap > 0f) || gap >= _s.Clearance.Reach) return true;
             return c.Bend <= _s.Bend.ClearanceShare * gap;
         }
-
-        /// <summary>The least clearance of the surface a collapse replaces and of the target's surroundings.</summary>
-        float Gap(int u1, int v1, int u2, int v2)
-        {
-            var gap = math.min(FanClearance(u1), _star[_origin[v1]]);
-            if (u2 >= 0) gap = math.min(gap, math.min(FanClearance(u2), _star[_origin[v2]]));
-            return gap;
-        }
-
-        /// <summary>Whether a collapse replaces surface within the clearance reach of another layer; never without the rule.</summary>
-        bool NearLayer(int u1, int v1, int u2, int v2) => _clearance && Gap(u1, v1, u2, v2) < _s.Clearance.Reach;
 
         /// <summary>
         /// Appends to _merged v's bend quadrics once it absorbs u's, each in v's home: u's, carried into v's home where
@@ -589,16 +576,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         void MergeBends(int u, int v)
         {
             _frames.Clear();
-            for (var i = ShapeEnd(u); i < _sparseStart[u] + _sparseCount[u]; i++) _frames.Add(_sparse[i].Frame);
-            for (var i = ShapeEnd(v); i < _sparseStart[v] + _sparseCount[v]; i++) _frames.Add(_sparse[i].Frame);
+            for (var i = ShapeEnd(u); i < ListEnd(u); i++) _frames.Add(_sparse[i].Frame);
+            for (var i = ShapeEnd(v); i < ListEnd(v); i++) _frames.Add(_sparse[i].Frame);
             _bends.AddApart(_origin[u], _origin[v], ref _frames);
             SortUnique(ref _frames);
+            var cu = ShapeEnd(u);
+            var cv = ShapeEnd(v);
             for (var i = 0; i < _frames.Length; i++)
             {
                 var f = _frames[i];
                 var k = f - Bends.FrameBase;
-                var qu = _bends.Carry(BendQuadric(u, f), k, HomeOf(u, k), HomeOf(v, k));
-                _merged.Add(new FrameQuadric { Frame = f, Q = Quadric.Sum(BendQuadric(v, f), qu) });
+                var qu = _bends.Carry(BendQuadric(u, f, ref cu), k, HomeOf(u, k), HomeOf(v, k));
+                _merged.Add(new FrameQuadric { Frame = f, Q = Quadric.Sum(BendQuadric(v, f, ref cv), qu) });
             }
         }
 
@@ -1072,6 +1061,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     j++;
                 }
             }
+            var shapes = _merged.Length;
             if (_bent) MergeBends(u, v);
             _rest[v] = Quadric.Sum(rv, ru);
             var uv = _uv[v];
@@ -1091,8 +1081,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             var at = _sparseStart[v];
             for (var k = 0; k < n; k++) _sparse[at + k] = _merged[k];
             _sparseCount[v] = n;
+            _shapeCount[v] = shapes;
             _wasted += _sparseCap[u];
             _sparseCount[u] = 0;
+            _shapeCount[u] = 0;
             _sparseCap[u] = 0;
             if (_wasted > 4096 && _wasted * 2 > _sparse.Length) CompactPool();
         }

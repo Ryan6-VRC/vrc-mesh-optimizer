@@ -34,7 +34,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
-        public DecimationSettings Decimation = DecimationDefaults.Current;
+        public DecimationSettings Decimation = BuildSettings.Decimation;
         /// <summary>Time the caller spent classifying liveness, for the report.</summary>
         public double LivenessMs;
         /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
@@ -42,32 +42,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>
-    /// Decimation settings the component does not expose, as every build reads them. A test or a measurement may set these
-    /// before a build to try other values; nothing in the package writes them.
+    /// The decimation settings a build runs with. The component exposes none of them, and their defaults live in
+    /// <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a measurement can hand a build
+    /// other values, since a build reaches the pipeline through NDMF and not through a caller. Nothing in the package
+    /// writes it; whoever sets it restores it.
     /// </summary>
-    internal static class DecimationDefaults
+    internal static class BuildSettings
     {
-        /// <summary><see cref="BendSettings.Degrees"/>; 0 with <see cref="BendTwistDegrees"/> also 0 measures no bends.</summary>
-        public static float BendDegrees = BendSettings.Default.Degrees;
-        /// <summary><see cref="BendSettings.TwistDegrees"/>.</summary>
-        public static float BendTwistDegrees = BendSettings.Default.TwistDegrees;
-        /// <summary><see cref="BendSettings.ClearanceShare"/>; 0 lets bends count against the error level alone.</summary>
-        public static float BendClearanceShare = BendSettings.Default.ClearanceShare;
-        /// <summary><see cref="BendSettings.NearLayersOnly"/>.</summary>
-        public static bool BendNearLayersOnly = BendSettings.Default.NearLayersOnly;
-
-        public static DecimationSettings Current
-        {
-            get
-            {
-                var s = DecimationSettings.Default;
-                s.Bend = new BendSettings
-                {
-                    Degrees = BendDegrees, TwistDegrees = BendTwistDegrees, ClearanceShare = BendClearanceShare, NearLayersOnly = BendNearLayersOnly,
-                };
-                return s;
-            }
-        }
+        internal static DecimationSettings Decimation = DecimationSettings.Default;
     }
 
     /// <summary>The per-renderer stages, as a failure names them.</summary>
