@@ -94,22 +94,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         }
 
         /// <summary>The collapse stage alone. Consumes the bank: its quadrics are accumulated in place, and its
-        /// frame quadrics are moved into a growable pool and released.</summary>
-        internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
-            in DecimationSettings settings, in VertexProtection protection, Allocator allocator, out CollapseStats stats) =>
-            Collapse(mesh, topology, ref bank, settings, protection, default, default, allocator, out stats);
-
-        internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
-            in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
-            Allocator allocator, out CollapseStats stats)
-        {
-            using var none = Bends.None(Allocator.Persistent);
-            return Collapse(mesh, topology, ref bank, settings, protection, clearance, field, none, allocator, out stats);
-        }
-
-        /// <summary>The collapse stage, keeping clear of the layers in <paramref name="clearance"/> where <paramref name="field"/>
-        /// has been measured; its triangle clearances are updated in place as collapses replace triangles. <paramref name="bends"/>
-        /// must be the ones the bank was built with.</summary>
+        /// frame quadrics are moved into a growable pool and released. Keeps clear of the layers in <paramref name="clearance"/>
+        /// where <paramref name="field"/> has been measured; its triangle clearances are updated in place as collapses replace
+        /// triangles. <paramref name="bends"/> must be the ones the bank was built with.</summary>
         internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
             in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
             in Bends bends, Allocator allocator, out CollapseStats stats)

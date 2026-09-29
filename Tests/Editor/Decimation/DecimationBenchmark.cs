@@ -68,7 +68,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 CollapseStats stats;
                 try
                 {
-                    seq = Decimator.Collapse(mesh, topology, ref bank, settings, default, Allocator.Persistent, out stats);
+                    using var none = Bends.None(Allocator.Persistent);
+                    seq = Decimator.Collapse(mesh, topology, ref bank, settings, default, default, default, none, Allocator.Persistent, out stats);
                 }
                 finally
                 {

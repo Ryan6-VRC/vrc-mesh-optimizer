@@ -336,8 +336,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             return a + ab * vv + ac * ww;
         }
 
-        public static void DisposeMesh(ref EvalMesh mesh) => mesh.Dispose();
-
         /// <summary>Records a whole sequence with default settings, overridden by <paramref name="tweak"/>.</summary>
         public static CollapseSequence Decimate(MeshBuilder b, Func<DecimationSettings, DecimationSettings> tweak = null, bool includeFrames = true, VertexProtection protection = default)
         {

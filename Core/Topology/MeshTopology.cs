@@ -307,7 +307,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
 
             public void Execute()
             {
-                if (!Frames.IsCreated || !Deltas.IsCreated) return;
                 var eps2 = Epsilon * Epsilon;
                 for (var f = 0; f < Frames.Length; f++)
                 {
