@@ -102,6 +102,49 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         }
 
         [Test]
+        public void TwoFrameKey_ReadsErrorOnlyItsIntermediateFrameShows_AtThatFramesWeight()
+        {
+            var (root, renderer, source, _) = SheetRig();
+            // At 50 the key lifts the middle vertex, which the optimized mesh lacks; at 100 it only lifts a corner both keep.
+            var half = new Vector3[source.vertexCount];
+            half[Sheet.Middle] = new Vector3(0, 0, 0.008f);
+            var full = new Vector3[source.vertexCount];
+            full[0] = new Vector3(0, 0, 0.005f);
+            source.AddBlendShapeFrame("rise", 50f, half, null, null);
+            source.AddBlendShapeFrame("rise", 100f, full, null, null);
+            var optimized = _scene.Optimized(source, Sheet.Triangles(withoutMiddle: true));
+            var liveness = new[] { ShapeKeyLiveness.Dead, ShapeKeyLiveness.Dead, ShapeKeyLiveness.Dead, ShapeKeyLiveness.Live(1f) };
+
+            var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, null, Settings);
+
+            Assert.That(report.Configurations.Select(c => (c.Configuration.Name, c.Configuration.Weight)),
+                Is.EqualTo(new[] { ("rest", 0f), ("rise", 50f), ("rise", 100f) }));
+            Assert.That(report.Stats(1, GateDirection.SourceToOptimized).Max, Is.EqualTo(0.008f).Within(1e-5f), "the intermediate frame");
+            Assert.That(report.Stats(2, GateDirection.Combined).Max, Is.LessThan(1e-6f), "the full frame moves only what both meshes keep");
+            Assert.That(report.Worst(GateDirection.SourceToOptimized, Statistic.Max), Is.EqualTo(1));
+        }
+
+        [TestCase(1f)]
+        [TestCase(0.8f)]
+        [TestCase(0.3f)]
+        [TestCase(-0.5f)]
+        public void KeyWeights_AreTheConfigurationsExtractionEvaluates(float drivenMax)
+        {
+            var mesh = _scene.Track(Sheet.Mesh("frames"));
+            foreach (var w in new[] { 25f, 50f, 100f })
+            {
+                var d = new Vector3[mesh.vertexCount];
+                d[Sheet.Middle] = new Vector3(0, 0, w * 1e-4f);
+                mesh.AddBlendShapeFrame("stepped", w, d, null, null);
+            }
+            var frames = new Ryan6Vrc.MeshOptimizer.Extraction.ShapeKeyFrames(mesh.vertexCount);
+            frames.Load(mesh, 0);
+
+            Assert.That(GeometryGate.KeyWeights(mesh, 0, drivenMax),
+                Is.EqualTo(Ryan6Vrc.MeshOptimizer.Extraction.MeshExtractor.Configurations(frames, drivenMax * frames.FullWeight)));
+        }
+
+        [Test]
         public void RendererOnAnInactiveObject_IsBakedAsWhenActive()
         {
             // A toggled-off outfit sits under an inactive object, and it is optimized all the same.

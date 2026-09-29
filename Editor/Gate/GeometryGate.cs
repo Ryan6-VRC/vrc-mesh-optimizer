@@ -14,7 +14,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     {
         /// <summary>Frozen keys at their frozen weights, every other key at zero, bones where the avatar stands.</summary>
         Rest,
-        /// <summary>Rest, with one live key at its driven maximum.</summary>
+        /// <summary>Rest, with one live key at one authored frame weight under its driven maximum, or at that maximum.</summary>
         ShapeKey,
         /// <summary>Rest, with the bones posed.</summary>
         Pose,
@@ -155,7 +155,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <param name="liveness">One entry per shape key of <paramref name="source"/>; may be null only for a mesh without shape keys.</param>
         /// <param name="poses">Poses to bake in, usually <see cref="PoseBank.Default"/>.</param>
         /// <remarks>
-        /// Configurations, in order: rest; each live key alone at its driven maximum; each pose, at rest weights. A
+        /// Configurations, in order: rest; each live key alone at each authored frame weight under its driven maximum and at
+        /// that maximum; each pose, at rest weights. A
         /// MeshRenderer is measured at rest only: it never applies shape keys, and a pose moves it rigidly, which moves
         /// no distance. A muscle pose on an avatar with no humanoid Avatar is skipped and named in the report. The avatar
         /// is left as it was found, every blendshape weight, every transform and the renderer's mesh, when this throws too.
@@ -247,9 +248,12 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             for (var k = 0; k < keyCount; k++)
             {
                 if (liveness[k].State != ShapeKeyState.Live) continue;
-                var weights = (float[])restWeights.Clone();
-                weights[k] = liveness[k].DrivenMax * source.GetBlendShapeFrameWeight(k, source.GetBlendShapeFrameCount(k) - 1);
-                configurations.Add((new GateConfiguration(ConfigurationKind.ShapeKey, source.GetBlendShapeName(k), k, weights[k]), null, weights));
+                foreach (var weight in KeyWeights(source, k, liveness[k].DrivenMax))
+                {
+                    var weights = (float[])restWeights.Clone();
+                    weights[k] = weight;
+                    configurations.Add((new GateConfiguration(ConfigurationKind.ShapeKey, source.GetBlendShapeName(k), k, weight), null, weights));
+                }
             }
 
             var skipped = new List<SkippedConfiguration>();
@@ -298,6 +302,23 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 UnityEngine.Object.DestroyImmediate(bakedB);
             }
             return new GeometryReport(renderer, measured, skipped);
+        }
+
+        /// <summary>
+        /// The weights a live key is measured at: each authored frame weight it passes on the way to its driven maximum,
+        /// then the maximum itself, as <see cref="MeshExtractor.Configurations"/> evaluates it for the decimator. A key
+        /// driven below zero is measured at that weight only.
+        /// </summary>
+        internal static List<float> KeyWeights(Mesh mesh, int key, float drivenMax)
+        {
+            var frames = mesh.GetBlendShapeFrameCount(key);
+            var driven = drivenMax * mesh.GetBlendShapeFrameWeight(key, frames - 1);
+            var weights = new List<float>();
+            if (driven > 0f)
+                for (var f = 0; f < frames; f++)
+                    if (mesh.GetBlendShapeFrameWeight(key, f) < driven) weights.Add(mesh.GetBlendShapeFrameWeight(key, f));
+            weights.Add(driven);
+            return weights;
         }
 
         static void Bake(SkinnedMeshRenderer renderer, Mesh mesh, float[] weights, Mesh into)
