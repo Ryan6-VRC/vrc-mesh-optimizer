@@ -17,6 +17,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         readonly List<int3> tris = new List<int3>();
         readonly List<int> sub = new List<int>();
         readonly List<List<ShapeDelta>> frames = new List<List<ShapeDelta>>();
+        readonly List<int> frameConfiguration = new List<int>();
 
         public int VertexCount => pos.Count;
 
@@ -49,11 +50,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             sub.Add(submesh);
         }
 
-        /// <summary>A new live frame; add one delta per moved vertex, in ascending vertex order.</summary>
-        public List<ShapeDelta> AddFrame()
+        /// <summary>
+        /// A new live frame; add one delta per moved vertex, in ascending vertex order. A nonzero
+        /// <paramref name="configuration"/> moves it together with every other mesh's frame of that id.
+        /// </summary>
+        public List<ShapeDelta> AddFrame(int configuration = 0)
         {
             var f = new List<ShapeDelta>();
             frames.Add(f);
+            frameConfiguration.Add(configuration);
             return f;
         }
 
@@ -157,7 +162,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             var deltas = new List<ShapeDelta>();
             for (var f = 0; f < frames.Count; f++)
             {
-                fr[f] = new ShapeFrame { DeltaStart = deltas.Count, DeltaCount = frames[f].Count };
+                fr[f] = new ShapeFrame { DeltaStart = deltas.Count, DeltaCount = frames[f].Count, Configuration = frameConfiguration[f] };
                 deltas.AddRange(frames[f]);
             }
             m.Frames = new NativeArray<ShapeFrame>(fr, a);

@@ -146,7 +146,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public float OriginOffset;
         /// <summary>
         /// A triangle whose longest edge exceeds this, in metres, is also sampled inside, on a lattice this fine
-        /// (at most 16 steps an edge; a triangle needing more, at rest or in a live frame, is kept), so a hole in
+        /// (at most 16 steps an edge; a triangle needing more, at rest or in a configuration, is kept), so a hole in
         /// the cover over its middle keeps it. Zero turns interior sampling off.
         /// </summary>
         public float InteriorSpacing;
@@ -187,7 +187,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 
     /// <summary>
     /// Why a mesh's vertices were not covered, one reason per declined vertex: the first failure met, at rest
-    /// before any live frame. Only vertices some triangle uses are counted.
+    /// before any configuration. Only vertices some triangle uses are counted.
     /// </summary>
     public struct DeclineCounts
     {
@@ -199,7 +199,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public int SeeThrough;
         /// <summary>Some ray met no occluder face within reach, or the vertex has no usable normal.</summary>
         public int Escaped;
-        /// <summary>Of the above, how many were covered at rest and uncovered in a live frame.</summary>
+        /// <summary>Of the above, how many were covered at rest and uncovered in a configuration.</summary>
         public int ExposedByFrame;
         /// <summary>Of the above, how many were covered only by faces that are themselves hidden and deleted.</summary>
         public int ExposedByDeletion;
@@ -246,12 +246,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public int BvhNodes;
         public int VertexSamples;
         public int InteriorSamples;
+        /// <summary>Live frames over every mesh.</summary>
         public int LiveFrames;
+        /// <summary>States of the avatar evaluated besides rest: each frame alone, or the frames of one configuration id together.</summary>
+        public int Configurations;
         public long Rays;
         public double BuildMs;
         public double RestMs;
         public double FramesMs;
-        /// <summary>Of <see cref="FramesMs"/> and <see cref="DeletionPassMs"/>, the single-threaded part: finding what each frame puts at risk and building its moved-face tree.</summary>
+        /// <summary>Of <see cref="FramesMs"/> and <see cref="DeletionPassMs"/>, the single-threaded part: finding what each configuration puts at risk and building its moved-face trees.</summary>
         public double FramePrepMs;
         public double DeletionPassMs;
         /// <summary>Samples re-cast with the hidden occluder faces removed.</summary>

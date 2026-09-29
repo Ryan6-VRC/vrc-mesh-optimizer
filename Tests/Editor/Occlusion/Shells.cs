@@ -27,10 +27,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         public float3 Direction;
         /// <summary>Moves the shell's detached island instead of a cap: it slides clear without stretching anything.</summary>
         public bool IslandOnly;
+        /// <summary>The frame's configuration id on every renderer of the shell: nonzero moves it with every frame of that id.</summary>
+        public int Configuration;
 
-        public override string ToString() => IslandOnly
+        public override string ToString() => (IslandOnly
             ? $"island {Kind} toward {Direction} by {Amount:F3}"
-            : $"{Kind} {CapDegrees:F0}deg about {Axis} toward {Direction} by {Amount:F3}";
+            : $"{Kind} {CapDegrees:F0}deg about {Axis} toward {Direction} by {Amount:F3}") + (Configuration != 0 ? $" in configuration {Configuration}" : "");
     }
 
     /// <summary>
@@ -148,7 +150,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 foreach (var (t, island) in list) b.AddTriangle(Map(t.x, island), Map(t.y, island), Map(t.z, island));
                 foreach (var mv in Frames)
                 {
-                    var frame = b.AddFrame();
+                    var frame = b.AddFrame(mv.Configuration);
                     var axis = math.normalize(mv.Axis);
                     var slide = math.any(mv.Direction != 0f) ? math.normalize(mv.Direction) : axis;
                     var moved = new List<(int local, float3 delta)>();

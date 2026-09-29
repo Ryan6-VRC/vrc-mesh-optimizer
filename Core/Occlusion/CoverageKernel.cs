@@ -13,6 +13,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public const byte Escaped = 4;
     }
 
+    /// <summary>
+    /// One mesh's faces a configuration moves: a tree over them as the configuration places them, in the frame node pool,
+    /// and their bounds at rest, where a ray they blocked at rest met them.
+    /// </summary>
+    internal struct FrameTree
+    {
+        public int Mesh;
+        public int Root;
+        public float3 RiskMin;
+        public float3 RiskMax;
+    }
+
     internal struct OccMaterial
     {
         public OccluderMode Mode;
@@ -118,8 +130,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int> MeshOrder;
         /// <summary>Per occluder: deleted, so neither met nor blocking.</summary>
         [ReadOnly] public NativeArray<bool> Disabled;
-        /// <summary>Per occluder: moved by the live frame under evaluation, so absent from the rest tree and present in the frame tree.</summary>
+        /// <summary>Per occluder: moved by the configuration under evaluation, so absent from the rest trees and present in a frame tree.</summary>
         [ReadOnly] public NativeArray<bool> Moved;
+        /// <summary>One per mesh the configuration under evaluation moves faces of; empty at rest.</summary>
+        [ReadOnly] public NativeArray<FrameTree> FrameTrees;
         [ReadOnly] public NativeArray<BvhNode> FrameNodes;
         [ReadOnly] public NativeArray<BvhTri> FramePrims;
         [ReadOnly] public NativeArray<int> SampleMesh;
@@ -127,8 +141,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int> SampleBones;
         /// <summary>Per sample: a reason decided before any ray (unweighted, no normal), or Covered to cast.</summary>
         [ReadOnly] public NativeArray<byte> SampleState;
-        /// <summary>The mesh whose live frame is under evaluation, or -1 at rest.</summary>
-        public int FrameMesh;
         public float Share;
         public float Reach;
         public float OriginOffset;
@@ -136,14 +148,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 
         public static ulong Bit(int mesh) => 1UL << math.min(mesh, 63);
 
-        /// <summary>The rest bounds of the faces the frame under evaluation moves.</summary>
-        public float3 RiskMin, RiskMax;
-
         /// <summary>
         /// Casts the sample's cone from <paramref name="p"/> about <paramref name="n"/>; returns Covered or the
         /// first failing ray's reason. With <paramref name="onlyRisky"/>, for a sample covered at rest and not
-        /// moved by the frame, only rays through <see cref="RiskMin"/>..<see cref="RiskMax"/> are cast: any other
-        /// ray's rest blockers are all unmoved, so it is still blocked.
+        /// moved by the configuration, only rays through the rest bounds of another mesh's moved faces are cast:
+        /// any other ray's rest blocker is unmoved, so it is still blocked.
         /// </summary>
         public byte Evaluate(int sample, float3 p, float3 n, out ulong witness, out int rays, bool onlyRisky = false)
         {
@@ -176,16 +185,24 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 var c = Cone[r];
                 var d = math.normalize(u * c.x + v * c.y + n * c.z);
-                if (onlyRisky)
-                {
-                    var box = new BvhNode { Min = RiskMin, Max = RiskMax };
-                    if (!Slab(box, o, new float3(SafeInv(d.x), SafeInv(d.y), SafeInv(d.z)), out _)) continue;
-                }
+                if (onlyRisky && !TowardMoved(o, d, mesh)) continue;
                 rays++;
                 var res = CastRay(o, d, mesh, ref allowed, ref last, ref witness);
                 if (res != Reason.Covered) return res;
             }
             return Reason.Covered;
+        }
+
+        /// <summary>Whether the ray enters the rest bounds of faces the configuration moves on a mesh other than the sample's own.</summary>
+        bool TowardMoved(float3 o, float3 d, int ownMesh)
+        {
+            var inv = new float3(SafeInv(d.x), SafeInv(d.y), SafeInv(d.z));
+            for (var k = 0; k < FrameTrees.Length; k++)
+            {
+                var tree = FrameTrees[k];
+                if (tree.Mesh != ownMesh && Slab(new BvhNode { Min = tree.RiskMin, Max = tree.RiskMax }, o, inv, out _)) return true;
+            }
+            return false;
         }
 
         static void AddMin(ref FixedList512Bytes<int2> list, int bone, int steps)
@@ -216,11 +233,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             bool metAny = false, metCoMoving = false;
             var inv = new float3(SafeInv(d.x), SafeInv(d.y), SafeInv(d.z));
             var ray = new ShearedRay(d);
-            // In a frame, the rays re-cast are those toward the moved faces, which are then their likeliest blocker.
-            if (FrameMesh >= 0 && FrameMesh != ownMesh && FrameNodes.Length > 0 &&
-                Traverse(FrameNodes, FramePrims, 0, false, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving))
+            // In a configuration, the rays re-cast are those toward the moved faces, which are then their likeliest blocker.
+            for (var k = 0; k < FrameTrees.Length; k++)
             {
-                witness |= Bit(FrameMesh);
+                var tree = FrameTrees[k];
+                if (tree.Mesh == ownMesh || !Traverse(FrameNodes, FramePrims, tree.Root, false, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving)) continue;
+                witness |= Bit(tree.Mesh);
                 return Reason.Covered;
             }
             // The mesh that blocked the previous ray usually blocks this one.
