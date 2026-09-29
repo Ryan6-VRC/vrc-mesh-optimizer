@@ -118,8 +118,12 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// <summary>Where <see cref="Layer"/> plays among the avatar's layers, later overriding earlier; null when not known.</summary>
         public readonly long? Order;
 
-        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null, object layer = null, long? order = null)
+        /// <summary>An avatar mask on <see cref="Layer"/> may keep the curve from the key; such a key never links.</summary>
+        public readonly bool Masked;
+
+        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null, object layer = null, long? order = null, bool masked = false)
         {
+            Masked = masked;
             Layer = layer;
             Order = order;
             Path = path;

@@ -60,9 +60,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     /// or hold every member alike inside them.
     ///
     /// A key driven by anything outside the clips (the descriptor's visemes, jaw flap and eyelids, the MMD names) never
-    /// links, nor does one bound by a curve of unknown clip, one a clip binds with two different curves, or one on a
-    /// renderer whose path another renderer shares. A wrong link evaluates a state the avatar can leave, so every doubt
-    /// keeps keys apart.
+    /// links, nor does one bound by a curve of unknown clip or through a layer whose avatar mask may keep the curve from
+    /// it, one a clip binds with two different curves, or one on a renderer whose path another renderer shares. A wrong
+    /// link evaluates a state the avatar can leave, so every doubt keeps keys apart.
     /// </summary>
     internal static class ShapeKeyLinks
     {
@@ -116,7 +116,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 if (!Resolve(renderers, byPath, b.Path, b.Key, out var key)) continue;
                 var input = renderers[key.Renderer].Keys[key.Key];
                 var drives = Drives(b.Values, input.Weight);
-                if (b.Clip == null || b.Times == null || sharedPath.Contains(b.Path))
+                if (b.Clip == null || b.Times == null || b.Masked || sharedPath.Contains(b.Path))
                 {
                     unlinkable.Add(key);
                     continue;

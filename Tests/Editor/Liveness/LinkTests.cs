@@ -296,6 +296,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         }
 
         [Test]
+        public void ACurveAnAvatarMaskMayKeepFromItsKey_NeverLinks()
+        {
+            var body = Curve(Heels, "Body", "Toe_heels", 100f, 0f);
+            var tights = Curve(Heels, "Tights", "Toe_heels", 100f, 0f);
+            var masked = new ShapeKeyBinding(tights.Path, tights.Key, tights.Values, tights.Times, tights.Clip, tights.Layer, tights.Order, masked: true);
+
+            Assert.That(Find(BodyAndTights, new[] { body, masked }), Is.Empty);
+        }
+
+        [Test]
         public void ACurveOfUnknownClip_NeverLinks()
         {
             var bindings = new[] { new ShapeKeyBinding("Body", "Toe_heels", new[] { 0f }), new ShapeKeyBinding("Tights", "Toe_heels", new[] { 0f }) };

@@ -23,9 +23,12 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
         public readonly object Layer;
         /// <summary>Where the layer plays among all the avatar's layers, later overriding earlier; null when that is not known.</summary>
         public readonly long? Order;
+        /// <summary>An avatar mask on the layer may keep the curve from its target.</summary>
+        public readonly bool Masked;
 
-        public AnimatedCurve(Transform target, EditorCurveBinding binding, AnimationCurve curve, object clip, object layer, long? order)
+        public AnimatedCurve(Transform target, EditorCurveBinding binding, AnimationCurve curve, object clip, object layer, long? order, bool masked)
         {
+            Masked = masked;
             Target = target;
             Binding = binding;
             Curve = curve;
@@ -82,12 +85,22 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
                 if (pair.Value == null) continue;
                 var owner = pair.Key is Animator animator && animator != null ? animator.transform : root;
                 var layers = pair.Value.Layers.ToList();
+                var descriptorMask = DescriptorMask(root, pair.Key);
                 for (var index = 0; index < layers.Count; index++)
                 {
                     var layer = layers[index];
                     var clips = layer.AllReachableNodes().OfType<VirtualClip>();
-                    if (layer.SyncedLayerIndex >= 0 && layer.SyncedLayerIndex < layers.Count)
-                        clips = clips.Concat(layers[layer.SyncedLayerIndex].AllReachableNodes().OfType<VirtualClip>());
+                    // SyncedLayerIndex is a virtual layer index; a source that cannot be found could be any layer.
+                    if (layer.SyncedLayerIndex >= 0)
+                    {
+                        var source = layers.FirstOrDefault(l => l.VirtualLayerIndex == layer.SyncedLayerIndex);
+                        clips = clips.Concat((source != null ? new List<VirtualLayer> { source } : layers).SelectMany(l => l.AllReachableNodes().OfType<VirtualClip>()));
+                    }
+                    // A layer's own mask; for Gesture and FX, VRChat applies the first layer's mask to the whole playable.
+                    var masks = new List<Func<string, bool>> { Admits(layer.AvatarMask), descriptorMask };
+                    if (index > 0 && pair.Key is VRCAvatarDescriptor.AnimLayerType t &&
+                        (t == VRCAvatarDescriptor.AnimLayerType.Gesture || t == VRCAvatarDescriptor.AnimLayerType.FX))
+                        masks.Add(Admits(layers[0].AvatarMask));
                     var order = PlayOrder(pair.Key, index);
                     foreach (var clip in clips.Distinct())
                     foreach (var binding in clip.GetFloatCurveBindings())
@@ -99,10 +112,36 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
                         if (target == null) continue;
                         var curve = clip.GetFloatCurve(binding);
                         if (curve == null) continue;
-                        yield return new AnimatedCurve(target, binding, curve, clip, layer, order);
+                        var masked = masks.Any(admits => !admits(binding.path));
+                        yield return new AnimatedCurve(target, binding, curve, clip, layer, order, masked);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Whether a mask lets a curve at <paramref name="path"/> through: a mask with no transforms listed masks only humanoid
+        /// muscles; one that lists transforms admits only a path it lists fully weighted.
+        /// </summary>
+        static Func<string, bool> Admits(VirtualAvatarMask mask)
+        {
+            if (mask == null || mask.Elements.Count == 0) return _ => true;
+            var elements = mask.Elements;
+            return path => elements.TryGetValue(path, out var weight) && weight >= 1f;
+        }
+
+        /// <summary>The mask the descriptor sets on a playable layer, read the same way.</summary>
+        static Func<string, bool> DescriptorMask(Transform root, object controllerKey)
+        {
+            if (!(controllerKey is VRCAvatarDescriptor.AnimLayerType type) || !root.TryGetComponent<VRCAvatarDescriptor>(out var descriptor)) return _ => true;
+            var mask = (descriptor.baseAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+                .Concat(descriptor.specialAnimationLayers ?? Array.Empty<VRCAvatarDescriptor.CustomAnimLayer>())
+                .Where(l => l.type == type).Select(l => l.mask).FirstOrDefault(m => m != null);
+            if (mask == null || mask.transformCount == 0) return _ => true;
+            var active = new HashSet<string>();
+            for (var i = 0; i < mask.transformCount; i++)
+                if (mask.GetTransformActive(i)) active.Add(mask.GetTransformPath(i));
+            return active.Contains;
         }
 
         /// <summary>
@@ -120,7 +159,7 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
                 if (target == null) continue;
                 var curve = AnimationUtility.GetEditorCurve(clip, binding);
                 if (curve == null) continue;
-                yield return new AnimatedCurve(target, binding, curve, clip, animation, null);
+                yield return new AnimatedCurve(target, binding, curve, clip, animation, null, false);
             }
         }
 

@@ -152,7 +152,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(OptimizationReports.Latest.UnstableBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
         }
 
-        public enum Second { None, DrivesAfter, HoldsBefore, HoldsAfter, HoldsInGesture, DriverInGestureHoldInFx }
+        public enum Second { None, DrivesAfter, HoldsBefore, HoldsAfter, HoldsInGesture, DriverInGestureHoldInFx, SyncedHoldAfter, MaskOmitsOne, MaskHasBoth, FirstLayerMaskOmitsOne, HumanoidMask }
 
         // Links read the merged layers through NDMF's animator services, by clip object and by the order layers play in:
         // one FX clip driving a key on two renderers links them; a second clip driving it on one keeps them apart; a layer
@@ -164,6 +164,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         [TestCase(Second.HoldsAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInALaterLayerRefuses")]
         [TestCase(Second.HoldsInGesture, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInGestureTakesNoPart")]
         [TestCase(Second.DriverInGestureHoldInFx, false, TestName = "AGestureClipDrivingAKeyOnTwoRenderers_AHoldOnOneInFxRefuses")]
+        [TestCase(Second.SyncedHoldAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_ALaterLayerSyncedToAHoldOnOneRefuses")]
+        [TestCase(Second.MaskOmitsOne, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_InALayerWhoseMaskOmitsOneRefuses")]
+        [TestCase(Second.FirstLayerMaskOmitsOne, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_UnderAFirstLayerMaskOmittingOneRefuses")]
+        [TestCase(Second.MaskHasBoth, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_InALayerWhoseMaskHasBothLinks")]
+        [TestCase(Second.HumanoidMask, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_InALayerWithAHumanoidOnlyMaskLinks")]
         public void ClipsLayersAndLinks(Second second, bool links)
         {
             var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
@@ -190,6 +195,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 c.AddLayer(name);
                 c.layers[c.layers.Length - 1].stateMachine.AddState(name).motion = clip;
             }
+            void Masked(UnityEditor.Animations.AnimatorController c, int index, params (string path, bool active)[] transforms)
+            {
+                var mask = a.Made(new AvatarMask { name = "mask" });
+                mask.transformCount = transforms.Length;
+                for (var i = 0; i < transforms.Length; i++)
+                {
+                    mask.SetTransformPath(i, transforms[i].path);
+                    mask.SetTransformActive(i, transforms[i].active);
+                }
+                var layers = c.layers;
+                layers[index].avatarMask = mask;
+                c.layers = layers;
+            }
             var heels = Clip("heels", ("Body", new[] { 0f, 100f }), ("Tights", new[] { 0f, 100f }));
             var hold = Clip("sweater", ("Tights", new[] { 0f, 0f }));
             var fx = Controller("fx");
@@ -202,6 +220,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 case Second.HoldsAfter: AddLayer(fx, "heels", heels); AddLayer(fx, "sweater", hold); break;
                 case Second.HoldsInGesture: AddLayer(gesture, "sweater", hold); AddLayer(fx, "heels", heels); break;
                 case Second.DriverInGestureHoldInFx: AddLayer(gesture, "heels", heels); AddLayer(fx, "sweater", hold); break;
+                case Second.SyncedHoldAfter:
+                    AddLayer(fx, "sweater", hold);
+                    AddLayer(fx, "heels", heels);
+                    fx.AddLayer(new UnityEditor.Animations.AnimatorControllerLayer { name = "synced", syncedLayerIndex = 0, defaultWeight = 1f, stateMachine = a.Made(new UnityEditor.Animations.AnimatorStateMachine()) });
+                    break;
+                case Second.MaskOmitsOne: AddLayer(fx, "heels", heels); Masked(fx, 0, ("Body", true), ("Tights", false)); break;
+                case Second.MaskHasBoth: AddLayer(fx, "heels", heels); Masked(fx, 0, ("Body", true), ("Tights", true)); break;
+                case Second.FirstLayerMaskOmitsOne: AddLayer(fx, "base", Clip("empty")); AddLayer(fx, "heels", heels); Masked(fx, 0, ("Body", true)); break;
+                case Second.HumanoidMask: AddLayer(fx, "heels", heels); Masked(fx, 0); break;
             }
             descriptor.customizeAnimationLayers = true;
             descriptor.baseAnimationLayers = new[]
