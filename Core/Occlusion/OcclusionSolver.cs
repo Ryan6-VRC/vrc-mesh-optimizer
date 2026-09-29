@@ -394,6 +394,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 // Take the hidden occluder faces away and re-decide every hidden triangle without them.
                 // Only a sample with a witness, at rest or in any frame, on a mesh that lost faces can lose
                 // cover: every ray of any other has a blocker on a mesh that keeps all its faces.
+                //
+                // Least-proven part of the module. Its soundness rests on bookkeeping that spans the rest
+                // pass, every live frame and this pass together: which samples are re-cast, which witnesses
+                // survive the re-cast, and which frames are re-run for them. A review found one hole here
+                // that no test caught. If it is wrong, the test that breaks it layers three or more covers
+                // with some hidden, puts live frames on the kept ones that move them away, orders meshes so
+                // a deleted face is found first, and checks that a triangle is hidden only if it is covered
+                // with every hidden face removed, in every frame.
                 ulong lostFaces = 0;
                 for (var o = 0; o < S.OccTri.Length; o++)
                 {
