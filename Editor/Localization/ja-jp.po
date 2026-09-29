@@ -1,0 +1,96 @@
+msgid ""
+msgstr ""
+"Language: ja-jp\n"
+
+msgid "MeshOptimizer"
+msgstr "Mesh Optimizer"
+
+msgid "MeshOptimizer:decimate"
+msgstr "ポリゴンを削減する"
+
+msgid "MeshOptimizer:decimate:tooltip"
+msgstr "辺をまとめてポリゴン数を減らします。アバターが変形したりアニメーションしたりする部分の形は保たれます。"
+
+msgid "MeshOptimizer:removeHiddenTriangles"
+msgstr "隠れたポリゴンを削除する"
+
+msgid "MeshOptimizer:removeHiddenTriangles:tooltip"
+msgstr "同じボーンで動く常時表示のレンダラーに、どの方向からも覆われているポリゴンを削除します。"
+
+msgid "MeshOptimizer:target"
+msgstr "目標"
+
+msgid "MeshOptimizer:target:tooltip"
+msgstr "アバター全体のポリゴン数か、許容差のどちらかを目標に削減します。"
+
+msgid "TargetKind:TriangleBudget"
+msgstr "ポリゴン数"
+
+msgid "TargetKind:Tolerance"
+msgstr "許容差"
+
+msgid "MeshOptimizer:triangleBudget"
+msgstr "目標ポリゴン数"
+
+msgid "MeshOptimizer:triangleBudget:tooltip"
+msgstr "最適化後のアバター全体のポリゴン数です。"
+
+msgid "MeshOptimizer:tolerance"
+msgstr "許容差 (mm)"
+
+msgid "MeshOptimizer:tolerance:tooltip"
+msgstr "最適化後の表面が元の形からずれてよい最大の距離です。単位はミリメートルです。"
+
+msgid "MeshOptimizer:alwaysOn"
+msgstr "常時表示のレンダラー"
+
+msgid "MeshOptimizer:alwaysOn:tooltip"
+msgstr "常に表示されるレンダラーです。他のレンダラーのポリゴンを隠せるのはここにあるレンダラーだけなので、オフにできるものは入れないでください。"
+
+msgid "MeshOptimizer:materials"
+msgstr "マテリアルごとの遮蔽"
+
+msgid "MeshOptimizer:materials:tooltip"
+msgstr "マテリアルごとに、その面が後ろにあるものを隠すかどうかを設定します。"
+
+msgid "MaterialOcclusion:material"
+msgstr "マテリアル"
+
+msgid "MaterialOcclusion:mode"
+msgstr "遮蔽"
+
+msgid "OcclusionMode:Automatic"
+msgstr "自動"
+
+msgid "OcclusionMode:Automatic:tooltip"
+msgstr "Render QueueとRenderTypeが不透明を示していれば不透明として扱い、そうでなければテクスチャのアルファで判定します。"
+
+msgid "OcclusionMode:ForceOpaque"
+msgstr "常に不透明"
+
+msgid "OcclusionMode:ForceOpaque:tooltip"
+msgstr "アルファに関係なく、面全体を不透明として扱います。"
+
+msgid "OcclusionMode:NeverOccludes"
+msgstr "遮蔽しない"
+
+msgid "OcclusionMode:NeverOccludes:tooltip"
+msgstr "このマテリアルは後ろにあるものを隠さないものとして扱います。"
+
+msgid "MeshOptimizer:renderers"
+msgstr "レンダラーごとの設定"
+
+msgid "RendererSettings:renderer"
+msgstr "レンダラー"
+
+msgid "RendererSettings:excludeFromDecimation"
+msgstr "ポリゴン削減から除外"
+
+msgid "RendererSettings:excludeFromDecimation:tooltip"
+msgstr "このレンダラーのポリゴンは削減しません。隠れたポリゴンの削除は行われます。"
+
+msgid "RendererSettings:protection"
+msgstr "保護の強さ"
+
+msgid "RendererSettings:protection:tooltip"
+msgstr "ポリゴン数を振り分けるときに、このレンダラーの細部をどれだけ残すかです。1が標準で、大きいほど多く残します。"
