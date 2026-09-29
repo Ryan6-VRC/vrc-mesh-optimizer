@@ -32,7 +32,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public NativeArray<int2> Records;
         /// <summary>Working vertex to source vertex.</summary>
         public NativeArray<int> WorkingOrigin;
-        /// <summary>Per source triangle over working vertices; int3(-1) for a triangle dropped as degenerate input.</summary>
+        /// <summary>Per source triangle over working vertices; int3(-1) for a triangle dropped as degenerate input or excluded.</summary>
         public NativeArray<int3> WorkingTriangles;
         public int InitialTriangleCount;
         public int SourceVertexCount;

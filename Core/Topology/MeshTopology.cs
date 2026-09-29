@@ -50,7 +50,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         /// <summary>Working vertex to source vertex. Identity over the first source-count entries.</summary>
         public NativeArray<int> Origin;
         /// <summary>Per source triangle, over working vertices; int3(-1) where the source triangle repeats an
-        /// index or names a vertex out of range, and is dropped.</summary>
+        /// index, names a vertex out of range or is excluded, and is dropped.</summary>
         public NativeArray<int3> Triangles;
         /// <summary>Per working vertex: the lowest working vertex at the same exact position.</summary>
         public NativeArray<int> Position;
@@ -88,12 +88,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             if (DeltaValue.IsCreated) DeltaValue.Dispose();
         }
 
-        public static MeshTopology Build(in EvalMesh mesh, in TopologySettings settings, Allocator allocator)
+        public static MeshTopology Build(in EvalMesh mesh, in TopologySettings settings, Allocator allocator) =>
+            Build(mesh, default, settings, allocator);
+
+        /// <summary>
+        /// As the overload without <paramref name="excluded"/>, but a triangle it flags is dropped as a degenerate one is.
+        /// Working vertices depend only on the source vertices and on which triangles are live, so the topology is the one
+        /// built from a copy of the mesh without those triangles, while every per-triangle array keeps the mesh's numbering.
+        /// </summary>
+        /// <param name="excluded">Per triangle of <paramref name="mesh"/>; unset excludes none.</param>
+        public static MeshTopology Build(in EvalMesh mesh, NativeArray<bool> excluded, in TopologySettings settings, Allocator allocator)
         {
+            if (excluded.IsCreated && excluded.Length != mesh.TriangleCount)
+                throw new ArgumentException($"{excluded.Length} exclusion flags for a mesh with {mesh.TriangleCount} triangles; give one per triangle", nameof(excluded));
             var topo = new MeshTopology { SourceVertexCount = mesh.VertexCount };
             try
             {
-                Fill(ref topo, mesh, settings, allocator);
+                Fill(ref topo, mesh, excluded, settings, allocator);
                 return topo;
             }
             catch
@@ -103,10 +114,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }
         }
 
-        static void Fill(ref MeshTopology topo, in EvalMesh mesh, in TopologySettings settings, Allocator allocator)
+        static void Fill(ref MeshTopology topo, in EvalMesh mesh, NativeArray<bool> excluded, in TopologySettings settings, Allocator allocator)
         {
             var sourceCount = mesh.VertexCount;
             var triCount = mesh.TriangleCount;
+            using var exclude = new OptionalArray<bool>(excluded);
             using var submesh = new OptionalArray<int>(mesh.TriangleSubmesh);
             using var frames = new OptionalArray<ShapeFrame>(mesh.Frames);
             using var deltas = new OptionalArray<ShapeDelta>(mesh.Deltas);
@@ -119,6 +131,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             new SplitSubmeshesJob
             {
                 SourceTriangles = mesh.Triangles,
+                Excluded = exclude.Array,
                 TriangleSubmesh = submesh.Array,
                 SourceVertexCount = sourceCount,
                 Origin = origin,
@@ -197,6 +210,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         struct SplitSubmeshesJob : IJob
         {
             [ReadOnly] public NativeArray<int3> SourceTriangles;
+            /// <summary>Per source triangle, or empty for none excluded.</summary>
+            [ReadOnly] public NativeArray<bool> Excluded;
             [ReadOnly] public NativeArray<int> TriangleSubmesh;
             public int SourceVertexCount;
             public NativeList<int> Origin;
@@ -217,7 +232,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
                 for (var t = 0; t < SourceTriangles.Length; t++)
                 {
                     var src = SourceTriangles[t];
-                    if (math.any(src < 0) || math.any(src >= SourceVertexCount) || src.x == src.y || src.y == src.z || src.x == src.z)
+                    if ((Excluded.Length > 0 && Excluded[t]) ||
+                        math.any(src < 0) || math.any(src >= SourceVertexCount) || src.x == src.y || src.y == src.z || src.x == src.z)
                     {
                         Triangles[t] = new int3(-1);
                         continue;

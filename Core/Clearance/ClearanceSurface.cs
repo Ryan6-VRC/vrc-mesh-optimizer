@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
+using Ryan6Vrc.MeshOptimizer.Core.Topology;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -8,13 +9,15 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 {
-    /// <summary>One source of layers for <see cref="ClearanceSurface.Build"/>: a mesh's kept triangles and each one's layer.</summary>
+    /// <summary>One source of layers for <see cref="ClearanceSurface.Build"/>: a mesh's triangles, which of them it keeps, and each kept one's layer.</summary>
     public struct ClearanceLayerSource
     {
         public NativeArray<float3> Positions;
         public NativeArray<int3> Triangles;
-        /// <summary>Per triangle, its layer: an id unique across every source.</summary>
+        /// <summary>Per triangle, its layer: an id unique across every source. An excluded triangle's is never read.</summary>
         public NativeArray<int> TriangleLayer;
+        /// <summary>Per triangle, true for one the surface leaves out; unset leaves none out.</summary>
+        public NativeArray<bool> Excluded;
     }
 
     /// <summary>
@@ -67,6 +70,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             {
                 if (s.TriangleLayer.Length != s.Triangles.Length)
                     throw new ArgumentException($"a source has {s.Triangles.Length} triangles and {s.TriangleLayer.Length} layers; give one layer per triangle");
+                if (s.Excluded.IsCreated && s.Excluded.Length != s.Triangles.Length)
+                    throw new ArgumentException($"a source has {s.Triangles.Length} triangles and {s.Excluded.Length} exclusion flags; give one flag per triangle");
                 total += s.Triangles.Length;
             }
             var surface = new ClearanceSurface { Reach = reach };
@@ -75,7 +80,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 using var prims = new NativeList<TreePrim>(total, Allocator.Persistent);
                 using var layers = new NativeList<int>(total, Allocator.Persistent);
                 foreach (var s in sources)
-                    new GatherJob { Positions = s.Positions, Triangles = s.Triangles, TriangleLayer = s.TriangleLayer, Prims = prims, Layers = layers }.Run();
+                {
+                    using var excluded = new OptionalArray<bool>(s.Excluded);
+                    new GatherJob { Positions = s.Positions, Triangles = s.Triangles, TriangleLayer = s.TriangleLayer, Excluded = excluded.Array, Prims = prims, Layers = layers }.Run();
+                }
                 surface.Prims = new NativeArray<TreePrim>(prims.AsArray(), allocator);
                 using var nodes = new NativeList<TreeNode>(math.max(1, total), Allocator.Persistent);
                 new BuildJob { Prims = surface.Prims, Layers = layers.AsArray(), Nodes = nodes }.Run();
@@ -152,6 +160,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             [ReadOnly] public NativeArray<float3> Positions;
             [ReadOnly] public NativeArray<int3> Triangles;
             [ReadOnly] public NativeArray<int> TriangleLayer;
+            /// <summary>Per triangle, or empty for none excluded.</summary>
+            [ReadOnly] public NativeArray<bool> Excluded;
             public NativeList<TreePrim> Prims;
             public NativeList<int> Layers;
 
@@ -160,6 +170,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 var n = Positions.Length;
                 for (var t = 0; t < Triangles.Length; t++)
                 {
+                    if (Excluded.Length > 0 && Excluded[t]) continue;
                     var tri = Triangles[t];
                     if (math.any(tri < 0) || math.any(tri >= n)) continue;
                     float3 a = Positions[tri.x], b = Positions[tri.y], c = Positions[tri.z];
@@ -612,11 +623,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         /// Per triangle, the piece it belongs to, numbered from 0 in order of first appearance; <paramref name="count"/>
         /// is how many pieces there are. A triangle naming a vertex out of range is a piece of its own.
         /// </summary>
-        public static NativeArray<int> Pieces(NativeArray<float3> positions, NativeArray<int3> triangles, Allocator allocator, out int count)
+        public static NativeArray<int> Pieces(NativeArray<float3> positions, NativeArray<int3> triangles, Allocator allocator, out int count) =>
+            Pieces(positions, triangles, default, allocator, out count);
+
+        /// <summary>
+        /// As the overload without <paramref name="excluded"/>, but a triangle it flags joins nothing and is in no piece, -1,
+        /// so the others are numbered as if it were absent.
+        /// </summary>
+        /// <param name="excluded">Per triangle; unset excludes none.</param>
+        public static NativeArray<int> Pieces(NativeArray<float3> positions, NativeArray<int3> triangles, NativeArray<bool> excluded, Allocator allocator, out int count)
         {
+            if (excluded.IsCreated && excluded.Length != triangles.Length)
+                throw new ArgumentException($"{excluded.Length} exclusion flags for {triangles.Length} triangles; give one per triangle", nameof(excluded));
             var result = new NativeArray<int>(triangles.Length, allocator);
+            using var exclude = new OptionalArray<bool>(excluded);
             using var countOut = new NativeReference<int>(Allocator.Persistent);
-            new PiecesJob { Positions = positions, Triangles = triangles, Piece = result, Count = countOut }.Run();
+            new PiecesJob { Positions = positions, Triangles = triangles, Excluded = exclude.Array, Piece = result, Count = countOut }.Run();
             count = countOut.Value;
             return result;
         }
@@ -626,6 +648,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         {
             [ReadOnly] public NativeArray<float3> Positions;
             [ReadOnly] public NativeArray<int3> Triangles;
+            /// <summary>Per triangle, or empty for none excluded.</summary>
+            [ReadOnly] public NativeArray<bool> Excluded;
             public NativeArray<int> Piece;
             public NativeReference<int> Count;
 
@@ -649,7 +673,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 for (var t = 0; t < Triangles.Length; t++)
                 {
                     var tri = Triangles[t];
-                    if (math.any(tri < 0) || math.any(tri >= n)) continue;
+                    if ((Excluded.Length > 0 && Excluded[t]) || math.any(tri < 0) || math.any(tri >= n)) continue;
                     Union(ref parent, tri.x, tri.y);
                     Union(ref parent, tri.x, tri.z);
                 }
@@ -658,6 +682,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 var count = 0;
                 for (var t = 0; t < Triangles.Length; t++)
                 {
+                    if (Excluded.Length > 0 && Excluded[t])
+                    {
+                        Piece[t] = -1;
+                        continue;
+                    }
                     var tri = Triangles[t];
                     if (math.any(tri < 0) || math.any(tri >= n))
                     {
