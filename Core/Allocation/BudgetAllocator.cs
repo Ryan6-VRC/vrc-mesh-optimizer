@@ -68,11 +68,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
             }
             var level = 0f;
             // Take steps across renderers in order of weighted error until the total fits. Each sequence's
-            // error is non-decreasing, so this merge takes exactly the steps at or below the final level.
+            // error is non-decreasing, so this merge takes exactly the steps at or below the final level. A
+            // common level means every step at or below it, so it goes on to take the steps that tie with the
+            // level reached (many at zero, on flat meshes) rather than leaving them to entry order; a step never
+            // adds triangles, so once the total fits it stays fitted.
             var queue = new SortedSet<(float key, int entry)>();
             for (var i = 0; i < n; i++)
                 if (limit[i] > 0) queue.Add((Key(entries[i], 0), i));
-            while (total > triangleBudget && queue.Count > 0)
+            while (queue.Count > 0 && (total > triangleBudget || queue.Min.key <= level))
             {
                 var (key, i) = queue.Min;
                 queue.Remove(queue.Min);
@@ -80,17 +83,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
                 total += e.CountAt(cuts[i] + 1) - e.CountAt(cuts[i]);
                 cuts[i]++;
                 level = Math.Max(level, key);
-                if (cuts[i] < limit[i]) queue.Add((Key(e, cuts[i]), i));
-            }
-            // A common level means every step at or below it, so take the steps that tie with the level
-            // reached (many at zero, on flat meshes) rather than leaving them to entry order.
-            while (queue.Count > 0 && queue.Min.key <= level)
-            {
-                var (_, i) = queue.Min;
-                queue.Remove(queue.Min);
-                var e = entries[i];
-                total += e.CountAt(cuts[i] + 1) - e.CountAt(cuts[i]);
-                cuts[i]++;
                 if (cuts[i] < limit[i]) queue.Add((Key(e, cuts[i]), i));
             }
             return new AllocationResult { Cuts = cuts, Level = level, TotalTriangles = total, TargetMet = total <= triangleBudget };
