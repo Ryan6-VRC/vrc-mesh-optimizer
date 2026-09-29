@@ -580,6 +580,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 {
                     r.HiddenTriangles = new NativeArray<bool>(tc, allocator);
                     r.CoveredVertices = new NativeArray<bool>(vc, allocator);
+                    r.FrontCovered = new NativeArray<bool>(vc, allocator);
                 }
                 catch
                 {
@@ -592,6 +593,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 {
                     var v = vb + i;
                     if (S.VTStart[v + 1] == S.VTStart[v]) continue;
+                    r.FrontCovered[i] = Covered[v];
                     var back = VertBack[v];
                     if (Covered[v] && (back < 0 || Covered[back]))
                     {

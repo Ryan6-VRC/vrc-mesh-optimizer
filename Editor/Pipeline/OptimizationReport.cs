@@ -70,6 +70,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public long ClearanceRefused { get; internal set; }
         /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
         public int KeptOnUnstableBones { get; internal set; }
+        /// <summary>
+        /// Triangles occlusion kept because an outline draws their back, though their front was covered: at most what
+        /// judging the outline's side cost this renderer.
+        /// </summary>
+        public int KeptForOutline { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
 
         /// <summary>Per source triangle, true when occlusion removed it. Null when occlusion did not run on this renderer.</summary>
@@ -125,6 +130,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public List<string> UnstableBones { get; } = new List<string>();
         /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
         public int KeptOnUnstableBones => Renderers.Sum(r => r.KeptOnUnstableBones);
+        /// <summary>Triangles occlusion kept because an outline draws their back, though their front was covered.</summary>
+        public int KeptForOutline => Renderers.Sum(r => r.KeptForOutline);
         /// <summary>Material overrides on the component that matched no material on any renderer, so did nothing.</summary>
         public List<Material> UnmatchedMaterialOverrides { get; } = new List<Material>();
 
@@ -149,6 +156,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
+            if (KeptForOutline > 0)
+                sb.Append($"\n  outlines kept up to {KeptForOutline} triangles whose front was covered.");
             foreach (var m in UnmatchedMaterialOverrides)
                 sb.Append($"\n  material override for {(m != null ? m.name : "<missing>")} matched no material on the avatar.");
             foreach (var r in Renderers.Where(r => r.Skipped))
