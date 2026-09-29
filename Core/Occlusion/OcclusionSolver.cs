@@ -31,6 +31,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         const byte ExposedByFrame = 1;
         const byte ExposedByDeletion = 2;
 
+        /// <summary>
+        /// One result per mesh, in the order given, allocated with <paramref name="allocator"/> for the caller
+        /// to dispose. Refuses by name any input that does not index consistently.
+        /// </summary>
         public static OcclusionResult[] Solve(IReadOnlyList<OcclusionMesh> meshes, in OcclusionBones bones,
                                               in OcclusionSettings settings, Allocator allocator, out OcclusionStats stats)
         {
@@ -40,19 +44,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             var total = Stopwatch.StartNew();
             stats = default;
             using var scene = new Scene(meshes, bones, settings);
-            var run = new Run(scene, settings);
-            try
-            {
-                run.Execute(ref stats);
-                var results = new OcclusionResult[meshes.Count];
-                for (var m = 0; m < meshes.Count; m++) results[m] = run.Result(m, allocator);
-                stats.TotalMs = total.Elapsed.TotalMilliseconds;
-                return results;
-            }
-            finally
-            {
-                run.Dispose();
-            }
+            using var run = new Run(scene, settings);
+            run.Execute(ref stats);
+            var results = new OcclusionResult[meshes.Count];
+            for (var m = 0; m < meshes.Count; m++) results[m] = run.Result(m, allocator);
+            stats.TotalMs = total.Elapsed.TotalMilliseconds;
+            return results;
         }
 
         /// <summary>Every mesh flattened into one index space, and the occluder trees.</summary>
@@ -295,7 +292,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             readonly OcclusionSettings Cfg;
             NativeArray<float3> Cone;
             NativeList<float3> SamplePos, SampleNrm, SampleBary;
-            NativeList<int> SampleMesh, SampleBoneStart, SampleBones, SampleTri;
+            NativeList<int> SampleMesh, SampleBoneStart, SampleBones;
             NativeList<byte> SampleState, SampleReason, SampleFlags;
             NativeList<bool> Covered, Relevant;
             NativeList<ulong> Witness, FrameWitness;
@@ -324,7 +321,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 Cone = Occlusion.Cone.Directions(cfg.ConeDegrees, cfg.RingDegrees, a);
                 SamplePos = new NativeList<float3>(V, a); SampleNrm = new NativeList<float3>(V, a); SampleBary = new NativeList<float3>(V, a);
                 SampleMesh = new NativeList<int>(V, a); SampleBoneStart = new NativeList<int>(V + 1, a); SampleBones = new NativeList<int>(4 * V, a);
-                SampleTri = new NativeList<int>(V, a); SampleState = new NativeList<byte>(V, a);
+                SampleState = new NativeList<byte>(V, a);
                 SampleReason = new NativeList<byte>(V, a); SampleFlags = new NativeList<byte>(V, a);
                 Covered = new NativeList<bool>(V, a); Relevant = new NativeList<bool>(V, a); Witness = new NativeList<ulong>(V, a); FrameWitness = new NativeList<ulong>(V, a);
                 RelevantList = new NativeList<int>(V, a);
@@ -354,7 +351,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     Pos = S.Pos, Nrm = S.Nrm, GeoN = S.GeoN, VertMesh = S.VertMesh, WeightStart = S.WeightStart, Weights = S.Weights,
                     MinRawWeight = Cfg.MinRawWeight, MinInfluence = Cfg.MinInfluence,
                     SamplePos = SamplePos, SampleNrm = SampleNrm, SampleMesh = SampleMesh, SampleBoneStart = SampleBoneStart,
-                    SampleBones = SampleBones, SampleState = SampleState, SampleTri = SampleTri, SampleBary = SampleBary,
+                    SampleBones = SampleBones, SampleState = SampleState, SampleBary = SampleBary,
                 }.Run();
                 ResizeState();
                 using (var referenced = new NativeList<int>(V, Allocator.TempJob))
@@ -369,7 +366,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     Covered = Covered.AsArray(), Spacing = Cfg.InteriorSpacing, MinInfluence = Cfg.MinInfluence,
                     TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount,
                     SamplePos = SamplePos, SampleNrm = SampleNrm, SampleMesh = SampleMesh, SampleBoneStart = SampleBoneStart,
-                    SampleBones = SampleBones, SampleState = SampleState, SampleTri = SampleTri, SampleBary = SampleBary,
+                    SampleBones = SampleBones, SampleState = SampleState, SampleBary = SampleBary,
                 }.Run();
                 ResizeState();
                 stats.InteriorSamples = SamplePos.Length - V;
@@ -435,7 +432,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             CoverageKernel Kernel(int frameMesh, NativeArray<BvhNode> frameNodes, NativeArray<BvhTri> framePrims) => new CoverageKernel
             {
                 Cone = Cone, BoneParent = S.BoneParent, WeightStart = S.WeightStart, Weights = S.Weights, Tris = S.Tris, Uv = S.Uv,
-                OccTri = S.OccTri, OccMesh = S.OccMesh, OccMat = S.OccMat, Alpha = S.Alpha, Texels = S.Texels,
+                OccTri = S.OccTri, OccMat = S.OccMat, Alpha = S.Alpha, Texels = S.Texels,
                 Nodes = S.Nodes.AsArray(), Prims = S.Prims, MeshRoot = S.MeshRoot, MeshOrder = S.MeshOrder,
                 Disabled = Disabled, Moved = Moved, FrameNodes = frameNodes, FramePrims = framePrims,
                 SampleMesh = SampleMesh.AsArray(), SampleBoneStart = SampleBoneStart.AsArray(), SampleBones = SampleBones.AsArray(),
@@ -558,7 +555,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 D(ref Cone); D(ref TriSampleStart); D(ref TriSampleCount); D(ref Disabled); D(ref Moved); D(ref Eligible); D(ref Candidate);
                 D(ref EmptyNodes); D(ref EmptyPrims); D(ref RiskBox); D(ref DeltaScratch); D(ref NormalScratch); D(ref VertMark); D(ref TriMark); D(ref TriMark2);
                 L(ref SamplePos); L(ref SampleNrm); L(ref SampleBary); L(ref SampleMesh); L(ref SampleBoneStart); L(ref SampleBones);
-                L(ref SampleTri); L(ref SampleState); L(ref SampleReason); L(ref SampleFlags); L(ref Covered); L(ref Relevant);
+                L(ref SampleState); L(ref SampleReason); L(ref SampleFlags); L(ref Covered); L(ref Relevant);
                 L(ref Witness); L(ref FrameWitness); L(ref RelevantList); L(ref Work); L(ref MovedOcc); L(ref FrameNodes); L(ref FramePrims);
                 if (FrameRays.IsCreated) FrameRays.Dispose();
             }

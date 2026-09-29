@@ -90,6 +90,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Assert.That(r[0].Declined.Swings, Is.EqualTo(inner.ReferencedVertexCount));
         }
 
+        static MeshBuilder Cap(int bone, float swingDegrees = 0f)
+        {
+            var b = new MeshBuilder();
+            b.SphereBand(Centre, Outer, 0f, 70f, 12, 48, MeshBuilder.On(bone));
+            if (swingDegrees != 0f) b.Rotate(quaternion.RotateZ(math.radians(swingDegrees)), Centre);
+            return b;
+        }
+
+        [Test]
+        public void CapOnUnrelatedBone_KeepsWhatItsSwingExposes()
+        {
+            // The verdict: a cap on a bone that swings relative to the sphere keeps the triangles under it.
+            var inner = InnerSphere(bone: 1);
+            scene.Add(inner, occludes: false);
+            scene.Add(Cap(bone: 4), occludes: true);
+            var top = TrianglesWithin(inner, 0f, 20f);
+            AssertAll(scene.Solve(Defaults, Bones)[0], top, false, "the cap swings relative to it");
+            scene.Dispose();
+
+            // Why: as plain geometry (the cap put on the sphere's own bone, so every face blocks) the cap
+            // covers them at rest, so a rest-pose test would delete them; swung 90 degrees it exposes them.
+            scene = new Scene();
+            scene.Add(InnerSphere(bone: 1), occludes: false);
+            scene.Add(Cap(bone: 1), occludes: true);
+            AssertAll(scene.Solve(Defaults, Bones)[0], top, true, "at rest the cap covers it geometrically");
+            scene.Dispose();
+
+            scene = new Scene();
+            scene.Add(InnerSphere(bone: 1), occludes: false);
+            scene.Add(Cap(bone: 1, swingDegrees: 90f), occludes: true);
+            AssertAll(scene.Solve(Defaults, Bones)[0], top, false, "the swung cap no longer covers it");
+        }
+
         [Test]
         public void ShellOnParentBone_HidesThroughKin_AndNotWithKinZero()
         {

@@ -9,6 +9,7 @@ Status: in development, not yet released.
 Projects this work studies and builds on, credited by name:
 
 - [Meshia.MeshSimplification](https://github.com/RamType0/Meshia.MeshSimplification) by Ram.Type-0, and [touma-tw's fork](https://github.com/touma-tw/Meshia.MeshSimplification) (MIT): Burst-accelerated attribute-QEM simplification as an NDMF pass, the closest ancestor of this tool.
+- [vrc-blender-tools](https://github.com/Ryan6-VRC/vrc-blender-tools) (MIT): the co-moving coverage rule in `avatarprep/core/coverage.py`, a cone raycast in which only geometry riding the same bones blocks, whose semantics the occlusion module ports to Burst.
 
 Anything copied rather than re-derived carries its license text in `NOTICE`.
 

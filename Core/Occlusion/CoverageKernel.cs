@@ -81,7 +81,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int3> Tris;
         [ReadOnly] public NativeArray<float2> Uv;
         [ReadOnly] public NativeArray<int> OccTri;
-        [ReadOnly] public NativeArray<int> OccMesh;
         [ReadOnly] public NativeArray<OccMaterial> OccMat;
         [ReadOnly] public NativeArray<AlphaInfo> Alpha;
         [ReadOnly] public NativeArray<byte> Texels;

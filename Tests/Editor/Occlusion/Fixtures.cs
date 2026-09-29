@@ -95,6 +95,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             return first;
         }
 
+        /// <summary>Rotates every vertex from <paramref name="first"/> on about <paramref name="pivot"/>: a bone swinging.</summary>
+        public void Rotate(quaternion q, float3 pivot, int first = 0)
+        {
+            for (var v = first; v < pos.Count; v++)
+            {
+                pos[v] = pivot + math.mul(q, pos[v] - pivot);
+                nrm[v] = math.mul(q, nrm[v]);
+            }
+        }
+
         public void Sphere(float3 centre, float radius, int rings, int segments, BoneInfluence[] influences,
                            bool inward = false, int submesh = 0) =>
             SphereBand(centre, radius, 0f, 180f, rings, segments, influences, inward, submesh);

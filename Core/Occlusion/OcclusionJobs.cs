@@ -100,7 +100,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public NativeList<int> SampleBoneStart;
         public NativeList<int> SampleBones;
         public NativeList<byte> SampleState;
-        public NativeList<int> SampleTri;
         public NativeList<float3> SampleBary;
 
         public void Execute()
@@ -127,7 +126,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 SampleNrm.Add(n);
                 SampleMesh.Add(VertMesh[v]);
                 SampleState.Add(raw < MinRawWeight || kept == 0 ? Reason.Unweighted : ok ? Reason.Covered : Reason.Escaped);
-                SampleTri.Add(-1);
                 SampleBary.Add(float3.zero);
             }
         }
@@ -171,7 +169,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public NativeList<int> SampleBoneStart;
         public NativeList<int> SampleBones;
         public NativeList<byte> SampleState;
-        public NativeList<int> SampleTri;
         public NativeList<float3> SampleBary;
 
         public void Execute()
@@ -245,7 +242,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             SampleNrm.Add(n);
             SampleMesh.Add(TriMesh[t]);
             SampleState.Add(kept == 0 ? Reason.Unweighted : ok ? Reason.Covered : Reason.Escaped);
-            SampleTri.Add(t);
             SampleBary.Add(bary);
         }
     }
