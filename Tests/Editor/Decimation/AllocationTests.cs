@@ -43,9 +43,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             var curvedKept = _curved.TriangleCountAt(r.Cuts[1]) / (float)_curved.InitialTriangleCount;
             TestContext.WriteLine($"level {r.Level * 1000:F3} mm: sheet keeps {flatKept:P0}, sphere keeps {curvedKept:P0}");
             Assert.That(flatKept, Is.LessThan(curvedKept));
-            // One common level: neither mesh's next step would have been cheaper than the level reached.
-            Assert.That(_flat.ErrorAt(r.Cuts[0]), Is.LessThanOrEqualTo(r.Level));
-            Assert.That(_curved.ErrorAt(r.Cuts[1]), Is.LessThanOrEqualTo(r.Level));
+            // One common level: neither mesh's next step would have been as cheap as the level reached.
+            for (var i = 0; i < 2; i++)
+            {
+                var seq = i == 0 ? _flat : _curved;
+                if (r.Cuts[i] < seq.Length) Assert.That(seq.Steps[r.Cuts[i]].Error, Is.GreaterThan(r.Level), i == 0 ? "sheet" : "sphere");
+            }
         }
 
         [Test]

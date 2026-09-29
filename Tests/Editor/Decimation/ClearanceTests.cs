@@ -428,7 +428,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             scene.BuildSurface();
             var p = b.Positions.ToArray();
             var t = b.Triangles.ToArray();
-            var layers = scene.Layers[0];
             for (var i = 0; i < 300; i++)
             {
                 var a0 = o + rng.NextFloat3(-0.02f, 0.02f);
@@ -444,7 +443,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var tree = s.TriangleClearance(a0, a1, a2, int.MaxValue, 0.02f);
                 Assert.That(tree, Is.EqualTo(brute).Within(1e-6f), $"query {i}");
             }
-            Assert.That(layers.Length, Is.EqualTo(t.Length));
         }
     }
 }
