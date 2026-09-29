@@ -344,6 +344,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(on, Is.LessThan(0.002f), "with bends the written surface follows the joint");
         }
 
+        // A share counts as 0 or 1, and its vertex as moving rigidly with its home, only where what that drops moves it by
+        // no more than a micrometre in any bend: a small weight far from the joint moves its vertex a visible fraction of
+        // a millimetre and is kept, while a weight a float rounding off whole is dropped.
+        [Test]
+        public void ASmallWeightFarFromTheJoint_IsKept_AndAFloatRoundingIsNot()
+        {
+            var b = new MeshBuilder();
+            var far = b.Add(new float3(0f, -2f, 0f));
+            var near = b.Add(new float3(0.01f, BendFixtures.JointY, 0f));
+            var whole = b.Add(new float3(0f, BendFixtures.JointY + 0.1f, 0.01f));
+            b.Tri(far, near, whole);
+            b.SetWeights(far, (0, 1f - 5e-5f), (1, 5e-5f));
+            b.SetWeights(near, (0, 1e-7f), (1, 1f - 1e-7f));
+            b.SetWeights(whole, (1, 1f));
+            using var mesh = new Disposable<Core.Model.EvalMesh>(b.Build());
+            var rig = BendFixtures.Rig();
+            try
+            {
+                using var bends = Bends.Build(mesh.Value, rig, BendSettings.Default, Allocator.Persistent);
+                // Bone 0 bends everything, so every share on it is whole; bone 1 is the second bent.
+                Assert.That(bends.ShareOf(far, 1), Is.EqualTo(5e-5).Within(1e-9), "a small weight two metres from the joint");
+                Assert.That(bends.ShareOf(near, 1), Is.EqualTo(1.0), "a float rounding off whole, at the joint");
+                Assert.That(bends.ShareOf(whole, 1), Is.EqualTo(1.0));
+            }
+            finally
+            {
+                rig.Parent.Dispose();
+                rig.Position.Dispose();
+                rig.Axis.Dispose();
+                rig.Right.Dispose();
+            }
+        }
+
         // Bends turned off with the rig given record the very sequence recorded without it, collapse for collapse.
         [Test]
         public void BendsOff_RecordTheSequenceWithoutTheRig()

@@ -67,8 +67,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     internal struct Bends : IDisposable
     {
         public const int FrameBase = 1 << 28;
-        /// <summary>A share within this of 0 or 1 counts as that: skin weights that sum to 1 in float land a rounding off it.</summary>
-        const float Snap = 1e-4f;
+        /// <summary>
+        /// Metres. A share counts as 0 or 1 where taking it so moves its vertex by no more than this in any bend: skin
+        /// weights that sum to 1 in float land a rounding off it, and a vertex so treated moves rigidly with its home.
+        /// </summary>
+        const float Snap = 1e-6f;
 
         /// <summary>Frames per bent bone; a frame's bone is its index divided by this.</summary>
         public int PerBone;
@@ -171,6 +174,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     Weights = mesh.Weights,
                     Parent = parent,
                     Bent = bentOf,
+                    Positions = mesh.Positions,
+                    Pivot = result.Pivot,
                     BentCount = count,
                     Words = result.Words,
                     Home = result.Home,
@@ -213,6 +218,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             [ReadOnly] public NativeArray<BoneInfluence> Weights;
             [ReadOnly] public NativeArray<int> Parent;
             [ReadOnly] public NativeArray<int> Bent;
+            [ReadOnly] public NativeArray<float3> Positions;
+            [ReadOnly] public NativeArray<float3> Pivot;
             public int BentCount;
             public int Words;
             public NativeArray<ulong> Home;
@@ -250,7 +257,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                         var s = share[k];
                         share[k] = 0f;
                         if (s >= 0.5f) Home[v * Words + (k >> 6)] |= 1UL << (k & 63);
-                        if (s <= Snap || s >= 1f - Snap) continue;
+                        // Taking the share as its home's moves the vertex by at most the dropped part times |R - I| <= 2
+                        // times its distance from the pivot.
+                        if (math.min(s, 1f - s) * 2f * math.distance(Positions[v], Pivot[k]) <= Snap) continue;
                         MixBone.Add(k);
                         MixShare.Add(s);
                     }

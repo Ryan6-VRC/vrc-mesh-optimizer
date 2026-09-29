@@ -45,11 +45,34 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// The decimation settings a build runs with. The component exposes none of them, and their defaults live in
     /// <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a measurement can hand a build
     /// other values, since a build reaches the pipeline through NDMF and not through a caller. Nothing in the package
-    /// writes it; whoever sets it restores it.
+    /// overrides them.
     /// </summary>
     internal static class BuildSettings
     {
-        internal static DecimationSettings Decimation = DecimationSettings.Default;
+        internal static DecimationSettings Decimation { get; private set; } = DecimationSettings.Default;
+
+        /// <summary>Every build until the returned scope is disposed runs with <paramref name="decimation"/>; disposing restores what was before.</summary>
+        internal static IDisposable Override(DecimationSettings decimation)
+        {
+            var scope = new Scope(Decimation);
+            Decimation = decimation;
+            return scope;
+        }
+
+        sealed class Scope : IDisposable
+        {
+            readonly DecimationSettings _before;
+            bool _done;
+
+            public Scope(DecimationSettings before) => _before = before;
+
+            public void Dispose()
+            {
+                if (_done) return;
+                _done = true;
+                Decimation = _before;
+            }
+        }
     }
 
     /// <summary>The per-renderer stages, as a failure names them.</summary>
@@ -545,7 +568,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var stage = Stopwatch.StartNew();
             var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, input.Decimation.Clearance.Reach) : default;
             report.Times.Clearance = stage.Elapsed.TotalMilliseconds;
-            var rig = RigOf(bones);
+            var rig = RigOf(bones, SkinWeightPerBone(live, bones.Count));
             try
             {
                 stage.Restart();
@@ -635,27 +658,46 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>Per bone id, the skin weight every extracted mesh's vertices put on it.</summary>
+        static float[] SkinWeightPerBone(List<Job> live, int bones)
+        {
+            var weight = new float[bones];
+            foreach (var job in live)
+                foreach (var w in job.Eval.Weights)
+                    if (w.Bone >= 0 && w.Bone < bones) weight[w.Bone] += w.Weight;
+            return weight;
+        }
+
         /// <summary>
-        /// The avatar's bones as decimation bends them, in avatar-root space. A bone runs toward the child carrying the
-        /// most of the hierarchy under it, which is the next bone of its chain rather than an accessory hung on it.
+        /// The avatar's bones as decimation bends them, in avatar-root space. A bone runs toward the child whose subtree
+        /// carries the most of <paramref name="weight"/>, the skin weight per bone id: the next bone of its chain, which moves
+        /// the most surface, rather than a ribbon or accessory hung on it, which may have more transforms and far less
+        /// surface. Among children carrying none, the one with the most transforms under it; null weighs every bone alike.
         /// </summary>
-        static BendRig RigOf(AvatarBones bones)
+        internal static BendRig RigOf(AvatarBones bones, float[] weight)
         {
             var n = bones.Count;
             var worldToRoot = RendererExtraction.WorldToRoot(bones.Root);
+            var mass = new double[n];
             var size = new int[n];
+            // Ids are depth first, so a child's id is above its parent's and walking back sums subtrees.
             for (var b = n - 1; b >= 0; b--)
             {
                 size[b] += 1;
+                if (weight != null && b < weight.Length) mass[b] += weight[b];
                 var p = bones.Parents[b];
-                if (p >= 0) size[p] += size[b];
+                if (p < 0) continue;
+                size[p] += size[b];
+                mass[p] += mass[b];
             }
             var chain = new int[n];
             for (var b = 0; b < n; b++) chain[b] = -1;
             for (var b = 0; b < n; b++)
             {
                 var p = bones.Parents[b];
-                if (p >= 0 && (chain[p] < 0 || size[b] > size[chain[p]])) chain[p] = b;
+                if (p < 0) continue;
+                var c = chain[p];
+                if (c < 0 || mass[b] > mass[c] || mass[b] == mass[c] && size[b] > size[c]) chain[p] = b;
             }
             var rig = new BendRig
             {
