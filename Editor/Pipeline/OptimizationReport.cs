@@ -206,8 +206,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// </summary>
         public List<ConfigurationReport> Configurations { get; } = new List<ConfigurationReport>();
         /// <summary>
-        /// Per reason, how many shape keys the pass evaluated moved alone though the same clips drive them with another key,
-        /// so whatever they kept exposed cannot be told from a real exposure by the links alone.
+        /// Per reason, how many shape keys the pass evaluated moved alone though another key is driven by exactly the same set
+        /// of clips of known identity, so whatever they kept exposed cannot be told from a real exposure by the links alone. A
+        /// key driven only through clips of unknown identity is never counted (<see cref="LinkRefusal"/>).
         /// </summary>
         public Dictionary<LinkRefusal, int> LinkRefusals { get; } = new Dictionary<LinkRefusal, int>();
 

@@ -32,8 +32,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Groups of keys that cannot be driven apart (<see cref="ShapeKeyLinks"/>). Null reads as none: every live key moves alone.</summary>
         public IReadOnlyList<LinkedKey[]> Links;
         /// <summary>
-        /// Keys the same clips drive with another key that link with none, each with why (<see cref="ShapeKeyLinks"/>); the
-        /// report counts those the pass evaluates as live. Null reads as none.
+        /// Keys that link with none though another key is driven by exactly the same set of clips of known identity, each
+        /// with why (<see cref="ShapeKeyLinks"/>); the report counts those the pass evaluates as live. Null reads as none.
         /// </summary>
         public IReadOnlyList<(LinkedKey key, LinkRefusal reason)> Unlinked;
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>

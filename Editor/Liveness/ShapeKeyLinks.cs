@@ -20,8 +20,8 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     }
 
     /// <summary>
-    /// Why a shape key driven by the same clips as another key moves alone: the first reason found. The last two are the
-    /// pipeline's, for a link it found and could not evaluate as one.
+    /// Why a shape key moves alone though another key is driven by exactly the same set of clips of known identity: the
+    /// first reason found. The last two are the pipeline's, for a link it found and could not evaluate as one.
     /// </summary>
     public enum LinkRefusal
     {
@@ -39,7 +39,10 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         HoldAfterDriver,
         /// <summary>The keys its clips also drive are driven by other curves, bound differently in a driving layer, or held at another weight.</summary>
         Mismatched,
-        /// <summary>The rest of its link is on renderers the pass does not evaluate, or is not evaluated as live.</summary>
+        /// <summary>
+        /// The rest of its link is on renderers the pass skips before extraction, or is not evaluated as live. A partner lost
+        /// later, to a failed extraction, leaves the key in its link, and it is not counted.
+        /// </summary>
         NotEvaluated,
         /// <summary>Its link's members no longer stand at one normalised weight.</summary>
         HeldApart,
@@ -119,9 +122,11 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             IEnumerable<DrivenKey> driven) => Find(renderers, bindings, driven, out _);
 
         /// <summary>
-        /// As the other overload, and in <paramref name="refused"/> every key that links with no other though the same set
-        /// of clips drives it and another key, with the first reason found against it. A key that moves alone only because
-        /// its partner was refused is not counted again.
+        /// As the other overload, and in <paramref name="refused"/> every key that links with no other though another key is
+        /// driven by exactly the same set of clips, with the first reason found against it. The set holds every clip of
+        /// known identity with a curve that drives the key, refused curves included; a curve in a clip of unknown identity
+        /// adds nothing to it, so a key driven only through such clips is never in <paramref name="refused"/>. A key that
+        /// moves alone only because its partner was refused is not in it either.
         /// </summary>
         public static List<KeyRef[]> Find(IReadOnlyList<RendererShapeKeys> renderers, IEnumerable<ShapeKeyBinding> bindings,
             IEnumerable<DrivenKey> driven, out Dictionary<KeyRef, LinkRefusal> refused)
