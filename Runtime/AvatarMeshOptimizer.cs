@@ -34,6 +34,15 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         /// </summary>
         public List<Renderer> alwaysOn = new List<Renderer>();
 
+        /// <summary>
+        /// Whether a material's outline counts as drawing the triangles under it when they might be hidden. An outline
+        /// culled front draws its triangles' backs, which show only from inside the garment; with this on, a triangle whose
+        /// front is covered stays unless its back is covered too. Off by default, and off for a component saved before it
+        /// existed, since what it keeps is mostly skin under clothing; it is for a garment whose inside is seen through its
+        /// outline. An outline never counts as cover either way.
+        /// </summary>
+        public bool outlinesShowInside;
+
         public List<MaterialOcclusion> materials = new List<MaterialOcclusion>();
         public List<RendererSettings> renderers = new List<RendererSettings>();
     }

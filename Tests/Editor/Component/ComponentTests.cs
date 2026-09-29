@@ -54,5 +54,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
                 Object.DestroyImmediate(saved);
             }
         }
+
+        // Outlines take no part in hidden-triangle removal unless the user turns them on. A component saved before the
+        // setting existed, as the fixture was, holds no value for it and loads with the field's own default, off.
+        [Test]
+        public void OutlinesShowInside_IsOff_FreshAndForAComponentSavedBeforeIt()
+        {
+            Assert.That(System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture)), Does.Not.Contain("outlinesShowInside"),
+                "the fixture stands for a component saved before the setting");
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Fixture);
+            Assert.That(prefab.GetComponent<AvatarMeshOptimizer>().outlinesShowInside, Is.False);
+
+            var fresh = new GameObject("Fresh");
+            try
+            {
+                Assert.That(fresh.AddComponent<AvatarMeshOptimizer>().outlinesShowInside, Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+            }
+        }
     }
 }

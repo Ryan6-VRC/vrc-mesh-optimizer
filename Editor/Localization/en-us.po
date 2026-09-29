@@ -47,6 +47,12 @@ msgstr "Always-on renderers"
 msgid "MeshOptimizer:alwaysOn:tooltip"
 msgstr "Renderers that are never hidden. Only these can hide another renderer's triangles, so leave out anything that can be toggled off."
 
+msgid "MeshOptimizer:outlinesShowInside"
+msgstr "Outlines show the inside"
+
+msgid "MeshOptimizer:outlinesShowInside:tooltip"
+msgstr "Keep a covered triangle whose material's outline draws its back side, for a garment whose inside is seen through its outline. Off removes more, mostly skin under clothing."
+
 msgid "MeshOptimizer:materials"
 msgstr "Material occlusion"
 

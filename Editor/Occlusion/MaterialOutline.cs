@@ -7,8 +7,9 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
     /// <summary>
     /// The outline a material draws. lilToon and Poiyomi draw one as a second pass over the same triangles, each pushed
     /// out along its normal and culled by <see cref="CullProperty"/>, front by default, so what shows of it is its back:
-    /// on an open garment, the inside. Only a triangle that might be hidden is judged by it. As cover an outline counts
-    /// for nothing, since reading a surface as blocking more deletes more.
+    /// on an open garment, the inside. Only a triangle that might be hidden is judged by it, and only when the component
+    /// says outlines show the inside. As cover an outline counts for nothing, since reading a surface as blocking more
+    /// deletes more.
     /// </summary>
     internal static class MaterialOutline
     {

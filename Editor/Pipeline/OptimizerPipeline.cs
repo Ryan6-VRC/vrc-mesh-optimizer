@@ -323,9 +323,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// when both sides are covered. Read toward drawing more, the opposite of how <paramref name="blocking"/> (an
         /// occluder's submeshes, or null) reads toward blocking less; Unity draws a material slot past the last submesh
         /// over the last submesh again, so those slots count there. A renderer that blocks nothing has no alpha read.
-        /// Without <paramref name="outlines"/>, each material's outline is left out, for measuring what it costs.
+        /// Each material's outline joins in only with <paramref name="outlines"/>, which follows
+        /// <see cref="AvatarMeshOptimizer.outlinesShowInside"/>.
         /// </summary>
-        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking, bool outlines = true)
+        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount, OccluderSubmesh[] blocking, bool outlines)
         {
             var materials = renderer.sharedMaterials;
             var result = new OccluderSubmesh[submeshCount];
@@ -345,11 +346,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// The sides a material draws, as something that might be hidden: its main pass's, joined by a two-pass material's
-        /// second pass (see <see cref="MaterialSecondPass"/>) and its outline's (see <see cref="MaterialOutline"/>). An
+        /// second pass (see <see cref="MaterialSecondPass"/>), which shows its back in ordinary view through its own
+        /// front. With <paramref name="outlines"/>, its outline's sides join too (see <see cref="MaterialOutline"/>): an
         /// outline culled front, the default, draws the back of a triangle whose main pass culls it, so that triangle
-        /// draws both sides.
+        /// draws both sides. That back shows only from inside the garment, so by default the outline is left out.
         /// </summary>
-        static FaceCulling SidesOf(Material material, bool outlines = true)
+        static FaceCulling SidesOf(Material material, bool outlines)
         {
             var sides = Join(MainSidesOf(material), MaterialSecondPass.SidesOf(material));
             return outlines ? Join(sides, MaterialOutline.SidesOf(material)) : sides;
@@ -377,13 +379,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>
         /// Triangles the solve kept on a submesh that draws its back only because of an outline, though every corner was
         /// covered on its front: what judging the outline's side cost. At most that, since a front judged alone could still
-        /// have been exposed by a live frame, a deletion or a lattice sample inside a large triangle.
+        /// have been exposed by a live frame, a deletion or a lattice sample inside a large triangle. Counted only when
+        /// outlines join the sides drawn; otherwise they kept nothing.
         /// </summary>
         static int KeptForOutline(Job job, in OcclusionResult result)
         {
             var count = job.Source.subMeshCount;
             var blind = SidesDrawn(job.Renderer, count, null, outlines: false);
-            var drawn = SidesDrawn(job.Renderer, count, null);
+            var drawn = SidesDrawn(job.Renderer, count, null, outlines: true);
             var eval = job.Eval;
             var kept = 0;
             for (var t = 0; t < eval.TriangleCount; t++)
@@ -400,6 +403,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
             var materials = new OccluderMaterials(input.Settings.materials);
+            var outlines = input.Settings.outlinesShowInside;
             foreach (var job in jobs)
             {
                 if (!alwaysOn.Contains(job.Renderer)) continue;
@@ -434,7 +438,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     {
                         Mesh = eval,
                         Occludes = job.Occludes,
-                        Submeshes = SidesDrawn(job.Renderer, job.Source.subMeshCount, job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : null),
+                        Submeshes = SidesDrawn(job.Renderer, job.Source.subMeshCount, job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : null, outlines),
                     });
                 }
 
@@ -459,7 +463,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
                     job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable);
-                    job.Report.KeptForOutline = KeptForOutline(job, results[i]);
+                    job.Report.KeptForOutline = outlines ? KeptForOutline(job, results[i]) : 0;
                     job.Report.HiddenSourceTriangles = job.Hidden;
                     var d = results[i].Declined;
                     job.Report.Declined = d;
