@@ -58,16 +58,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 field.Triangle = new NativeArray<float>(triangles.Length, allocator);
                 using var vertexLayer = new NativeArray<int>(positions.Length, Allocator.Persistent);
                 new VertexLayerJob { Triangles = triangles, Live = live, TriangleLayer = input.TriangleLayer, VertexLayer = vertexLayer }.Run();
-                var s = input.Surface;
                 new VertexJob
                 {
-                    Nodes = s.Nodes, Prims = s.Prims, PrimLayer = s.PrimLayer, NodeLayer = s.NodeLayer,
-                    Positions = positions, VertexLayer = vertexLayer, Reach = reach, Clearance = field.Vertex,
+                    Surface = input.Surface, Positions = positions, VertexLayer = vertexLayer, Reach = reach, Clearance = field.Vertex,
                 }.Schedule(positions.Length, 256).Complete();
                 new TriangleJob
                 {
-                    Nodes = s.Nodes, Prims = s.Prims, PrimLayer = s.PrimLayer, NodeLayer = s.NodeLayer,
-                    Positions = positions, Triangles = triangles, Live = live, TriangleLayer = input.TriangleLayer,
+                    Surface = input.Surface, Positions = positions, Triangles = triangles, Live = live, TriangleLayer = input.TriangleLayer,
                     VertexClearance = field.Vertex, Reach = reach, Clearance = field.Triangle,
                 }.Schedule(triangles.Length, 128).Complete();
                 field.Star = new NativeArray<float>(positions.Length, allocator);
@@ -133,10 +130,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         [BurstCompile(CompileSynchronously = true)]
         struct VertexJob : IJobParallelFor
         {
-            [ReadOnly] public NativeArray<Geometry.TreeNode> Nodes;
-            [ReadOnly] public NativeArray<Geometry.TreePrim> Prims;
-            [ReadOnly] public NativeArray<int> PrimLayer;
-            [ReadOnly] public NativeArray<int> NodeLayer;
+            public ClearanceSurface Surface;
             [ReadOnly] public NativeArray<float3> Positions;
             [ReadOnly] public NativeArray<int> VertexLayer;
             public float Reach;
@@ -145,17 +139,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             public void Execute(int v)
             {
                 var layer = VertexLayer[v];
-                Clearance[v] = layer < 0 ? Reach : ClearanceSurface.PointClearance(Nodes, Prims, PrimLayer, NodeLayer, Positions[v], layer, Reach);
+                Clearance[v] = layer < 0 ? Reach : Surface.PointClearance(Positions[v], layer, Reach);
             }
         }
 
         [BurstCompile(CompileSynchronously = true)]
         struct TriangleJob : IJobParallelFor
         {
-            [ReadOnly] public NativeArray<Geometry.TreeNode> Nodes;
-            [ReadOnly] public NativeArray<Geometry.TreePrim> Prims;
-            [ReadOnly] public NativeArray<int> PrimLayer;
-            [ReadOnly] public NativeArray<int> NodeLayer;
+            public ClearanceSurface Surface;
             [ReadOnly] public NativeArray<float3> Positions;
             [ReadOnly] public NativeArray<int3> Triangles;
             [ReadOnly] public NativeArray<bool> Live;
@@ -181,7 +172,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 }
                 // The triangle is no farther than its nearest corner, so that bounds the search.
                 var cap = math.min(Reach, math.min(ca, math.min(cb, cc)));
-                Clearance[t] = ClearanceSurface.TriangleClearance(Nodes, Prims, PrimLayer, NodeLayer, a, b, c, TriangleLayer[t], cap);
+                Clearance[t] = Surface.TriangleClearance(a, b, c, TriangleLayer[t], cap);
             }
         }
     }

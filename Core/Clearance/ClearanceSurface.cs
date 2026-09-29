@@ -24,29 +24,41 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
     /// Every layer's surface as it was before decimation, in the one space the evaluation meshes share, with a tree
     /// for asking how close one layer comes to the others. A layer is a connected piece of one mesh (see
     /// <see cref="Layers"/>): a skirt and its lining modelled as separate pieces of one mesh are two layers, while
-    /// the triangles around a vertex, being one piece, are never each other's neighbours.
+    /// the triangles around a vertex, being one piece, are never each other's neighbours. Read only once built, so a job
+    /// holds it as one field and asks it the queries below.
     /// </summary>
     public struct ClearanceSurface : IDisposable
     {
-        internal NativeArray<TreeNode> Nodes;
+        [ReadOnly] internal NativeArray<TreeNode> Nodes;
         /// <summary>In leaf order; <see cref="TreePrim.Triangle"/> is the prim's index in build order.</summary>
-        internal NativeArray<TreePrim> Prims;
+        [ReadOnly] internal NativeArray<TreePrim> Prims;
         /// <summary>Per prim in leaf order, its layer.</summary>
-        internal NativeArray<int> PrimLayer;
+        [ReadOnly] internal NativeArray<int> PrimLayer;
         /// <summary>Per node, the one layer every prim under it belongs to, or -1 when they are mixed.</summary>
-        internal NativeArray<int> NodeLayer;
+        [ReadOnly] internal NativeArray<int> NodeLayer;
         /// <summary>
         /// Per prim in leaf order, its clearance from every other layer, capped at <see cref="Reach"/>: the gap on this
         /// side, where another layer comes near it.
         /// </summary>
-        internal NativeArray<float> PrimClearance;
+        [ReadOnly] internal NativeArray<float> PrimClearance;
         /// <summary>Per node, the largest <see cref="PrimClearance"/> under it.</summary>
-        internal NativeArray<float> NodeClearance;
+        [ReadOnly] internal NativeArray<float> NodeClearance;
         /// <summary>The cap on every clearance here, in metres.</summary>
         public float Reach;
 
         public bool IsCreated => Nodes.IsCreated;
         public int TriangleCount => Prims.IsCreated ? Prims.Length : 0;
+
+        /// <summary>A surface of no layers, for a job that must hold one when the rule is off; every query answers "nothing near".</summary>
+        internal static ClearanceSurface None(Allocator allocator) => new ClearanceSurface
+        {
+            Nodes = new NativeArray<TreeNode>(0, allocator),
+            Prims = new NativeArray<TreePrim>(0, allocator),
+            PrimLayer = new NativeArray<int>(0, allocator),
+            NodeLayer = new NativeArray<int>(0, allocator),
+            PrimClearance = new NativeArray<float>(0, allocator),
+            NodeClearance = new NativeArray<float>(0, allocator),
+        };
 
         public void Dispose()
         {
@@ -115,6 +127,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             }
         }
 
+        /// <summary>
+        /// Writes the surface's own <see cref="PrimClearance"/>, so it holds the tree's arrays apart rather than the surface: a
+        /// job may not hold one container as both read-only and written.
+        /// </summary>
         [BurstCompile(CompileSynchronously = true)]
         struct PrimClearanceJob : IJobParallelFor
         {
@@ -127,8 +143,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 
             public void Execute(int i)
             {
+                var tree = new ClearanceSurface { Nodes = Nodes, Prims = Prims, PrimLayer = PrimLayer, NodeLayer = NodeLayer };
                 var p = Prims[i];
-                Clearance[i] = TriangleClearance(Nodes, Prims, PrimLayer, NodeLayer, p.A, p.B, p.C, PrimLayer[i], Reach);
+                Clearance[i] = tree.TriangleClearance(p.A, p.B, p.C, PrimLayer[i], Reach);
             }
         }
 
@@ -406,32 +423,31 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         /// The distance from <paramref name="p"/> to the nearest triangle of any layer but <paramref name="layer"/>,
         /// or <paramref name="cap"/> when none is nearer.
         /// </summary>
-        internal static unsafe float PointClearance(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 p, int layer, float cap)
+        internal unsafe float PointClearance(float3 p, int layer, float cap)
         {
             var best = cap * cap;
-            if (nodes.Length == 0) return cap;
+            if (Nodes.Length == 0) return cap;
             var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)
             {
                 var i = stack[--top];
-                if (nodeLayer[i] == layer) continue;
-                var node = nodes[i];
+                if (NodeLayer[i] == layer) continue;
+                var node = Nodes[i];
                 if (TriangleTree.BoxPointSq(p, node) >= best) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
-                        if (primLayer[k] == layer) continue;
-                        var prim = prims[k];
+                        if (PrimLayer[k] == layer) continue;
+                        var prim = Prims[k];
                         best = math.min(best, TriangleDistance.PointSq(p, prim.A, prim.B, prim.C));
                     }
                     continue;
                 }
                 var l = node.Start;
-                if (TriangleTree.BoxPointSq(p, nodes[l]) <= TriangleTree.BoxPointSq(p, nodes[l + 1]))
+                if (TriangleTree.BoxPointSq(p, Nodes[l]) <= TriangleTree.BoxPointSq(p, Nodes[l + 1]))
                 {
                     stack[top++] = l + 1;
                     stack[top++] = l;
@@ -449,11 +465,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         /// The distance from triangle abc to the nearest triangle of any layer but <paramref name="layer"/>, or
         /// <paramref name="cap"/> when none is nearer. 0 when one touches or crosses it.
         /// </summary>
-        internal static unsafe float TriangleClearance(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer, float cap)
+        internal unsafe float TriangleClearance(float3 a, float3 b, float3 c, int layer, float cap)
         {
             var best = cap * cap;
-            if (nodes.Length == 0) return cap;
+            if (Nodes.Length == 0) return cap;
             var q = new Query(a, b, c);
             var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
@@ -461,22 +476,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             while (top > 0 && best > 0f)
             {
                 var i = stack[--top];
-                if (nodeLayer[i] == layer) continue;
-                var node = nodes[i];
+                if (NodeLayer[i] == layer) continue;
+                var node = Nodes[i];
                 if (q.BoxBoxSq(node) >= best || q.BoxApart(node, math.sqrt(best))) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
-                        if (primLayer[k] == layer) continue;
-                        var prim = prims[k];
+                        if (PrimLayer[k] == layer) continue;
+                        var prim = Prims[k];
                         if (q.PrimApart(prim, math.sqrt(best))) continue;
                         best = math.min(best, TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C));
                     }
                     continue;
                 }
                 var l = node.Start;
-                if (q.BoxBoxSq(nodes[l]) <= q.BoxBoxSq(nodes[l + 1]))
+                if (q.BoxBoxSq(Nodes[l]) <= q.BoxBoxSq(Nodes[l + 1]))
                 {
                     stack[top++] = l + 1;
                     stack[top++] = l;
@@ -491,27 +506,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         }
 
         /// <summary>The distance from <paramref name="p"/> to <paramref name="layer"/>'s triangles alone, or <paramref name="cap"/> when none is nearer.</summary>
-        internal static unsafe float PointToLayer(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 p, int layer, float cap)
+        internal unsafe float PointToLayer(float3 p, int layer, float cap)
         {
             var best = cap * cap;
-            if (nodes.Length == 0) return cap;
+            if (Nodes.Length == 0) return cap;
             var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)
             {
                 var i = stack[--top];
-                var only = nodeLayer[i];
+                var only = NodeLayer[i];
                 if (only >= 0 && only != layer) continue;
-                var node = nodes[i];
+                var node = Nodes[i];
                 if (TriangleTree.BoxPointSq(p, node) >= best) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
-                        if (primLayer[k] != layer) continue;
-                        var prim = prims[k];
+                        if (PrimLayer[k] != layer) continue;
+                        var prim = Prims[k];
                         best = math.min(best, TriangleDistance.PointSq(p, prim.A, prim.B, prim.C));
                     }
                     continue;
@@ -523,20 +537,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         }
 
         /// <summary>The length of the line along which triangle abc passes through every layer but <paramref name="layer"/>.</summary>
-        internal static float CrossingLength(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer) =>
-            CrossingLength(nodes, prims, primLayer, nodeLayer, a, b, c, layer, 0f, out _);
+        internal float CrossingLength(float3 a, float3 b, float3 c, int layer) => CrossingLength(a, b, c, layer, 0f, out _);
 
         /// <summary>
         /// As the overload without <paramref name="drift"/>; with it above 0, also whether some point of that line lies
         /// farther than <paramref name="drift"/> from <paramref name="layer"/>'s own source: a crossing where this layer
         /// is no longer where it was, rather than where it already crossed.
         /// </summary>
-        internal static unsafe float CrossingLength(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer, float drift, out bool strays)
+        internal unsafe float CrossingLength(float3 a, float3 b, float3 c, int layer, float drift, out bool strays)
         {
             strays = false;
-            if (nodes.Length == 0) return 0f;
+            if (Nodes.Length == 0) return 0f;
             var total = 0f;
             var q = new Query(a, b, c);
             var stack = stackalloc int[TriangleTree.StackSize];
@@ -545,22 +556,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             while (top > 0)
             {
                 var i = stack[--top];
-                if (nodeLayer[i] == layer) continue;
-                var node = nodes[i];
+                if (NodeLayer[i] == layer) continue;
+                var node = Nodes[i];
                 if (q.BoxApart(node, 0f)) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
-                        if (primLayer[k] == layer) continue;
-                        var prim = prims[k];
+                        if (PrimLayer[k] == layer) continue;
+                        var prim = Prims[k];
                         if (q.PrimApart(prim, 0f)) continue;
                         var length = TriangleDistance.IntersectionSegment(a, b, c, prim.A, prim.B, prim.C, out var s, out var e);
                         total += length;
                         if (drift > 0f && length > 0f && !strays &&
-                            (PointToLayer(nodes, prims, primLayer, nodeLayer, s, layer, drift * 2f) > drift ||
-                             PointToLayer(nodes, prims, primLayer, nodeLayer, e, layer, drift * 2f) > drift ||
-                             PointToLayer(nodes, prims, primLayer, nodeLayer, (s + e) * 0.5f, layer, drift * 2f) > drift))
+                            (PointToLayer(s, layer, drift * 2f) > drift ||
+                             PointToLayer(e, layer, drift * 2f) > drift ||
+                             PointToLayer((s + e) * 0.5f, layer, drift * 2f) > drift))
                             strays = true;
                     }
                     continue;
@@ -577,11 +588,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         /// the gap where P is, measured on a triangle of the source as small as the source's own, so it does not shrink
         /// as decimated triangles grow; <paramref name="least"/> is the gap on abc's side.
         /// </summary>
-        internal static unsafe bool AnyWithin(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, in NativeArray<float> primClearance, in NativeArray<float> nodeClearance,
-            float3 a, float3 b, float3 c, int layer, float keep, float least)
+        internal unsafe bool AnyWithin(float3 a, float3 b, float3 c, int layer, float keep, float least)
         {
-            if (nodes.Length == 0 || !(keep > 0f)) return false;
+            if (Nodes.Length == 0 || !(keep > 0f)) return false;
             var q = new Query(a, b, c);
             var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
@@ -589,17 +598,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             while (top > 0)
             {
                 var i = stack[--top];
-                if (nodeLayer[i] == layer) continue;
-                var node = nodes[i];
-                var reach = keep * math.max(nodeClearance[i], least);
+                if (NodeLayer[i] == layer) continue;
+                var node = Nodes[i];
+                var reach = keep * math.max(NodeClearance[i], least);
                 if (!(reach > 0f) || q.BoxApart(node, reach)) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
-                        if (primLayer[k] == layer) continue;
-                        var prim = prims[k];
-                        var r = keep * math.max(primClearance[k], least);
+                        if (PrimLayer[k] == layer) continue;
+                        var prim = Prims[k];
+                        var r = keep * math.max(PrimClearance[k], least);
                         if (!(r > 0f) || q.PrimApart(prim, r)) continue;
                         if (TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C) < r * r) return true;
                     }

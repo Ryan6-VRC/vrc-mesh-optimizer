@@ -441,7 +441,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                     brute = math.min(brute, TriangleDistance.TriangleSq(a0, a1, a2, p[t[k].x], p[t[k].y], p[t[k].z]));
                 brute = math.min(math.sqrt(brute), 0.02f);
                 var s = scene.Surface;
-                var tree = ClearanceSurface.TriangleClearance(s.Nodes, s.Prims, s.PrimLayer, s.NodeLayer, a0, a1, a2, int.MaxValue, 0.02f);
+                var tree = s.TriangleClearance(a0, a1, a2, int.MaxValue, 0.02f);
                 Assert.That(tree, Is.EqualTo(brute).Within(1e-6f), $"query {i}");
             }
             Assert.That(layers.Length, Is.EqualTo(t.Length));

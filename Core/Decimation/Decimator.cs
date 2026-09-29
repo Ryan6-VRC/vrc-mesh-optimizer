@@ -115,12 +115,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             in Bends bends, Allocator allocator, out CollapseStats stats)
         {
             var active = field.Triangle.IsCreated;
-            using var nodes = new OptionalArray<Core.Geometry.TreeNode>(active ? clearance.Surface.Nodes : default);
-            using var prims = new OptionalArray<Core.Geometry.TreePrim>(active ? clearance.Surface.Prims : default);
-            using var primLayer = new OptionalArray<int>(active ? clearance.Surface.PrimLayer : default);
-            using var nodeLayer = new OptionalArray<int>(active ? clearance.Surface.NodeLayer : default);
-            using var primClearance = new OptionalArray<float>(active ? clearance.Surface.PrimClearance : default);
-            using var nodeClearance = new OptionalArray<float>(active ? clearance.Surface.NodeClearance : default);
+            using var none = active ? default : ClearanceSurface.None(Allocator.Persistent);
             using var triangleLayer = new OptionalArray<int>(active ? clearance.TriangleLayer : default);
             using var vertexClearance = new OptionalArray<float>(field.Vertex);
             using var triangleClearance = new OptionalArray<float>(field.Triangle);
@@ -170,12 +165,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 SparseCount = bank.SparseCount,
                 Sparse = sparse,
                 LiveTriangles = topology.LiveTriangleCount,
-                ClearNodes = nodes.Array,
-                ClearPrims = prims.Array,
-                ClearPrimLayer = primLayer.Array,
-                ClearNodeLayer = nodeLayer.Array,
-                ClearPrimClearance = primClearance.Array,
-                ClearNodeClearance = nodeClearance.Array,
+                Surface = active ? clearance.Surface : none,
                 TriangleLayer = triangleLayer.Array,
                 VertexClearance = vertexClearance.Array,
                 TriangleClearance = triangleClearance.Array,

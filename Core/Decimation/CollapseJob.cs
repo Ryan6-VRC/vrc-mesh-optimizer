@@ -1,5 +1,4 @@
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
-using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Topology;
 using Unity.Burst;
@@ -48,12 +47,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public DecimationSettings Settings;
 
         /// <summary>The other layers, empty when the clearance rule is off. See <see cref="ClearanceSurface"/>.</summary>
-        [ReadOnly] public NativeArray<TreeNode> ClearNodes;
-        [ReadOnly] public NativeArray<TreePrim> ClearPrims;
-        [ReadOnly] public NativeArray<int> ClearPrimLayer;
-        [ReadOnly] public NativeArray<int> ClearNodeLayer;
-        [ReadOnly] public NativeArray<float> ClearPrimClearance;
-        [ReadOnly] public NativeArray<float> ClearNodeClearance;
+        public ClearanceSurface Surface;
         /// <summary>Per triangle, its layer; per source vertex, its clearance before decimation.</summary>
         [ReadOnly] public NativeArray<int> TriangleLayer;
         [ReadOnly] public NativeArray<float> VertexClearance;
@@ -151,7 +145,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             _in = job;
             _shading = job.NormalField.Length > 0;
-            _clearance = job.ClearNodes.Length > 0 && job.TriangleClearance.Length == job.Triangles.Length;
+            _clearance = job.Surface.Nodes.Length > 0 && job.TriangleClearance.Length == job.Triangles.Length;
             _bent = job.Bends.Active;
             _refused = 0;
             _live = job.LiveTriangles;
@@ -699,8 +693,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var edge = math.max(math.distance(pv, px), math.max(math.distance(px, py), math.distance(py, pv)));
                 var most = keep * math.min(_in.Settings.Clearance.Reach, edge / (1f - keep));
                 if (ClearanceBound.Of(pv, px, py, cv, _in.VertexClearance[x], _in.VertexClearance[y]) >= most) continue;
-                if (ClearanceSurface.AnyWithin(_in.ClearNodes, _in.ClearPrims, _in.ClearPrimLayer, _in.ClearNodeLayer, _in.ClearPrimClearance, _in.ClearNodeClearance,
-                        pv, px, py, _in.TriangleLayer[t], keep, least)) return false;
+                if (_in.Surface.AnyWithin(pv, px, py, _in.TriangleLayer[t], keep, least)) return false;
             }
             return !touches || CrossingHolds(u, v);
         }
@@ -723,12 +716,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var tri = _in.Triangles[t];
                 var layer = _in.TriangleLayer[t];
                 float3 a = _in.Positions[_in.Origin[tri.x]], b = _in.Positions[_in.Origin[tri.y]], d = _in.Positions[_in.Origin[tri.z]];
-                before += ClearanceSurface.CrossingLength(_in.ClearNodes, _in.ClearPrims, _in.ClearPrimLayer, _in.ClearNodeLayer, a, b, d, layer);
+                before += _in.Surface.CrossingLength(a, b, d, layer);
                 if (tri.x == v || tri.y == v || tri.z == v) continue;
                 var k = c - t * 3;
                 var px = _in.Positions[_in.Origin[tri[(k + 1) % 3]]];
                 var py = _in.Positions[_in.Origin[tri[(k + 2) % 3]]];
-                after += ClearanceSurface.CrossingLength(_in.ClearNodes, _in.ClearPrims, _in.ClearPrimLayer, _in.ClearNodeLayer, pv, px, py, layer, CrossingDrift, out var strays);
+                after += _in.Surface.CrossingLength(pv, px, py, layer, CrossingDrift, out var strays);
                 if (strays) return false;
             }
             return after <= before * (1f + CrossingSlack) + 1e-9f;
