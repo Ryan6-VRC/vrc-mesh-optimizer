@@ -249,6 +249,19 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>
+        /// A renderer that blocks no ray still owes occlusion its culling: a triangle whose material draws its back is
+        /// hidden only when both sides are covered. Its alpha is not read, since it never stops a ray.
+        /// </summary>
+        static OccluderSubmesh[] SidesDrawn(Renderer renderer, int submeshCount)
+        {
+            var materials = renderer.sharedMaterials;
+            var result = new OccluderSubmesh[submeshCount];
+            for (var s = 0; s < submeshCount; s++)
+                result[s] = new OccluderSubmesh { Culling = OccluderMaterials.CullingOf(s < materials.Length ? materials[s] : null) };
+            return result;
+        }
+
         static void RemoveHidden(List<Job> jobs, PipelineInput input, AvatarBones bones, OptimizationReport report)
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
@@ -287,7 +300,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     {
                         Mesh = eval,
                         Occludes = job.Occludes,
-                        Submeshes = job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : null,
+                        Submeshes = job.Occludes ? materials.For(job.Renderer, job.Source.subMeshCount) : SidesDrawn(job.Renderer, job.Source.subMeshCount),
                     });
                 }
 

@@ -236,6 +236,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(hides));
         }
 
+        // A cup inside the bowl, open to the top like a skirt, not always on. Its outside is covered; its inside faces the
+        // open top. Drawn back-culled only the covered outside shows and it goes; drawn with its back too, the inside
+        // shows through the open top and it stays.
+        [TestCase(2, true)]
+        [TestCase(1, false)]
+        [TestCase(0, false)]
+        public void CandidateThatDrawsItsBack_IsKept_WhenOnlyItsFrontIsCovered(int cull, bool hides)
+        {
+            var material = a.Made(new Material(CullShader()));
+            material.SetFloat(OccluderMaterials.CullProperty, cull);
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: material);
+            Garment(chest);
+
+            var report = a.Run();
+
+            var r = Of(report, cup);
+            Assert.That(r.HiddenRemoved > 0, Is.EqualTo(hides));
+            if (!hides) Assert.That(cup.sharedMesh.triangles.Length, Is.EqualTo(r.HiddenSourceTriangles.Length * 3), "every triangle of the cup is drawn");
+        }
+
         Shader CullShader() => a.Made(ShaderUtil.CreateShaderAsset(
             "Shader \"Hidden/MeshOptimizerTests/Cull\" { Properties { [Enum(UnityEngine.Rendering.CullMode)] _Cull (\"Cull\", Float) = 2 } " +
             "SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_Cull] } } }", true));

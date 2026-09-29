@@ -549,7 +549,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 var tri = d.Tris[t];
                 var uv = (float)(1 - bu - bv) * d.Uv[tri.x] + (float)bu * d.Uv[tri.y] + (float)bv * d.Uv[tri.z];
                 uv = uv * map.ScaleOffset.xy + map.ScaleOffset.zw;
-                uv -= math.floor(uv);
+                if (map.WrapU == AlphaWrap.Repeat) uv.x -= math.floor(uv.x);
+                if (map.WrapV == AlphaWrap.Repeat) uv.y -= math.floor(uv.y);
                 var x = uv.x * map.Width - 0.5f;
                 var y = uv.y * map.Height - 0.5f;
                 var x0 = (int)math.floor(x);
@@ -558,11 +559,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 for (var dy = 0; dy <= 1; dy++)
                 for (var dx = 0; dx <= 1; dx++)
                 {
-                    var tx = ((x0 + dx) % map.Width + map.Width) % map.Width;
-                    var ty = ((y0 + dy) % map.Height + map.Height) % map.Height;
+                    var tx = Texel(x0 + dx, map.Width, map.WrapU);
+                    var ty = Texel(y0 + dy, map.Height, map.WrapV);
                     if (map.Alpha[ty * map.Width + tx] < threshold) return true;
                 }
                 return false;
+            }
+
+            // Unity's TextureWrapMode, per axis: Repeat tiles; Clamp holds the edge texel; Mirror tiles with every
+            // other tile flipped; MirrorOnce reads the absolute coordinate, clamped.
+            static int Texel(int i, int n, AlphaWrap mode)
+            {
+                var tile = (int)Math.Floor(i / (double)n);
+                var within = i - tile * n;
+                switch (mode)
+                {
+                    case AlphaWrap.Clamp: return Math.Min(Math.Max(i, 0), n - 1);
+                    case AlphaWrap.Mirror: return (tile & 1) == 0 ? within : n - 1 - within;
+                    case AlphaWrap.MirrorOnce: return Math.Min(i < 0 ? -1 - i : i, n - 1);
+                    default: return within;
+                }
             }
         }
 

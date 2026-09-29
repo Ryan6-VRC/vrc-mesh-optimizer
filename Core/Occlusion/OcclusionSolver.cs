@@ -50,7 +50,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             using var run = new Run(scene, settings);
             run.Execute(ref stats);
             var results = new OcclusionResult[meshes.Count];
-            for (var m = 0; m < meshes.Count; m++) results[m] = run.Result(m, allocator);
+            try
+            {
+                for (var m = 0; m < meshes.Count; m++) results[m] = run.Result(m, allocator);
+            }
+            catch
+            {
+                // The caller receives nothing, so nothing it would have disposed may outlive the throw.
+                foreach (var r in results) r.Dispose();
+                throw;
+            }
             stats.TotalMs = total.Elapsed.TotalMilliseconds;
             return results;
         }
@@ -332,9 +341,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 S = s;
                 Cfg = cfg;
+                try { Allocate(); }
+                catch { Dispose(); throw; }
+            }
+
+            // Every buffer the passes use; the constructor disposes those made so far if one fails.
+            void Allocate()
+            {
                 const Allocator a = Allocator.Persistent;
-                int V = s.Pos.Length, T = s.Tris.Length, O = math.max(1, s.OccTri.Length);
-                Cone = Occlusion.Cone.Directions(cfg.ConeDegrees, cfg.RingDegrees, a);
+                int V = S.Pos.Length, T = S.Tris.Length, O = math.max(1, S.OccTri.Length);
+                Cone = Occlusion.Cone.Directions(Cfg.ConeDegrees, Cfg.RingDegrees, a);
                 SamplePos = new NativeList<float3>(V, a); SampleNrm = new NativeList<float3>(V, a); SampleBary = new NativeList<float3>(V, a);
                 SampleMesh = new NativeList<int>(V, a); SampleBoneStart = new NativeList<int>(V + 1, a); SampleBones = new NativeList<int>(4 * V, a);
                 SampleState = new NativeList<byte>(V, a);
@@ -553,11 +569,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 int tb = S.TriBase[m], tc = S.TriBase[m + 1] - tb;
                 int vb = S.VertBase[m], vc = S.VertBase[m + 1] - vb;
-                var r = new OcclusionResult
+                var r = new OcclusionResult();
+                try
                 {
-                    HiddenTriangles = new NativeArray<bool>(tc, allocator),
-                    CoveredVertices = new NativeArray<bool>(vc, allocator),
-                };
+                    r.HiddenTriangles = new NativeArray<bool>(tc, allocator);
+                    r.CoveredVertices = new NativeArray<bool>(vc, allocator);
+                }
+                catch
+                {
+                    r.Dispose();
+                    throw;
+                }
                 NativeArray<bool>.Copy(Candidate, tb, r.HiddenTriangles, 0, tc);
                 var d = new DeclineCounts();
                 for (var i = 0; i < vc; i++)

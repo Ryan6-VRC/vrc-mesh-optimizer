@@ -297,6 +297,31 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         }
 
         // ------------------------------------------------------------------------------------------------
+        // Alpha wrap modes. The shell's UV v runs 0.5 to 1 from bottom to top; scaled by 2.5 and offset, it
+        // crosses several tiles, below 0 or past 1, so each wrap mode reaches different texels. The checker
+        // samples the map by its own reading of each mode, so the two must agree on every hidden triangle.
+
+        [Test]
+        public void AlphaWrapModes_HideOnlyUnderOpaqueTexels([Values] AlphaWrap wrap, [Values(-2.9f, -1.6f, -0.9f)] float offset)
+        {
+            const int w = 8, h = 20;
+            var alpha = new byte[w * h];
+            for (var y = 0; y < h; y++)
+                for (var x = 0; x < w; x++)
+                    alpha[y * w + x] = y >= 16 ? (byte)0 : (byte)255;
+            var map = new AlphaMap(w, h, alpha, 0.5f) { ScaleOffset = new float4(1, 2.5f, 0, offset), WrapU = wrap, WrapV = wrap };
+            var inner = new MeshBuilder();
+            inner.Sphere(float3.zero, 0.1f, 16, 32, MeshBuilder.On(1));
+            var outer = new MeshBuilder();
+            outer.Sphere(float3.zero, 0.105f, 24, 48, MeshBuilder.On(1));
+            scene.Add(inner, occludes: true);
+            scene.Add(outer, occludes: true, new OccluderSubmesh { Alpha = map });
+            var r = SolveAndCheck($"wrap {wrap}, offset {offset}");
+            TestContext.WriteLine($"[wrap] {wrap} {offset}: hidden {r[0].HiddenCount}/{inner.TriangleCount}");
+            Assert.That(r[0].HiddenCount, Is.GreaterThan(0), "the checker needs hidden triangles to check");
+        }
+
+        // ------------------------------------------------------------------------------------------------
         // The cone stops at ConeDegrees. A surface can be seen from outside it, at a grazing angle, and the rule
         // accepts that: coverage.py reports such triangles but never keeps one for it.
 
