@@ -227,7 +227,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
                     Origin.Add(v);
                 }
                 var copies = new NativeParallelHashMap<int2, int>(64, Allocator.Temp);
-                var hasSubmesh = TriangleSubmesh.IsCreated && TriangleSubmesh.Length == SourceTriangles.Length;
+                var hasSubmesh = TriangleSubmesh.Length == SourceTriangles.Length;
                 var live = 0;
                 for (var t = 0; t < SourceTriangles.Length; t++)
                 {
@@ -512,7 +512,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             bool InfluencesAgree(int a, int b)
             {
                 if (a == b) return true;
-                if (!WeightStart.IsCreated || WeightStart.Length <= math.max(a, b) + 1) return true;
+                if (WeightStart.Length <= math.max(a, b) + 1) return true;
                 for (var i = WeightStart[a]; i < WeightStart[a + 1]; i++)
                 {
                     var inf = Weights[i];
