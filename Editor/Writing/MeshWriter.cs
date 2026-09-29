@@ -41,9 +41,11 @@ namespace Ryan6Vrc.MeshOptimizer.Writing
                 for (var s = 0; s < submeshIndices.Count; s++)
                 {
                     var indices = submeshIndices[s].Select(i => Remapped(remap, i, s)).ToArray();
-                    mesh.SetIndices(indices, source.GetTopology(s), s, false);
+                    mesh.SetIndices(indices, source.GetTopology(s), s, true);
                 }
                 CopyShapeKeys(source, mesh, keptVertices);
+                // Each submesh's bounds are its own vertices'; the mesh keeps the source's, which may have been
+                // widened on purpose and always contain the kept vertices.
                 mesh.bounds = source.bounds;
                 return mesh;
             }

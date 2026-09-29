@@ -20,7 +20,10 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     {
         const string BlendShapePrefix = "blendShape.";
 
-        /// <summary>Classifies every shape key of each renderer on the avatar being built.</summary>
+        /// <summary>
+        /// Classifies every shape key of each renderer on the avatar being built. The calling pass must hold
+        /// <see cref="AnimatorServicesContext"/>, which also keeps NDMF from committing the controllers around it.
+        /// </summary>
         public static Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Classify(
             BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers)
         {

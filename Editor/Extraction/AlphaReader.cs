@@ -203,6 +203,8 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             if (main != null && main.dimension != UnityEngine.Rendering.TextureDimension.Tex2D) return false;
             if (mask != null && mask.dimension != UnityEngine.Rendering.TextureDimension.Tex2D) return false;
             if (p.Formula == AlphaFormula.Poiyomi && Float(m, "_MainTexUV", 0f) != 0f) return false;
+            // A scrolling or rotating main texture has no one alpha per mesh UV.
+            if (Vector(m, "_MainTex_ScrollRotate") != Vector4.zero || Vector(m, "_MainTexPan") != Vector4.zero) return false;
             if (p.MaskMode == 0 || mask == null) return true;
 
             if (m.GetTextureScale("_AlphaMask") != Vector2.one || m.GetTextureOffset("_AlphaMask") != Vector2.zero) return false;
@@ -217,6 +219,8 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         }
 
         static float Float(Material m, string name, float fallback) => m.HasProperty(name) ? m.GetFloat(name) : fallback;
+
+        static Vector4 Vector(Material m, string name) => m.HasProperty(name) ? m.GetVector(name) : Vector4.zero;
 
         static Vector4 ScaleOffset(Material m, string name)
         {
