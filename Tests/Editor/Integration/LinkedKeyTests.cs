@@ -219,9 +219,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         [Test]
         public void TheGate_MeasuresCrossingInEachLinkedConfiguration_AsTheAvatarTakesIt()
         {
-            // The keys sink both layers inside the boot, so the pass keeps it: the gate bakes every renderer, and a mesh
-            // the pass emptied gives it nothing to bake.
-            var (body, tights, boot) = BootRig(bodyKeyed: 0.08f, tightsKeyed: 0.085f);
+            // The boot is covered in every state, so the pass empties it: the gate measures it as having no surface.
+            var (body, tights, boot) = BootRig(bodyKeyed: 0.13f, tightsKeyed: 0.135f);
             var report = a.Run(tweak: input =>
             {
                 input.Liveness = Classified(body, tights);
