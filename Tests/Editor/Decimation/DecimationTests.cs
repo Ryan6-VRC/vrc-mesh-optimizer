@@ -211,8 +211,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(best, Is.InRange(0.9f * width, 1.1f * width), $"width at vertex {v}");
             }
 
-            // Every removed vertex's texel, found again on the decimated card, is close to where it was.
-            var worst = 0f;
+            var shift = UvShift(b, kept, tris);
+            TestContext.WriteLine($"largest UV shift: U {shift.x:F4}, V {shift.y:F4}");
+            Assert.That(shift.x, Is.LessThan(0.05f), "U across the card");
+            Assert.That(shift.y, Is.LessThan(0.02f), "V along the card stays near-linear");
+        }
+
+        /// <summary>
+        /// Every removed vertex's texel, found again on the decimated surface at the closest point: the largest
+        /// difference in U and in V from the texel it had.
+        /// </summary>
+        static float2 UvShift(MeshBuilder b, HashSet<int> kept, int3[] tris)
+        {
+            var worst = float2.zero;
             for (var v = 0; v < b.VertexCount; v++)
             {
                 if (kept.Contains(v)) continue;
@@ -226,11 +237,37 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                     best = d;
                     uv = bary.x * b.Uvs[t.x] + bary.y * b.Uvs[t.y] + bary.z * b.Uvs[t.z];
                 }
-                worst = math.max(worst, math.abs(uv.y - b.Uvs[v].y));
-                Assert.That(math.abs(uv.x - b.Uvs[v].x), Is.LessThan(0.05f), $"U across the card at vertex {v}");
+                worst = math.max(worst, math.abs(uv - b.Uvs[v]));
             }
-            TestContext.WriteLine($"largest V shift along the card: {worst:F4} of its length");
-            Assert.That(worst, Is.LessThan(0.02f), "V along the card stays near-linear");
+            return worst;
+        }
+
+        [Test]
+        public void TheUvTerm_KeepsAFlatCardsTextureFromSwimming()
+        {
+            // A straight card whose texture is squeezed in one stretch near its middle, as an atlas packs a
+            // detail: geometry alone sees nothing there and would slide those texels.
+            const int segments = 40;
+            var b = Fixtures.Strip(segments, 0.15f, 1.2f, 0.01f, out var left, out var right);
+            for (var i = 0; i <= segments; i++)
+            {
+                var t = i / (float)segments;
+                b.Positions[left[i]] = new float3(0.2f * t, 0, 0);
+                b.Positions[right[i]] = new float3(0.2f * t, 0, 0.01f);
+                var v = t + 0.05f * math.exp(-(t - 0.5f) * (t - 0.5f) / (0.08f * 0.08f)) * math.sign(t - 0.5f);
+                b.Uvs[left[i]] = new float2(0, v);
+                b.Uvs[right[i]] = new float2(1, v);
+            }
+            using var withUv = Fixtures.Decimate(b);
+            using var withoutUv = Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; });
+            var target = withUv.InitialTriangleCount / 4;
+            using var a = withUv.Cut(Fixtures.CutAtCount(withUv, target), Allocator.Persistent);
+            using var c = withoutUv.Cut(Fixtures.CutAtCount(withoutUv, target), Allocator.Persistent);
+            var shiftWith = UvShift(b, Fixtures.Kept(a), Fixtures.ToArray(a.Triangles)).y;
+            var shiftWithout = UvShift(b, Fixtures.Kept(c), Fixtures.ToArray(c.Triangles)).y;
+            TestContext.WriteLine($"at {a.Triangles.Length} tris, largest V shift {shiftWith:F4} with the UV term, {shiftWithout:F4} without");
+            Assert.That(shiftWith, Is.LessThan(shiftWithout / 3f));
+            Assert.That(shiftWith, Is.LessThan(0.01f));
         }
 
         static float DistanceToSegment(float3 p, float3 a, float3 b)
@@ -336,6 +373,22 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 }
                 Assert.That(cut.KeptVertices.AsArray().ToArray(), Is.EqualTo(used.OrderBy(x => x).ToArray()), $"cut {k}: keep-list");
             }
+        }
+
+        [Test]
+        public void TheWholeSequence_NeverDecimatesAPieceAway()
+        {
+            // A sheet and a lone triangle beside it, as a small detached card: run to exhaustion.
+            var b = Fixtures.Grid(6, 6, 0.06f, 0.06f, out _);
+            var a = b.Add(new float3(0.1f, 0, 0));
+            var c = b.Add(new float3(0.11f, 0, 0));
+            var d = b.Add(new float3(0.1f, 0.01f, 0));
+            b.Tri(a, c, d);
+            using var seq = Fixtures.Decimate(b);
+            using var cut = seq.Cut(seq.Length, Allocator.Persistent);
+            var kept = Fixtures.Kept(cut);
+            Assert.That(kept.Contains(a) && kept.Contains(c) && kept.Contains(d), "the lone triangle survives");
+            Assert.That(cut.Triangles.Length, Is.GreaterThanOrEqualTo(2), "the sheet keeps at least a triangle");
         }
 
         // ------------------------------------------------------------------ protection

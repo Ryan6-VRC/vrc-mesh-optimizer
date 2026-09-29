@@ -32,12 +32,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             for (var fi = 0; fi < 150; fi++)
             {
                 var frame = b.AddFrame();
-                var c = rng.NextFloat2(-0.22f, 0.22f);
+                // Frames crowd the middle of the sheet and overlap there, as a face's mouth and eye shapes do:
+                // a central vertex lies in some thirty frames' support.
+                var c = rng.NextFloat2(-0.1f, 0.1f);
                 var dir = math.normalize(rng.NextFloat3Direction() + new float3(0, 0, 1));
                 for (var v = 0; v < b.VertexCount; v++)
                 {
                     var d2 = math.lengthsq(b.Positions[v].xy - c);
-                    var h = 0.006f * math.exp(-d2 / (0.012f * 0.012f));
+                    var h = 0.006f * math.exp(-d2 / (0.02f * 0.02f));
                     if (h > 1e-5f) frame[v] = dir * h;
                 }
             }
@@ -83,6 +85,13 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                     UnityEngine.Debug.Log($"[benchmark] topology {tTopology:F3} s, bank {tBank:F3} s, collapse {tCollapse:F3} s, bank {bankBytes / 1e6:F1} MB, pool peak {stats.PeakPoolBytes / 1e6:F1} MB");
                     Assert.That(seq.TriangleCountAt(seq.Length), Is.LessThanOrEqualTo(settings.TargetTriangleCount));
                 }
+
+                // The whole sequence, as allocation across renderers wants it.
+                settings.TargetTriangleCount = 0;
+                sw.Restart();
+                using var full = Decimator.Run(mesh, settings, default, Allocator.Persistent);
+                var tFull = sw.Elapsed.TotalSeconds;
+                TestContext.WriteLine($"whole sequence, all stages: {tFull:F3} s, {full.Length} steps down to {full.TriangleCountAt(full.Length)} tris at {full.ErrorAt(full.Length) * 1000:F1} mm");
             }
             finally
             {

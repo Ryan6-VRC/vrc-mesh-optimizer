@@ -484,9 +484,33 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 if (!LinkHolds(c.U1, c.V1, -1, -1)) return false;
                 if (c.U2 >= 0 && !LinkHolds(c.U2, c.V2, -1, -1)) return false;
             }
+            if (!Survives(c.U1, c.V1)) return false;
+            if (c.U2 >= 0 && !Survives(c.U2, c.V2)) return false;
             if (!NoFlip(c.U1, c.V1)) return false;
             if (c.U2 >= 0 && !NoFlip(c.U2, c.V2)) return false;
             return true;
+        }
+
+        /// <summary>
+        /// False when the collapse would leave v with no triangle at all: u and v then share every triangle
+        /// either has, and removing them deletes the last of a connected piece, which decimation never does.
+        /// </summary>
+        bool Survives(int u, int v)
+        {
+            if (HasTriangleWithout(u, v)) return true;
+            return HasTriangleWithout(v, u);
+        }
+
+        bool HasTriangleWithout(int w, int other)
+        {
+            for (var c = _firstCorner[w]; c != -1; c = _cornerNext[c])
+            {
+                var t = c / 3;
+                if (_alive[t] == 0) continue;
+                var tri = _tri[t];
+                if (tri.x != other && tri.y != other && tri.z != other) return true;
+            }
+            return false;
         }
 
         /// <summary>
