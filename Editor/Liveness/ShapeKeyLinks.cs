@@ -50,7 +50,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     /// the object, never its name.
     ///
     /// A key driven by anything outside the clips (the descriptor's visemes, jaw flap and eyelids, the MMD names) never
-    /// links, nor does one a curve of unknown clip drives, one a clip drives with two curves, or one on a renderer whose
+    /// links, nor does one a curve of unknown clip drives, one a clip drives with two different curves, or one on a renderer whose
     /// path another renderer shares. A wrong link evaluates a state the avatar can leave, so every doubt keeps keys apart.
     /// </summary>
     internal static class ShapeKeyLinks
@@ -98,9 +98,13 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 }
                 if (!clipIds.TryGetValue(b.Clip, out var clip)) clipIds[b.Clip] = clip = clipIds.Count;
                 if (!curves.TryGetValue(key, out var list)) curves[key] = list = new List<Curve>();
-                if (list.Any(c => c.Clip == clip)) unlinkable.Add(key);
                 var full = ShapeKeyClassifier.FullScale(input.FullWeight);
-                list.Add(new Curve { Clip = clip, Times = b.Times, Values = b.Values.Select(v => v / full).ToArray() });
+                var curve = new Curve { Clip = clip, Times = b.Times, Values = b.Values.Select(v => v / full).ToArray() };
+                // One clip reached from two controllers is enumerated twice with the same curve; a different curve from the
+                // same clip on the same key is two bindings resolving to one renderer, and no one can say which plays.
+                var same = list.FirstOrDefault(c => c.Clip == clip);
+                if (same == null) list.Add(curve);
+                else if (!same.Times.SequenceEqual(curve.Times) || !same.Values.SequenceEqual(curve.Values)) unlinkable.Add(key);
             }
 
             // Keys driven by the same set of clips, then within each set, groups whose every pair matches.

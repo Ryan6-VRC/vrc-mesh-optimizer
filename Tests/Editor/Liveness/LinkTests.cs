@@ -215,6 +215,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         }
 
         [Test]
+        public void OneClipReachedTwice_IsOneClip()
+        {
+            // The same clip in two controllers is read once from each, with the same curves.
+            var bindings = new[] { Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f) };
+
+            Assert.That(Find(BodyAndTights, bindings.Concat(bindings)), Is.EqualTo(new[] { BothHeels }));
+        }
+
+        [Test]
         public void RenderersSharingAPath_NeverLink()
         {
             // Two renderers named alike at one path: a binding cannot say which it drives.
