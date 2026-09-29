@@ -120,11 +120,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// </summary>
         public bool[] Blocks;
         /// <summary>
-        /// How far, in metres, this mesh's faces may have moved inward past where they stood when they covered: a ray
-        /// also meets them up to this far behind a sample, measured along its normal, when the sample's
-        /// <see cref="CoveredBy"/> names this mesh, so a cover that sank past a sample still covers it. Zero, the
-        /// default, reaches nothing behind any sample. The rule's own limits on an occluder still hold. A mesh at index 63
-        /// or later of the solve's list has none, since the bit that would name it names every mesh from 63 on.
+        /// How far, in metres, this mesh's faces may have moved inward past where they stood when they covered. A sample
+        /// whose cone escapes, and whose <see cref="CoveredBy"/> names this mesh, is still covered when a face of this mesh
+        /// lies straight behind it, back along its normal, within this far: the cover sank past it, and a viewer sees the
+        /// cover. Zero, the default, reaches nothing behind any sample. The rule's own limits on an occluder still hold.
+        /// A mesh at index 63 or later of the solve's list has none, since the bit that would name it names every mesh
+        /// from 63 on.
         /// </summary>
         public float Setback;
         /// <summary>

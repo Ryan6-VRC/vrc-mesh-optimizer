@@ -17,11 +17,13 @@ using static Ryan6Vrc.MeshOptimizer.Tests.Integration.AvatarFixture;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 {
-    // A body under an always-on garment on the same chest bone, 5 mm apart. Coarsened far enough, the garment gives way in
-    // two ways. Where its rim draws back, a triangle occlusion removed there is no longer covered and shows; judged again
-    // against the garment as written, it must be written back. Where its faces sink past the body, the cover moved but did
-    // not go: a viewer still sees the garment, so the triangle stays removed. The body carries a key that swells its lower
-    // half, so each verdict holds in a configuration as well as at rest.
+    // A body under an always-on garment on the same chest bone. Coarsened far enough, a garment gives way in two ways.
+    // Where its edge draws back, a triangle occlusion removed there is no longer covered and shows; judged again against
+    // the garment as written, it must be written back. Where its faces sink past the body, the cover moved but did not go:
+    // a viewer still sees the garment, so the triangle stays removed. Two fixtures part the two. A round cape 1 mm over a
+    // flat body only draws back: its rim becomes a polygon whose sides cut inside the circle, and nothing flat sinks. A
+    // sphere 5 mm over a sphere mostly sinks: its faces cut inside the curve, and the clearance rule holds its rim. Each body
+    // carries a key, so each verdict holds in a configuration as well as at rest.
     public class RejudgeTests
     {
         AvatarFixture a;
@@ -45,6 +47,53 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var c = a.Optimizer(decimate: true);
             c.alwaysOn.Add(garment);
             if (!bodyDecimated) c.renderers.Add(new RendererSettings { renderer = body, excludeFromDecimation = true });
+        }
+
+        /// <summary>
+        /// A flat body 20 cm across, left undecimated, under the always-on round cape of <see cref="Disc"/>, 5 cm in radius,
+        /// 1 mm over it. The body carries a key that lifts its -X half by 0.3 mm.
+        /// </summary>
+        void BuildCape()
+        {
+            a = new AvatarFixture();
+            chest = a.Bone("Armature/Hips/Chest");
+            var bodyMesh = a.Grid(40, 0.005f, "body");
+            bodyMesh.AddBlendShapeFrame("Lift", 100f, bodyMesh.vertices.Select(v => v.x < 0f ? new Vector3(0f, 0.0003f, 0f) : Vector3.zero).ToArray(), null, null);
+            body = a.Skinned("Body", bodyMesh, new[] { chest });
+            garment = a.Skinned("Garment", Disc(0.05f, 0.001f, 10, 64), new[] { chest });
+            var c = a.Optimizer(decimate: true);
+            c.alwaysOn.Add(garment);
+            c.renderers.Add(new RendererSettings { renderer = body, excludeFromDecimation = true });
+        }
+
+        /// <summary>
+        /// A flat disc facing +Y at height <paramref name="y"/>, <paramref name="rings"/> rings of <paramref name="segments"/>
+        /// about its centre. Coarsened, its rim becomes a polygon whose sides cut inside the circle.
+        /// </summary>
+        Mesh Disc(float radius, float y, int rings, int segments)
+        {
+            var v = new List<Vector3> { new Vector3(0f, y, 0f) };
+            var uv = new List<Vector2> { new Vector2(0.5f, 0.5f) };
+            var t = new List<int>();
+            for (var r = 1; r <= rings; r++)
+                for (var s = 0; s < segments; s++)
+                {
+                    var phi = 2f * Mathf.PI * s / segments;
+                    var d = new Vector3(Mathf.Cos(phi), 0f, Mathf.Sin(phi)) * (radius * r / rings);
+                    v.Add(d + new Vector3(0f, y, 0f));
+                    uv.Add(new Vector2(0.5f + d.x / (2f * radius), 0.5f + d.z / (2f * radius)));
+                }
+            int At(int r, int s) => r == 0 ? 0 : 1 + (r - 1) * segments + s % segments;
+            for (var s = 0; s < segments; s++) t.AddRange(new[] { 0, At(1, s + 1), At(1, s) });
+            for (var r = 1; r < rings; r++)
+                for (var s = 0; s < segments; s++)
+                    t.AddRange(new[] { At(r, s), At(r, s + 1), At(r + 1, s), At(r + 1, s), At(r, s + 1), At(r + 1, s + 1) });
+            var mesh = a.Made(new Mesh { name = "disc" });
+            mesh.SetVertices(v);
+            mesh.SetNormals(v.Select(_ => Vector3.up).ToList());
+            mesh.SetUVs(0, uv);
+            mesh.SetTriangles(t, 0);
+            return mesh;
         }
 
         /// <summary>
@@ -77,7 +126,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         /// <summary>
         /// The body and garment as written, to the checker: with <paramref name="setback"/>, by the rule the re-judge asks,
-        /// under which the garment covers the body from as far behind as its cut's error; without, by the rule itself.
+        /// under which the garment also covers a body sample it lies straight behind, within its cut's error; without, by
+        /// the rule itself.
         /// </summary>
         CoverChecker.Report CheckWritten(OptimizationReport report, bool setback = false)
         {
@@ -164,25 +214,28 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return drawn;
         }
 
-        // At a 6 mm tolerance the bowl's rim draws back. Switched off, the checker finds removed triangles the written
-        // garment no longer covers; on, they are written back as authored and every triangle still removed is covered, at
-        // rest and with the body's key applied, by the garment where it stands or where its cut moved it past them.
+        // At a 4 mm tolerance the cape's rim draws back. Switched off, the checker finds removed triangles the written
+        // cape no longer covers; on, they are written back as authored and every triangle still removed is covered, at rest
+        // and with the body's key applied. Nothing flat sank, so what comes back is exactly what the rule itself finds
+        // uncovered.
         [Test]
         public void ACoarsenedGarment_GivesBackWhatItNoLongerCovers_AndWhatStaysRemovedIsCovered()
         {
-            Build(garmentFrom: 60f);
+            BuildCape();
 
-            var off = Run(TargetKind.Tolerance, 6f, rejudge: false);
+            var off = Run(TargetKind.Tolerance, 4f, rejudge: false);
             Assert.That(CheckWritten(off, setback: true).Ok, Is.False, "the coarsened garment uncovers some of what occlusion removed");
             Assert.That(off.RejudgePasses, Is.Zero);
+            var lost = CheckWritten(off).Violations.Select(v => v.Split(',')[0]).Distinct().Count();
 
-            var on = Run(TargetKind.Tolerance, 6f, rejudge: true);
+            var on = Run(TargetKind.Tolerance, 4f, rejudge: true);
             var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
             Assert.That(check.HiddenChecked, Is.GreaterThan(0), "some triangles stay removed");
 
             var r = Of(on, body);
             Assert.That(r.HiddenRestored, Is.GreaterThan(0));
+            Assert.That(r.HiddenRestored, Is.EqualTo(lost), "every triangle the rule finds uncovered comes back, and no other");
             Assert.That(on.HiddenRestored, Is.EqualTo(r.HiddenRestored));
             Assert.That(on.RejudgePasses, Is.EqualTo(1), "a tolerance judges once");
             Assert.That(Of(on, garment).TrianglesAfter, Is.EqualTo(Of(off, garment).TrianglesAfter), "a tolerance cuts no deeper for what it restores");
@@ -203,20 +256,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         // A renderer the judge neither judges nor blocks by, which it enters with no triangles to hold its index, is the last
         // one the avatar lists: here a charm clear of the body, not always on, that nothing covers. The judge still runs
-        // through and gives back what the coarsened garment uncovered.
+        // through, which the fixture's run asserts, and gives back what the coarsened cape uncovered.
         [Test]
         public void ARendererNeitherJudgedNorBlocking_LastInTheAvatar_DoesNotStopTheJudge()
         {
-            Build(garmentFrom: 60f);
+            BuildCape();
             var charmMesh = a.Sphere(0.02f, 8, 16, name: "charm");
             charmMesh.vertices = charmMesh.vertices.Select(v => v + new Vector3(0.3f, 0f, 0f)).ToArray();
             charmMesh.RecalculateBounds();
             var charm = a.Skinned("Charm", charmMesh, new[] { chest });
             a.Optimizer(decimate: true).renderers.Add(new RendererSettings { renderer = charm, excludeFromDecimation = true });
 
-            var on = Run(TargetKind.Tolerance, 6f, rejudge: true);
+            var on = Run(TargetKind.Tolerance, 4f, rejudge: true);
 
-            Assert.That(on.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.RejudgeFailed));
             Assert.That(Of(on, charm).HiddenRemoved, Is.Zero, "nothing covers the charm");
             Assert.That(on.RejudgePasses, Is.EqualTo(1));
             Assert.That(on.HiddenRestored, Is.GreaterThan(0));
@@ -268,24 +320,23 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             }
         }
 
-        // Tights under the rim of an always-on boot, always-on skin half a millimetre under the tights. The tights are not
-        // always on, so they hide none of the skin; the boot rides a bone four steps from the skin's, so it hides none of
-        // the skin either; the tights ride both, so the boot hides them. Cut at 6 mm, the boot's rim draws back, and the
-        // skin, cut too, may cover from as far behind as the boot may: the tights the rim uncovers must come back, though
-        // the skin lies within that setback under them, where a setback alone reads it as their cover and a viewer would
-        // see it through the hole. The clearance rule is off, since it holds this rim where it stands; the rule under
-        // test does not read it.
+        // Tights under the rim of an always-on boot, always-on skin half a millimetre under the tights, all three flat. The
+        // tights are not always on, so they hide none of the skin; the boot rides a bone four steps from the skin's, so it
+        // hides none of the skin either; the tights ride both, so the boot hides them. Cut at 4 mm, the boot's round rim
+        // draws back, and the skin, cut too, may cover from as far behind as the boot may: the tights the rim uncovers must
+        // come back, though the skin lies straight behind them within that setback, where it would read as their cover and
+        // a viewer would see it through the hole.
         [Test]
         public void ALayerUnderATriangle_ThatNeverCoveredIt_DoesNotStandInForTheCoverItLost()
         {
             a = new AvatarFixture();
             chest = a.Bone("Armature/Hips/Chest");
             var foot = a.Bone("Armature/Hips/Leg/Knee/Foot");
-            var skin = a.Skinned("Skin", Welded(a.Sphere(0.1f, 16, 32, name: "skin")), new[] { foot });
-            var tightsMesh = Welded(a.Sphere(0.1005f, 16, 32, name: "tights"));
+            var skin = a.Skinned("Skin", Disc(0.1f, 0f, 20, 64), new[] { foot });
+            var tightsMesh = Disc(0.1f, 0.0005f, 20, 64);
             tightsMesh.boneWeights = tightsMesh.vertices.Select(_ => new BoneWeight { boneIndex0 = 0, weight0 = 0.5f, boneIndex1 = 1, weight1 = 0.5f }).ToArray();
             var tights = a.Skinned("Tights", tightsMesh, new[] { chest, foot });
-            var boot = a.Skinned("Boot", Welded(a.Sphere(0.105f, 24, 48, 60f, 180f, name: "boot")), new[] { chest });
+            var boot = a.Skinned("Boot", Disc(0.05f, 0.0015f, 10, 64), new[] { chest });
             var c = a.Optimizer(decimate: true);
             c.alwaysOn.Add(boot);
             c.alwaysOn.Add(skin);
@@ -293,22 +344,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var renderers = new Renderer[] { skin, tights, boot };
             var bootOnly = new[] { 0UL, 1UL << 2, 0UL };
             var anyMesh = new[] { ulong.MaxValue, ulong.MaxValue, ulong.MaxValue };
-            var decimation = DecimationSettings.Default;
-            decimation.Clearance.Enabled = false;
 
-            OptimizationReport off, on;
-            using (BuildSettings.Override(decimation))
-            {
-                off = Run(TargetKind.Tolerance, 6f, rejudge: false);
-                on = Run(TargetKind.Tolerance, 6f, rejudge: true);
-            }
+            var off = Run(TargetKind.Tolerance, 4f, rejudge: false);
+            var on = Run(TargetKind.Tolerance, 4f, rejudge: true);
 
             Assert.That(Of(off, skin).HiddenRemoved, Is.Zero, "the boot hides none of the skin");
             Assert.That(Of(off, tights).HiddenRemoved, Is.GreaterThan(0), "and hides the tights");
             Assert.That(Of(on, skin).Error, Is.GreaterThan(0.0005f), "the skin's setback reaches past the half millimetre");
-            var lost = CheckWritten(off, renderers, bootOnly, out _).Violations.Count;
-            Assert.That(lost, Is.GreaterThan(CheckWritten(off, renderers, anyMesh, out _).Violations.Count),
-                "the cut boot uncovers tights that only the skin under them covers from behind");
+            int Lost(ulong[] behind) => CheckWritten(off, renderers, behind, out _).Violations.Select(v => v.Split(',')[0]).Distinct().Count();
+            var lost = Lost(bootOnly);
+            Assert.That(lost, Is.GreaterThan(Lost(anyMesh)), "the cut boot uncovers tights that only the skin under them covers from behind");
             Assert.That(Of(on, tights).HiddenRestored, Is.EqualTo(lost), "every one of them comes back");
             var check = CheckWritten(on, renderers, bootOnly, out _);
             Assert.That(check.Ok, Is.True, check.ToString());
@@ -338,14 +383,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 
-        // Cut too deep, the garment covers less than any cut saves: no pass meets the budget, and the avatar is still
-        // written covered, the budget reported not met.
+        // Cut too deep, the cape covers less than any cut saves: at a budget that leaves it ten triangles over the body,
+        // no pass meets it, and the avatar is still written covered, the budget reported not met.
         [Test]
         public void ABudgetNoPassMeets_IsReportedNotMet_AndTheAvatarIsStillCovered()
         {
-            Build(garmentFrom: 60f);
+            BuildCape();
+            var bodyAfter = Of(Run(TargetKind.Tolerance, 0.01f, rejudge: false), body).TrianglesAfter;
 
-            var on = Run(TargetKind.TriangleBudget, 600, rejudge: true);
+            var on = Run(TargetKind.TriangleBudget, bodyAfter + 10, rejudge: true);
 
             Assert.That(on.TargetMet, Is.False);
             Assert.That(on.RejudgePasses, Is.GreaterThan(1));

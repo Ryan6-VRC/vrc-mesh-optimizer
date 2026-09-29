@@ -427,11 +427,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// A renderer the pass leaves as it was draws its whole source and removes nothing. What is no longer hidden goes
         /// into <see cref="Pass.Restored"/>.
         ///
-        /// A removed triangle comes back when its cover is gone, not when the cut moved its cover past it. So each cut
-        /// always-on renderer blocks from as far behind a sample as its cut's recorded error (<see cref="OcclusionMesh.Setback"/>),
-        /// but only a sample it covered in the first solve (<see cref="PreparedRenderer.CoveredBy"/>): a layer that lies
-        /// just under a triangle and never covered it does not stand in for the cover it lost. Every extracted renderer is
-        /// entered at its index in the first solve, so the solve's names for what covered each sample hold here.
+        /// A removed triangle comes back when its cover is gone, not when the cut moved its cover past it. So a sample the
+        /// rule finds uncovered stays covered when a face of a cut always-on renderer lies straight behind it within that
+        /// cut's recorded error (<see cref="OcclusionMesh.Setback"/>), and only a renderer that covered it in the first
+        /// solve (<see cref="PreparedRenderer.CoveredBy"/>): a layer that lies just under a triangle and never covered it
+        /// does not stand in for the cover it lost. Every extracted renderer is entered at its index in the first solve, so
+        /// the solve's names for what covered each sample hold here.
         /// </summary>
         static void RejudgeOnce(PreparedAvatar prepared, Pass pass)
         {

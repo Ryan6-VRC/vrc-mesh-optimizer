@@ -39,9 +39,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     ///
     /// Setback: a solve that asks again after occluders moved may give each a setback (<see cref="OcclusionMesh.Setback"/>)
     /// and each candidate the meshes that covered it before (<see cref="OcclusionMesh.CoveredBy"/>, as a solve reports them
-    /// in <see cref="OcclusionResult.CoveredBy"/>). A face of such a mesh then blocks a sample it covered before from up to
-    /// its setback behind the sample, so a cover that moved past the sample by no more than that still covers it; any other
-    /// face blocks only in front, as above. With no setback, every ray is the rule's own to the bit.
+    /// in <see cref="OcclusionResult.CoveredBy"/>). A sample the rule above finds uncovered is then still covered when a face
+    /// of a mesh it names, one that blocks by the rule's own tests, lies straight behind it, back along its normal, within
+    /// that mesh's setback: the cover moved past it by no more than that, and a viewer sees the cover where it stood. That
+    /// is one ray a sample, cast only when the cone fails. With no setback, the solve is the rule's own to the bit.
     /// </summary>
     public static class OcclusionSolver
     {
@@ -95,7 +96,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             public NativeArray<ulong> VertCoveredBy, TriCoveredBy;
             /// <summary>Per mesh, <see cref="OcclusionMesh.Setback"/>; zero from index 63 on.</summary>
             public NativeArray<float> MeshSetback;
-            /// <summary>Some mesh has a setback, so some sample may cast from behind itself.</summary>
+            /// <summary>Some mesh has a setback, so some sample may be covered from behind itself.</summary>
             public bool AnySetback;
             public NativeArray<BoneInfluence> Weights;
             public NativeArray<int3> Tris;
@@ -397,7 +398,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             NativeList<byte> SampleState, SampleReason, SampleFlags;
             NativeList<bool> Covered, Relevant, SampleMark;
             NativeList<ulong> Witness, FrameWitness;
-            /// <summary>Per sample: the meshes whose faces behind it may cover it, and how far behind it its rays start (see <see cref="CoverageKernel.Evaluate"/>).</summary>
+            /// <summary>Per sample: the meshes whose faces behind it may cover it, and how far behind it the deepest of them may lie (see <see cref="CoverageKernel.Evaluate"/>).</summary>
             NativeList<ulong> SampleCoveredBy;
             NativeList<float> SampleStretch;
             NativeList<int> RelevantList;
@@ -416,8 +417,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             NativeArray<FrameTree> EmptyTrees;
             NativeReference<long> FrameRays;
             long Rays;
-            /// <summary>The smallest cosine between a ray of the cone and its axis, of those leaning less than a right angle.</summary>
-            float MinSlant = 1f;
             readonly Stopwatch prepWatch = new Stopwatch();
 
             public Run(Scene s, OcclusionSettings cfg)
@@ -434,7 +433,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 const Allocator a = Allocator.Persistent;
                 int V = S.Pos.Length, T = S.Tris.Length, O = math.max(1, S.OccTri.Length);
                 Cone = Occlusion.Cone.Directions(Cfg.ConeDegrees, Cfg.RingDegrees, a);
-                foreach (var c in Cone) if (c.z > 0f) MinSlant = math.min(MinSlant, c.z);
                 SamplePos = new NativeList<float3>(V, a); SampleNrm = new NativeList<float3>(V, a); SampleBary = new NativeList<float3>(V, a);
                 SampleMesh = new NativeList<int>(V, a); SampleBoneStart = new NativeList<int>(V + 1, a); SampleBones = new NativeList<int>(4 * V, a);
                 SampleState = new NativeList<byte>(V, a);
@@ -572,7 +570,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             /// <summary>
             /// Each sample's cover from behind, when some mesh has a setback: the meshes named for its side, from its vertex
             /// for a corner sample or from its triangle for an interior one, and the deepest setback among them.
-            /// Unset, every stretch stays zero and every ray starts where the rule starts it.
+            /// Unset, every stretch stays zero and no sample looks behind itself.
             /// </summary>
             void CoverBehind(bool interior)
             {
@@ -664,7 +662,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     {
                         Spacing = Cfg.InteriorSpacing, DeltaStart = start, DeltaCount = count,
                         MoveEpsilon = Cfg.MoveEpsilon, Reach = Cfg.Reach, OriginOffset = Cfg.OriginOffset, ConeRadians = math.radians(Cfg.ConeDegrees), Split = Cfg.Split,
-                        MinSlant = MinSlant, SampleStretch = SampleStretch.AsArray(),
+                        SampleStretch = SampleStretch.AsArray(),
                         Deltas = S.Deltas, Pos = S.Pos, GeoN = S.GeoN, VTStart = S.VTStart, VTList = S.VTList, Tris = S.Tris, TriMesh = S.TriMesh, TriOcc = S.TriOcc,
                         TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount, TriSubdivision = TriSubdivision, TriVeto = TriVeto,
                         SamplePos = SamplePos.AsArray(),
