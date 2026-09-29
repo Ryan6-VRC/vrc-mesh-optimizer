@@ -483,10 +483,52 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             return math.sqrt(best);
         }
 
-        /// <summary>The length of the line along which triangle abc passes through every layer but <paramref name="layer"/>.</summary>
-        internal static unsafe float CrossingLength(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer)
+        /// <summary>The distance from <paramref name="p"/> to <paramref name="layer"/>'s triangles alone, or <paramref name="cap"/> when none is nearer.</summary>
+        internal static unsafe float PointToLayer(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
+            in NativeArray<int> nodeLayer, float3 p, int layer, float cap)
         {
+            var best = cap * cap;
+            if (nodes.Length == 0) return cap;
+            var stack = stackalloc int[StackSize];
+            var top = 0;
+            stack[top++] = 0;
+            while (top > 0)
+            {
+                var i = stack[--top];
+                var only = nodeLayer[i];
+                if (only >= 0 && only != layer) continue;
+                var node = nodes[i];
+                if (BoxPointSq(p, node) >= best) continue;
+                if (node.Count > 0)
+                {
+                    for (var k = node.Start; k < node.Start + node.Count; k++)
+                    {
+                        if (primLayer[k] != layer) continue;
+                        var prim = prims[k];
+                        best = math.min(best, TriangleDistance.PointSq(p, prim.A, prim.B, prim.C));
+                    }
+                    continue;
+                }
+                stack[top++] = node.Start;
+                stack[top++] = node.Start + 1;
+            }
+            return math.sqrt(best);
+        }
+
+        /// <summary>The length of the line along which triangle abc passes through every layer but <paramref name="layer"/>.</summary>
+        internal static float CrossingLength(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
+            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer) =>
+            CrossingLength(nodes, prims, primLayer, nodeLayer, a, b, c, layer, 0f, out _);
+
+        /// <summary>
+        /// As the overload without <paramref name="drift"/>; with it above 0, also whether some point of that line lies
+        /// farther than <paramref name="drift"/> from <paramref name="layer"/>'s own source: a crossing where this layer
+        /// is no longer where it was, rather than where it already crossed.
+        /// </summary>
+        internal static unsafe float CrossingLength(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
+            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer, float drift, out bool strays)
+        {
+            strays = false;
             if (nodes.Length == 0) return 0f;
             var total = 0f;
             var q = new Query(a, b, c);
@@ -506,7 +548,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                         if (primLayer[k] == layer) continue;
                         var prim = prims[k];
                         if (q.PrimApart(prim, 0f)) continue;
-                        total += TriangleDistance.IntersectionLength(a, b, c, prim.A, prim.B, prim.C);
+                        var length = TriangleDistance.IntersectionSegment(a, b, c, prim.A, prim.B, prim.C, out var s, out var e);
+                        total += length;
+                        if (drift > 0f && length > 0f && !strays &&
+                            (PointToLayer(nodes, prims, primLayer, nodeLayer, s, layer, drift * 2f) > drift ||
+                             PointToLayer(nodes, prims, primLayer, nodeLayer, e, layer, drift * 2f) > drift ||
+                             PointToLayer(nodes, prims, primLayer, nodeLayer, (s + e) * 0.5f, layer, drift * 2f) > drift))
+                            strays = true;
                     }
                     continue;
                 }

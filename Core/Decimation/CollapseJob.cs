@@ -152,6 +152,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// rounding of a sum of segment lengths, and relative, so ten thousand collapses on one crossing lengthen it by
         /// at most a hundredth, where an absolute allowance would add up without bound.</summary>
         const float CrossingSlack = 1e-6f;
+        /// <summary>
+        /// Metres a new triangle may stand off its own layer's source where it crosses another layer. A total length
+        /// that does not grow could still move: shortened against one place, lengthened against another, or wandering
+        /// across one large triangle. Held to its own source, a crossing stays where the source crossed, give or take
+        /// this over the sine of the angle the layers meet at: within the gate's 5 mm for any angle over 6 degrees.
+        /// </summary>
+        const float CrossingDrift = 0.0005f;
 
         public CollapseEngine(ref CollapseJob job)
         {
@@ -601,8 +608,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         /// <summary>
         /// Where the surface already touches or crosses another layer there is no clearance to keep, and the rule
-        /// instead forbids lengthening the crossing: the triangles the collapse makes may pass through the other layers
-        /// along no longer a line than the triangles they replace did. Touching and not crossing, they may not cross.
+        /// instead forbids lengthening or moving the crossing: the triangles the collapse makes may pass through the
+        /// other layers along no longer a line than the triangles they replace did, and only where they stand within
+        /// <see cref="CrossingDrift"/> of their own source. Touching and not crossing, they may not cross.
         /// </summary>
         bool CrossingHolds(int u, int v)
         {
@@ -621,7 +629,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var k = c - t * 3;
                 var px = _positions[_origin[tri[(k + 1) % 3]]];
                 var py = _positions[_origin[tri[(k + 2) % 3]]];
-                after += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, pv, px, py, layer);
+                after += ClearanceSurface.CrossingLength(_clearNodes, _clearPrims, _clearPrimLayer, _clearNodeLayer, pv, px, py, layer, CrossingDrift, out var strays);
+                if (strays) return false;
             }
             return after <= before * (1f + CrossingSlack) + 1e-9f;
         }

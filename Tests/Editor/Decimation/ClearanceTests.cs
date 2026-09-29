@@ -184,6 +184,27 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
         }
 
+        // A coarse layer, a boot of few large triangles, crossing a fine one along a ring. Where the two already cross,
+        // a collapse may not lengthen the crossing; it may not move it either, by shortening it against one of the
+        // boot's triangles and lengthening it against another.
+        [Test]
+        public void AFineLayerCrossingACoarseOne_GainsNoNewCrossing()
+        {
+            using var scene = new Scene();
+            scene.Add(SkinTube());
+            scene.Add(Tube(10, 4, Length, (a, y) => Skin(a, y) + math.lerp(-0.004f, 0.004f, y / Length), 0.3f));
+            scene.BuildSurface();
+            using var skin = scene.Decimate(0, true, out _);
+            var result = new Dictionary<float, float>();
+            foreach (var level in Levels)
+            {
+                using var cut = skin.Cut(Fixtures.CutAtError(skin, level), Allocator.Persistent);
+                result[level] = NewCrossing(scene.Builders[0], Fixtures.ToArray(cut.Triangles), scene.Builders[1], scene.Builders[1].Triangles.ToArray());
+            }
+            TestContext.WriteLine($"new crossing with the rule: {string.Join(", ", result.Select(kv => $"{kv.Key * 1000} mm: {kv.Value * 100:0.0} cm"))}");
+            foreach (var kv in result) Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key * 1000} mm");
+        }
+
         // Occlusion deletes the skin under a garment, leaving a hole with an open border that the garment passes over.
         // A border collapse straightens the border across the hole, off the skin's source, where only the garment's own
         // source was judged; the garment may sag there. The two must still not meet.
