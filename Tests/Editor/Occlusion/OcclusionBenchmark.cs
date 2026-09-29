@@ -12,7 +12,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     {
         const int Limbs = 8;
 
-        static Scene Build(bool bodiesOcclude = false, int bodyFramesPerLimb = 0)
+        // With a coat, each limb's garment is under a third shell, and the garment's culling is given: a double-sided
+        // garment is then covered on its front by the coat and on its back by the far side of the closed body.
+        static Scene Build(bool bodiesOcclude = false, int bodyFramesPerLimb = 0, FaceCulling? garment = null)
         {
             var scene = new Scene();
             var rng = new Random(12345);
@@ -47,8 +49,18 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                     }
                 }
                 scene.Add(body, occludes: bodiesOcclude);
-                scene.Add(shell, occludes: true);
+                if (garment == null) scene.Add(shell, occludes: true);
+                else scene.Add(shell, occludes: true, new OccluderSubmesh { Culling = garment.Value });
             }
+            // Coats last, so bodies and garments keep their pairs at the head of the list. A coat clears a garment cap
+            // lifted 3 cm.
+            if (garment != null)
+                for (var limb = 0; limb < Limbs; limb++)
+                {
+                    var coat = new MeshBuilder();
+                    coat.Sphere(new float3((limb % 4) * 0.35f, (limb / 4) * 0.35f, 0f), 0.14f, 70, 90, MeshBuilder.On(limb + 1));
+                    scene.Add(coat, occludes: true);
+                }
             Assert.That(frames, Is.EqualTo(20));
             if (bodyFramesPerLimb == 0) Assert.That(frames, Is.EqualTo(20));
             return scene;
@@ -86,6 +98,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Measure("garments", BvhSplit.Midpoint, Build());
             // The body is always on too, so it occludes, and it carries a face's worth of live frames.
             Measure("body occludes, 200 body frames", BvhSplit.Sah, Build(bodiesOcclude: true, bodyFramesPerLimb: 25));
+            // The back-side sampling's cost: the same coated scene with the garment back-culled, then double-sided.
+            Measure("coat over back-culled garment", BvhSplit.Sah, Build(bodiesOcclude: true, garment: FaceCulling.Back));
+            Measure("coat over double-sided garment", BvhSplit.Sah, Build(bodiesOcclude: true, garment: FaceCulling.Off));
         }
 
         static void Measure(string label, BvhSplit split, Scene scene)
@@ -99,18 +114,22 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 var bodyVerts = 0;
                 var hidden = 0;
                 var bodyTris = 0;
-                for (var i = 0; i < results.Length; i += 2)
+                var garmentHidden = 0;
+                var garmentTris = 0;
+                for (var i = 0; i < 2 * Limbs; i += 2)
                 {
                     bodyVerts += results[i].CoveredVertices.Length;
                     bodyTris += results[i].HiddenTriangles.Length;
                     hidden += results[i].HiddenCount;
+                    garmentTris += results[i + 1].HiddenTriangles.Length;
+                    garmentHidden += results[i + 1].HiddenCount;
                 }
                 var queryMs = st.RestMs + st.FramesMs + st.DeletionPassMs;
                 TestContext.WriteLine(
                     $"[bench] {label} split={split} bodyVerts={bodyVerts} occluderTris={st.OccluderTriangles} bvhNodes={st.BvhNodes} " +
                     $"frames={st.LiveFrames} vertexSamples={st.VertexSamples} interiorSamples={st.InteriorSamples} " +
                     $"buildMs={st.BuildMs:F1} restMs={st.RestMs:F1} framesMs={st.FramesMs:F1} framePrepMs={st.FramePrepMs:F1} deletionPassMs={st.DeletionPassMs:F1} deletionPassSamples={st.DeletionPassSamples} " +
-                    $"totalMs={st.TotalMs:F1} rays={st.Rays} raysPerSec={st.Rays / (queryMs / 1000.0):F0} hiddenBodyTris={hidden}/{bodyTris}");
+                    $"totalMs={st.TotalMs:F1} rays={st.Rays} raysPerSec={st.Rays / (queryMs / 1000.0):F0} hiddenBodyTris={hidden}/{bodyTris} hiddenGarmentTris={garmentHidden}/{garmentTris}");
                 Assert.That(hidden, Is.GreaterThan(bodyTris / 2), "the garments cover most of the body; a benchmark that hides nothing measures nothing");
             }
         }
