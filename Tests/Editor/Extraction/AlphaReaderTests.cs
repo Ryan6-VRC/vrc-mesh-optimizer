@@ -192,7 +192,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             "_EnableALDecal (\"x\", Float) = 0 _ALDecalControlsAlpha (\"x\", Range(0, 1)) = 0 _EnableFlipbook (\"x\", Float) = 0 _FlipbookAlphaControlsFinalAlpha (\"x\", Float) = 0 " +
             "_EnablePathing (\"x\", Float) = 0 _PathingOverrideAlpha (\"x\", Float) = 0 _EnableTouchGlow (\"x\", Float) = 0 _DepthAlphaToggle (\"x\", Float) = 0 " +
             "_VoronoiEnabled (\"x\", Int) = 0 _VoronoiAffectsMaterialAlpha (\"x\", Int) = 0 _EnableTruchet (\"x\", Float) = 0 _TruchetOverrideAlpha (\"x\", Float) = 0 " +
-            "_EnableRimLighting (\"x\", Float) = 0 _RimApplyAlpha (\"x\", Int) = 0 _EnableRim2Lighting (\"x\", Float) = 0 _Rim2ApplyAlpha (\"x\", Int) = 0";
+            "_EnableRimLighting (\"x\", Float) = 0 _RimApplyAlpha (\"x\", Int) = 0 _EnableRim2Lighting (\"x\", Float) = 0 _Rim2ApplyAlpha (\"x\", Int) = 0 _BSSEnabled (\"x\", Float) = 0";
 
         const string LilToonProperties =
             "_MainTex (\"Main\", 2D) = \"white\" {} _Color (\"Color\", Color) = (1, 1, 1, 1) _AlphaMask (\"Mask\", 2D) = \"white\" {} " +
@@ -218,8 +218,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
         [TestCase("_AlphaMod=-1", false)]
         [TestCase("_AlphaMod=0.5", true)]
         [TestCase("_AlphaGlobalMask=1", false)]
-        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=5", true)]
-        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=7", true)]
+        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=5", false)]
+        [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=7", false)]
+        [TestCase("_BSSEnabled=1", false)]
         [TestCase("_AlphaGlobalMask=1;_AlphaGlobalMaskBlendType=0", false)]
         [TestCase("_AlphaDistanceFade=1", false)]
         [TestCase("_AlphaFresnel=1", false)]

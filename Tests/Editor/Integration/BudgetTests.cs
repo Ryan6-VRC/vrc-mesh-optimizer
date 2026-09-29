@@ -266,6 +266,40 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             StringAssert.Contains($"{mesh.vertexCount} vertices on bones a clip grows from zero scale", report.Summary());
         }
 
+        // With nothing grown anywhere, the growth rule changes nothing: a clip that shrinks a bone or holds it at rest leaves
+        // every renderer's sequence, cut, reported error and written triangles bit for bit what they are with no clip at all,
+        // under a tolerance and under a budget.
+        [TestCase(TargetKind.Tolerance)]
+        [TestCase(TargetKind.TriangleBudget)]
+        public void ClipsThatGrowNothing_ChangeNoRenderer(TargetKind target)
+        {
+            var chest = a.Bone("Armature/Hips/Chest");
+            var mesh = a.Sphere(0.1f, 32, 64, name: "body");
+            mesh.AddBlendShapeFrame("Swell", 100f, mesh.vertices.Select(v => v.y > 0 ? v * 0.05f : Vector3.zero).ToArray(), null, null);
+            a.Skinned("Body", mesh, new[] { chest });
+            a.Skinned("Garment", a.Sphere(0.101f, 40, 72, 60f, 180f, name: "garment"), new[] { chest });
+            var round = Ball("Round", new Vector3(1, 0, 0));
+            var c = a.Optimizer(decimate: true, removeHidden: false);
+            c.target = target;
+            c.triangleBudget = 4000;
+            a.ScaleClip(chest, 1f, 0.5f);
+            a.ScaleClip(round.transform.parent, 1f, 1f);
+
+            var without = a.Run(apply: false);
+            var with = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform), apply: false);
+
+            Assert.That(without.Renderers.Sum(r => r.SequenceLength), Is.GreaterThan(0), "something was decimated");
+            for (var i = 0; i < without.Renderers.Count; i++)
+            {
+                RendererReport x = without.Renderers[i], y = with.Renderers[i];
+                Assert.That((y.SequenceLength, y.AllocationCut, y.TrianglesAfter, y.CostRaisedForGrowth, y.LockedVertices),
+                    Is.EqualTo((x.SequenceLength, x.AllocationCut, x.TrianglesAfter, 0, x.LockedVertices)), x.Path);
+                Assert.That(System.BitConverter.SingleToInt32Bits(y.Error), Is.EqualTo(System.BitConverter.SingleToInt32Bits(x.Error)), x.Path);
+                Assert.That(y.OutputMesh != null ? y.OutputMesh.triangles : null, Is.EqualTo(x.OutputMesh != null ? x.OutputMesh.triangles : null), x.Path);
+            }
+            Assert.That(System.BitConverter.SingleToInt32Bits(with.ErrorLevel), Is.EqualTo(System.BitConverter.SingleToInt32Bits(without.ErrorLevel)));
+        }
+
         // A size slider on Hips takes everything under it to 1.2 times: an error there is shown 1.2 times larger, so it is
         // charged so, and nothing is locked.
         [Test]

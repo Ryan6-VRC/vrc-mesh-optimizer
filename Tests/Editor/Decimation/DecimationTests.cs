@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
@@ -417,6 +418,34 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             var kept = Fixtures.Kept(cut);
             for (var v = 0; v < b.VertexCount; v++)
                 if (locked[v] != 0) Assert.That(kept.Contains(v), $"locked vertex {v}");
+        }
+
+        static void AssertSameSequence(CollapseSequence expected, CollapseSequence actual, string what)
+        {
+            Assert.That(actual.Length, Is.EqualTo(expected.Length), what);
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.That(BitConverter.SingleToInt32Bits(actual.Steps[i].Error), Is.EqualTo(BitConverter.SingleToInt32Bits(expected.Steps[i].Error)), $"{what}: step {i}'s error");
+                Assert.That(actual.Steps[i].TriangleCount, Is.EqualTo(expected.Steps[i].TriangleCount), $"{what}: step {i}'s triangles");
+            }
+            Assert.That(actual.Records.ToArray(), Is.EqualTo(expected.Records.ToArray()), what);
+        }
+
+        // A multiplier only keeps a vertex longer. Every multiplier at 1, and any under 1 or NaN, which read as 1, records
+        // the same sequence bit for bit as no multiplier at all: on a mesh nothing grows, the growth rule changes nothing.
+        [TestCase(1f)]
+        [TestCase(0.5f)]
+        [TestCase(0f)]
+        [TestCase(float.NaN)]
+        public void AMultiplierOfOneOrLess_RecordsTheSequenceOfNone(float multiplier)
+        {
+            foreach (var (name, b) in new[] { ("icosphere", Fixtures.Icosphere(3, 0.1f)), ("seamed cylinder", Fixtures.Cylinder(24, 20, 0.05f, 0.4f, true, out _)) })
+            {
+                using var mult = new NativeArray<float>(Enumerable.Repeat(multiplier, b.VertexCount).ToArray(), Allocator.Persistent);
+                using var none = Fixtures.Decimate(b);
+                using var some = Fixtures.Decimate(b, protection: new VertexProtection { CostMultiplier = mult });
+                AssertSameSequence(none, some, name);
+            }
         }
 
         [Test]

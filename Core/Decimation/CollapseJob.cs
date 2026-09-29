@@ -272,7 +272,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         bool IsProtected(NativeArray<byte> locked, int w) => locked.Length > 0 && locked[_origin[w]] != 0;
 
-        float MultiplierOf(NativeArray<float> mult, int w) => mult.Length > 0 ? math.max(mult[_origin[w]], 0f) : 1f;
+        /// <summary>A vertex's cost multiplier, never under 1: a multiplier only keeps a vertex longer. NaN reads as 1.</summary>
+        float MultiplierOf(NativeArray<float> mult, int w) => mult.Length > 0 ? math.max(mult[_origin[w]], 1f) : 1f;
 
         int Rep(int w) => math.min(w, _partner[w]);
 
