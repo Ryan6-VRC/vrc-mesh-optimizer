@@ -205,6 +205,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public int ExposedByDeletion;
 
         public int Total => Unweighted + Swings + SeeThrough + Escaped;
+
+        /// <summary>Adds another mesh's counts to these, reason by reason.</summary>
+        public void Add(in DeclineCounts other)
+        {
+            Unweighted += other.Unweighted;
+            Swings += other.Swings;
+            SeeThrough += other.SeeThrough;
+            Escaped += other.Escaped;
+            ExposedByFrame += other.ExposedByFrame;
+            ExposedByDeletion += other.ExposedByDeletion;
+        }
     }
 
     /// <summary>One mesh's result, over its own indices. The caller disposes it.</summary>

@@ -1,7 +1,10 @@
+using System;
 using System.Collections.Generic;
+using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
+using Unity.Collections;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
 
@@ -33,9 +36,6 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         /// <summary>The renderer the descriptor names for visemes, or null.</summary>
         public Renderer Face { get; }
 
-        /// <summary>How many avatar bones are fingers or ride one.</summary>
-        public int FingerBoneCount { get; }
-
         /// <param name="scaleCurves">Scale curves any clip can play, for <see cref="UnstableBones.Growth"/>; null reads as none.</param>
         public Protection(Transform root, AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves = null)
         {
@@ -57,12 +57,55 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
             var seeds = new bool[bones.Count];
             foreach (var b in roots) seeds[b] = true;
             _finger = bones.CarryDown(seeds);
-            foreach (var f in _finger) if (f) FingerBoneCount++;
         }
 
         /// <summary>The fewest triangles <paramref name="renderer"/> may be cut to, out of <paramref name="triangles"/>.</summary>
         public int FloorFor(Renderer renderer, int triangles) =>
             renderer != null && renderer == Face ? Mathf.CeilToInt(triangles * FaceFloor) : 0;
+
+        /// <summary>
+        /// What the decimator keeps of one renderer's vertices: every vertex <see cref="Locks"/> locks, every vertex of a
+        /// triangle drawn with fur that occlusion kept (<paramref name="hidden"/>, or null for none removed), and the
+        /// costs <see cref="Multipliers"/> raises. Its arrays are added to <paramref name="owned"/>. Of the
+        /// <paramref name="locked"/> vertices, <paramref name="fromZeroScale"/> ride a bone grown from zero and
+        /// <paramref name="forFur"/> were locked for fur; <paramref name="grown"/> vertices had their cost raised.
+        /// </summary>
+        public VertexProtection For(Renderer renderer, int submeshCount, in EvalMesh eval, bool[] hidden, List<IDisposable> owned,
+            out int locked, out int fromZeroScale, out int forFur, out int grown)
+        {
+            var locks = Locks(eval, out var lockedCount, out fromZeroScale);
+            // Fur is grown per triangle, so its density is the triangle count: every vertex of a furred triangle is locked.
+            var fur = MaterialFur.Submeshes(renderer, submeshCount);
+            var lockedForFur = 0;
+            for (var t = 0; t < eval.TriangleCount; t++)
+            {
+                if ((hidden != null && hidden[t]) || !fur[eval.TriangleSubmesh[t]]) continue;
+                var tri = eval.Triangles[t];
+                for (var c = 0; c < 3; c++)
+                {
+                    locks ??= new byte[eval.VertexCount];
+                    if (locks[tri[c]] != 0) continue;
+                    locks[tri[c]] = 1;
+                    lockedCount++;
+                    lockedForFur++;
+                }
+            }
+            var vertexProtection = new VertexProtection();
+            if (locks != null)
+            {
+                vertexProtection.Locked = new NativeArray<byte>(locks, Allocator.Persistent);
+                owned.Add(vertexProtection.Locked);
+            }
+            var multipliers = Multipliers(eval, out grown);
+            if (multipliers != null)
+            {
+                vertexProtection.CostMultiplier = new NativeArray<float>(multipliers, Allocator.Persistent);
+                owned.Add(vertexProtection.CostMultiplier);
+            }
+            locked = lockedCount;
+            forFur = lockedForFur;
+            return vertexProtection;
+        }
 
         /// <summary>
         /// Per vertex, nonzero for a locked vertex, which no collapse removes: one with weight on a finger, or any weight on

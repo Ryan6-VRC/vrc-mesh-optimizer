@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
+using Ryan6Vrc.MeshOptimizer.Decimation;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Unity.Mathematics;
@@ -58,7 +59,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             weight[bones.Id(hand)] = 500f;
             weight[bones.Id(upper.Find("Ribbon0/Ribbon1"))] = 20f;
 
-            var rig = OptimizerPipeline.RigOf(bones, weight);
+            var rig = BendRigs.Of(bones, weight);
             try
             {
                 var axis = rig.Axis[bones.Id(upper)];

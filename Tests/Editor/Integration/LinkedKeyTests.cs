@@ -176,6 +176,27 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(report.Summary(), Does.Contain("linked Body:heels, Tights:heels: 1 configurations"));
         }
 
+        // A key that moves alone though its clips drive it with another is counted by why: the refusals the linker found, for
+        // keys the pass evaluates, and a link the pass cannot evaluate as one, here because its other member wears Cloth.
+        [Test]
+        public void KeysThatMoveAloneThoughDrivenWithAnother_AreCountedInTheReport_ByReason()
+        {
+            var (body, tights, _) = BootRig(bodyKeyed: 0.13f, tightsKeyed: 0.135f);
+            tights.gameObject.AddComponent<Cloth>();
+
+            var report = a.Run(tweak: input =>
+            {
+                input.Liveness = Classified(body, tights);
+                input.Links = Linked(body, tights);
+                input.Unlinked = new[] { (new LinkedKey(body, 0), LinkRefusal.Masked), (new LinkedKey(tights, 0), LinkRefusal.Masked) };
+            });
+
+            Assert.That(report.Links, Is.Empty);
+            Assert.That(report.LinkRefusals, Is.EquivalentTo(new Dictionary<LinkRefusal, int> { [LinkRefusal.Masked] = 1, [LinkRefusal.NotEvaluated] = 1 }),
+                "the tights are not evaluated, so neither refusal counts them");
+            Assert.That(report.Summary(), Does.Contain("1 shape keys driven with another moved alone: NotEvaluated."));
+        }
+
         [Test]
         public void ALinkWhoseKeysReachDifferentWeights_IsEvaluatedAtTheUnionOfThem()
         {

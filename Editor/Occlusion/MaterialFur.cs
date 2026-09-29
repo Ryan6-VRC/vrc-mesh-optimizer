@@ -1,4 +1,5 @@
 using System;
+using Ryan6Vrc.MeshOptimizer.Core.Model;
 using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Occlusion
@@ -39,6 +40,24 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
                 for (var k = submeshCount; k < materials.Length; k++)
                     result[submeshCount - 1] |= Draws(materials[k]);
             return result;
+        }
+
+        /// <summary>
+        /// A triangle drawn with fur grows it past its cover, so it is never deleted: clears <paramref name="hidden"/> on
+        /// every triangle of a furred submesh. Like <see cref="UnstableBones.Keep"/>, this only clears flags after the
+        /// solve. Returns how many triangles it kept.
+        /// </summary>
+        public static int Keep(Renderer renderer, int submeshCount, in EvalMesh eval, bool[] hidden)
+        {
+            var fur = Submeshes(renderer, submeshCount);
+            var kept = 0;
+            for (var t = 0; t < hidden.Length; t++)
+            {
+                if (!hidden[t] || !fur[eval.TriangleSubmesh[t]]) continue;
+                hidden[t] = false;
+                kept++;
+            }
+            return kept;
         }
     }
 }

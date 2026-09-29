@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Animators;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using UnityEngine;
 
@@ -53,10 +54,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         static ShapeKeyBinding Binding(Clip clip, string path, string key, AnimationCurve curve) => Binding(clip.Layer, clip, path, key, curve);
 
         static ShapeKeyBinding Binding(Layer layer, Clip clip, string path, string key, AnimationCurve curve) =>
-            new ShapeKeyBinding(path, key, ShapeKeyClassifier.CurveValues(curve), curve.keys.Select(k => k.time).ToArray(), clip, layer, layer.Order);
+            new ShapeKeyBinding(path, key, AnimatedCurves.CurveValues(curve), curve.keys.Select(k => k.time).ToArray(), clip, layer, layer.Order);
 
         static List<KeyRef[]> Find(RendererShapeKeys[] renderers, IEnumerable<ShapeKeyBinding> bindings, params DrivenKey[] driven) =>
             ShapeKeyLinks.Find(renderers, bindings.ToList(), driven);
+
+        /// <summary>The keys <see cref="Find"/> refuses though the same clips drive them with another, with why.</summary>
+        static Dictionary<KeyRef, LinkRefusal> Refused(RendererShapeKeys[] renderers, IEnumerable<ShapeKeyBinding> bindings, params DrivenKey[] driven)
+        {
+            ShapeKeyLinks.Find(renderers, bindings.ToList(), driven, out var refused);
+            return refused;
+        }
 
         static readonly RendererShapeKeys[] BodyAndTights =
         {
@@ -76,6 +84,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
 
             Assert.That(links, Has.Count.EqualTo(1));
             Assert.That(links[0], Is.EqualTo(BothHeels));
+            Assert.That(Refused(BodyAndTights, new[] { Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f) }), Is.Empty);
         }
 
         [Test]
@@ -118,6 +127,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             };
 
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+            Assert.That(Refused(BodyAndTights, bindings), Is.EquivalentTo(new Dictionary<KeyRef, LinkRefusal> { [new KeyRef(1, 1)] = LinkRefusal.HoldAfterDriver }));
         }
 
         [Test]
@@ -147,6 +157,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             };
 
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+            Assert.That(Refused(BodyAndTights, bindings).Values, Is.EqualTo(new[] { LinkRefusal.Mismatched, LinkRefusal.Mismatched }));
         }
 
         [Test]
@@ -236,6 +247,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var bindings = new[] { Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 10f) };
 
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+            Assert.That(Refused(BodyAndTights, bindings).Values, Is.EqualTo(new[] { LinkRefusal.Mismatched, LinkRefusal.Mismatched }));
         }
 
         [Test]
@@ -265,7 +277,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var tights = new AnimationCurve(new Keyframe(0f, 100f, 0f, 400f), new Keyframe(1f, 0f, 0f, 0f));
             var bindings = new[] { Binding(Heels, "Body", "Toe_heels", body), Binding(Heels, "Tights", "Toe_heels", tights) };
 
-            Assert.That(ShapeKeyClassifier.CurveValues(body), Is.Not.EqualTo(ShapeKeyClassifier.CurveValues(tights)), "control: the samples differ");
+            Assert.That(AnimatedCurves.CurveValues(body), Is.Not.EqualTo(AnimatedCurves.CurveValues(tights)), "control: the samples differ");
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
         }
 
@@ -284,6 +296,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var bindings = new[] { Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(Heels, "Tights", "Toe_heels", 100f, 0f) };
 
             Assert.That(Find(BodyAndTights, bindings, new DrivenKey("Body", "Toe_heels")), Is.Empty);
+            Assert.That(Refused(BodyAndTights, bindings, new DrivenKey("Body", "Toe_heels")), Is.EquivalentTo(new Dictionary<KeyRef, LinkRefusal> { [new KeyRef(0, 0)] = LinkRefusal.DrivenOutsideClips }),
+                "the tights move alone only because the body cannot link, and are not counted again");
         }
 
         [Test]
@@ -293,6 +307,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var bindings = new[] { Curve(Heels, "Body", "Toe_heels", 100f, 0f), Curve(new Clip("heels"), "Tights", "Toe_heels", 100f, 0f) };
 
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+            Assert.That(Refused(BodyAndTights, bindings), Is.Empty, "different clips drive them, so nothing could have linked");
         }
 
         [Test]
@@ -303,6 +318,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var masked = new ShapeKeyBinding(tights.Path, tights.Key, tights.Values, tights.Times, tights.Clip, tights.Layer, tights.Order, masked: true);
 
             Assert.That(Find(BodyAndTights, new[] { body, masked }), Is.Empty);
+            Assert.That(Refused(BodyAndTights, new[] { body, masked }), Is.EquivalentTo(new Dictionary<KeyRef, LinkRefusal> { [new KeyRef(1, 1)] = LinkRefusal.Masked }));
         }
 
         [Test]
@@ -323,6 +339,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             };
 
             Assert.That(Find(BodyAndTights, bindings), Is.Empty);
+            Assert.That(Refused(BodyAndTights, bindings), Is.EquivalentTo(new Dictionary<KeyRef, LinkRefusal> { [new KeyRef(0, 0)] = LinkRefusal.TwoCurvesInOneClip }));
         }
 
         [Test]
@@ -342,6 +359,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var links = Find(renderers, new[] { Curve(Hips, "Body", "Hip_big", 0f, 100f), Curve(Hips, "Tights", "Hip_big", 0f, 100f) });
 
             Assert.That(links, Is.Empty);
+            Assert.That(Refused(renderers, new[] { Curve(Hips, "Body", "Hip_big", 0f, 100f), Curve(Hips, "Tights", "Hip_big", 0f, 100f) }),
+                Is.EquivalentTo(new Dictionary<KeyRef, LinkRefusal> { [new KeyRef(1, 0)] = LinkRefusal.SharedPath }));
         }
 
         [Test]
@@ -354,6 +373,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             var links = Find(renderers, bindings);
 
             Assert.That(links, Is.EqualTo(new[] { new[] { new KeyRef(0, 0), new KeyRef(1, 0) } }));
+            Assert.That(Refused(renderers, bindings), Is.EquivalentTo(new Dictionary<KeyRef, LinkRefusal> { [new KeyRef(2, 0)] = LinkRefusal.Mismatched }));
         }
 
         [Test]

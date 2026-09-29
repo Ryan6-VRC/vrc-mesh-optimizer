@@ -19,6 +19,35 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         }
     }
 
+    /// <summary>
+    /// Why a shape key moves alone though another key is driven by exactly the same set of clips of known identity: the
+    /// first reason found. The last two are the pipeline's, for a link it found and could not evaluate as one.
+    /// </summary>
+    public enum LinkRefusal
+    {
+        /// <summary>The descriptor (visemes, jaw flap, eyelids) or an MMD world drives it without a clip.</summary>
+        DrivenOutsideClips,
+        /// <summary>A curve on it is in a clip that cannot be told apart from others.</summary>
+        UnknownClip,
+        /// <summary>An avatar mask on a layer that plays it may keep a curve from it.</summary>
+        Masked,
+        /// <summary>Another renderer shares its renderer's path, and a curve does not say which of them it binds.</summary>
+        SharedPath,
+        /// <summary>One clip binds it with two different curves.</summary>
+        TwoCurvesInOneClip,
+        /// <summary>A layer that only holds it plays after a layer that drives it, or at a place not known.</summary>
+        HoldAfterDriver,
+        /// <summary>The keys its clips also drive are driven by other curves, bound differently in a driving layer, or held at another weight.</summary>
+        Mismatched,
+        /// <summary>
+        /// The rest of its link is on renderers the pass skips before extraction, or is not evaluated as live. A partner lost
+        /// later, to a failed extraction, leaves the key in its link, and it is not counted.
+        /// </summary>
+        NotEvaluated,
+        /// <summary>Its link's members no longer stand at one normalised weight.</summary>
+        HeldApart,
+    }
+
     /// <summary>A shape key by its renderer's index in the input and its index among that renderer's keys.</summary>
     internal readonly struct KeyRef : IEquatable<KeyRef>
     {
@@ -44,7 +73,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     ///
     /// Driving is the classifier's: a curve drives a key when it leaves the weight the renderer holds by more than
     /// <see cref="ShapeKeyClassifier.HoldTolerance"/>. Same curve means the same key times and the same normalised values,
-    /// keys and samples between them both, as <see cref="ShapeKeyClassifier.CurveValues"/> reads them, since tangents
+    /// keys and samples between them both, as <see cref="Animators.AnimatedCurves.CurveValues"/> reads them, since tangents
     /// carry a curve between its keys. A clip is the object, never its name.
     ///
     /// A curve that only holds a key where it already is can still stand keys apart, through the layer that plays it. A
@@ -90,7 +119,17 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// member of a group links with every other.
         /// </summary>
         public static List<KeyRef[]> Find(IReadOnlyList<RendererShapeKeys> renderers, IEnumerable<ShapeKeyBinding> bindings,
-            IEnumerable<DrivenKey> driven)
+            IEnumerable<DrivenKey> driven) => Find(renderers, bindings, driven, out _);
+
+        /// <summary>
+        /// As the other overload, and in <paramref name="refused"/> every key that links with no other though another key is
+        /// driven by exactly the same set of clips, with the first reason found against it. The set holds every clip of
+        /// known identity with a curve that drives the key, refused curves included; a curve in a clip of unknown identity
+        /// adds nothing to it, so a key driven only through such clips is never in <paramref name="refused"/>. A key that
+        /// moves alone only because its partner was refused is not in it either.
+        /// </summary>
+        public static List<KeyRef[]> Find(IReadOnlyList<RendererShapeKeys> renderers, IEnumerable<ShapeKeyBinding> bindings,
+            IEnumerable<DrivenKey> driven, out Dictionary<KeyRef, LinkRefusal> refused)
         {
             var byPath = new Dictionary<string, List<int>>();
             for (var r = 0; r < renderers.Count; r++)
@@ -100,8 +139,17 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             }
 
             var unlinkable = new HashSet<KeyRef>();
+            var reasons = new Dictionary<KeyRef, LinkRefusal>();
+            void Refuse(KeyRef k, LinkRefusal why)
+            {
+                unlinkable.Add(k);
+                if (!reasons.ContainsKey(k)) reasons[k] = why;
+            }
+            // Every clip that drives a key, whatever refuses it, to tell which keys the same clips drive.
+            var drivers = new Dictionary<KeyRef, HashSet<object>>();
+
             foreach (var d in driven)
-                if (Resolve(renderers, byPath, d.Path, d.Target, d.Key, out var key, out _)) unlinkable.Add(key);
+                if (Resolve(renderers, byPath, d.Path, d.Target, d.Key, out var key, out _)) Refuse(key, LinkRefusal.DrivenOutsideClips);
 
             var ids = new Dictionary<object, int>(ReferenceComparer.Instance);
             int Id(object o)
@@ -117,9 +165,14 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 if (!Resolve(renderers, byPath, b.Path, b.Target, b.Key, out var key, out var ambiguous)) continue;
                 var input = renderers[key.Renderer].Keys[key.Key];
                 var drives = Drives(b.Values, input.Weight);
+                if (drives && b.Clip != null)
+                {
+                    if (!drivers.TryGetValue(key, out var clips)) drivers[key] = clips = new HashSet<object>(ReferenceComparer.Instance);
+                    clips.Add(b.Clip);
+                }
                 if (b.Clip == null || b.Times == null || b.Masked || ambiguous)
                 {
-                    unlinkable.Add(key);
+                    Refuse(key, b.Clip == null || b.Times == null ? LinkRefusal.UnknownClip : b.Masked ? LinkRefusal.Masked : LinkRefusal.SharedPath);
                     continue;
                 }
                 var clip = Id(b.Clip);
@@ -134,20 +187,25 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 // One clip reached twice gives the same curve again; a different curve from the same clip on the same key is
                 // two bindings resolving to one renderer, and no one can say which plays.
                 if (!use.Curves.TryGetValue(clip, out var same)) use.Curves[clip] = curve;
-                else if (!Same(same, curve, 0f)) unlinkable.Add(key);
+                else if (!Same(same, curve, 0f)) Refuse(key, LinkRefusal.TwoCurvesInOneClip);
 
                 if (!drives) continue;
                 if (!curves.TryGetValue(key, out var list)) curves[key] = list = new List<Curve>();
                 same = list.FirstOrDefault(c => c.Clip == clip);
                 if (same == null) list.Add(curve);
-                else if (!Same(same, curve, 0f)) unlinkable.Add(key);
+                else if (!Same(same, curve, 0f)) Refuse(key, LinkRefusal.TwoCurvesInOneClip);
             }
 
             // Keys driven by the same set of clips, then within each set, groups whose every pair matches.
             var buckets = new Dictionary<string, List<KeyRef>>();
             foreach (var kv in curves.OrderBy(kv => kv.Key.Renderer).ThenBy(kv => kv.Key.Key))
             {
-                if (unlinkable.Contains(kv.Key) || !HoldsPlayFirst(layers[kv.Key])) continue;
+                if (unlinkable.Contains(kv.Key)) continue;
+                if (!HoldsPlayFirst(layers[kv.Key]))
+                {
+                    reasons[kv.Key] = LinkRefusal.HoldAfterDriver;
+                    continue;
+                }
                 kv.Value.Sort((a, b) => a.Clip.CompareTo(b.Clip));
                 var set = string.Join(",", kv.Value.Select(c => c.Clip));
                 if (!buckets.TryGetValue(set, out var bucket)) buckets[set] = bucket = new List<KeyRef>();
@@ -164,8 +222,25 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                     else open.Add(new List<KeyRef> { key });
                 }
                 groups.AddRange(open.Where(g => g.Count > 1).Select(g => g.ToArray()));
+                if (bucket.Count > 1)
+                    foreach (var g in open.Where(g => g.Count == 1)) reasons[g[0]] = LinkRefusal.Mismatched;
             }
             groups.Sort((a, b) => a[0].Renderer != b[0].Renderer ? a[0].Renderer.CompareTo(b[0].Renderer) : a[0].Key.CompareTo(b[0].Key));
+
+            refused = new Dictionary<KeyRef, LinkRefusal>();
+            var grouped = new HashSet<KeyRef>(groups.SelectMany(g => g));
+            var clipIds = new Dictionary<object, int>(ReferenceComparer.Instance);
+            string SetOf(HashSet<object> clips) => string.Join(",", clips.Select(c =>
+            {
+                if (!clipIds.TryGetValue(c, out var id)) clipIds[c] = id = clipIds.Count;
+                return id;
+            }).OrderBy(id => id));
+            foreach (var set in drivers.GroupBy(kv => SetOf(kv.Value)))
+            {
+                if (set.Count() < 2) continue;
+                foreach (var kv in set)
+                    if (!grouped.Contains(kv.Key) && reasons.TryGetValue(kv.Key, out var why)) refused[kv.Key] = why;
+            }
             return groups;
         }
 

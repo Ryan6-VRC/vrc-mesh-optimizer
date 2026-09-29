@@ -110,7 +110,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
     /// <summary>
     /// One animation curve on a shape key: the renderer's path from the avatar root, the key's name, the values the
-    /// curve takes as <see cref="ShapeKeyClassifier.CurveValues"/> reads them, and, for linking, the clip it is in and
+    /// curve takes as <see cref="Animators.AnimatedCurves.CurveValues"/> reads them, and, for linking, the clip it is in and
     /// the times of its keys.
     /// </summary>
     internal readonly struct ShapeKeyBinding
@@ -254,27 +254,6 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             if (live) return ShapeKeyLiveness.Live(lo / full, hi / full, key.Weight);
             if (Mathf.Abs(key.Weight) > HoldTolerance) return ShapeKeyLiveness.Frozen(key.Weight);
             return ShapeKeyLiveness.Dead;
-        }
-
-        /// <summary>
-        /// The values a curve takes: its keys, and samples between them, because a curve's tangents can carry it
-        /// past both of the keys it runs between.
-        /// </summary>
-        public static float[] CurveValues(AnimationCurve curve, int samplesPerSegment = 8)
-        {
-            var keys = curve.keys;
-            if (keys.Length == 0) return Array.Empty<float>();
-            var values = new List<float>(keys.Length * (samplesPerSegment + 1));
-            for (var i = 0; i < keys.Length; i++)
-            {
-                values.Add(keys[i].value);
-                if (i + 1 == keys.Length) break;
-                var t0 = keys[i].time;
-                var t1 = keys[i + 1].time;
-                for (var s = 1; s < samplesPerSegment; s++)
-                    values.Add(curve.Evaluate(Mathf.Lerp(t0, t1, s / (float)samplesPerSegment)));
-            }
-            return values.ToArray();
         }
     }
 }

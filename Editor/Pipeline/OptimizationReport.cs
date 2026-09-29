@@ -178,8 +178,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>
-    /// What one optimization did to one avatar. The latest few stay in memory, from the pass or from any direct
-    /// run of the pipeline, in <see cref="OptimizationReports"/>; nothing is written to disk.
+    /// What one optimization did to one avatar. The latest few builds' stay in memory, in
+    /// <see cref="OptimizationReports"/>; nothing is written to disk.
     /// </summary>
     public sealed class OptimizationReport
     {
@@ -205,6 +205,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// alone, its renderer taking its own frame and every other renderer at rest.
         /// </summary>
         public List<ConfigurationReport> Configurations { get; } = new List<ConfigurationReport>();
+        /// <summary>
+        /// Per reason, how many shape keys the pass evaluated moved alone though another key is driven by exactly the same set
+        /// of clips of known identity, so whatever they kept exposed cannot be told from a real exposure by the links alone. A
+        /// key driven only through clips of unknown identity is never counted (<see cref="LinkRefusal"/>).
+        /// </summary>
+        public Dictionary<LinkRefusal, int> LinkRefusals { get; } = new Dictionary<LinkRefusal, int>();
 
         public bool OcclusionRan { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
@@ -242,6 +248,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused.");
             foreach (var link in Links)
                 sb.Append($"\n  linked {link}: {Configurations.Count(x => x.Link == link)} configurations.");
+            foreach (LinkRefusal reason in System.Enum.GetValues(typeof(LinkRefusal)))
+                if (LinkRefusals.TryGetValue(reason, out var keys) && keys > 0)
+                    sb.Append($"\n  {keys} shape keys driven with another moved alone: {reason}.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
             var fromZero = Renderers.Sum(r => r.LockedFromZeroScale);

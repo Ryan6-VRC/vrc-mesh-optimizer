@@ -23,11 +23,14 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         /// <summary>
         /// Classifies every shape key of each renderer on the avatar being built, and finds the keys that cannot be driven
-        /// apart (<see cref="ShapeKeyLinks"/>) from the same sources. The calling pass must hold
-        /// <see cref="AnimatorServicesContext"/>, which also keeps NDMF from committing the controllers around it.
+        /// apart (<see cref="ShapeKeyLinks"/>) from the same sources, with the keys that could have linked and did not, each
+        /// with why (<see cref="ShapeKeyLinks.Find(IReadOnlyList{RendererShapeKeys}, IEnumerable{ShapeKeyBinding}, IEnumerable{DrivenKey}, out Dictionary{KeyRef, LinkRefusal})"/>).
+        /// The calling pass must hold <see cref="AnimatorServicesContext"/>, which also keeps NDMF from committing the
+        /// controllers around it.
         /// </summary>
         public static Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Classify(
-            BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers, out List<LinkedKey[]> links)
+            BuildContext context, IReadOnlyList<SkinnedMeshRenderer> renderers, out List<LinkedKey[]> links,
+            out List<(LinkedKey key, LinkRefusal reason)> unlinked)
         {
             var root = context.AvatarRootTransform;
             var inputs = renderers.Select(r => Describe(r, root)).ToList();
@@ -39,8 +42,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             var table = ShapeKeyClassifier.Classify(inputs, bindings, driven);
             var result = new Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]>();
             for (var i = 0; i < renderers.Count; i++) result[renderers[i]] = table[i];
-            links = ShapeKeyLinks.Find(inputs, bindings, driven)
+            links = ShapeKeyLinks.Find(inputs, bindings, driven, out var refused)
                 .Select(g => g.Select(k => new LinkedKey(renderers[k.Renderer], k.Key)).ToArray()).ToList();
+            unlinked = refused.Select(kv => (new LinkedKey(renderers[kv.Key.Renderer], kv.Key.Key), kv.Value)).ToList();
             return result;
         }
 
@@ -57,6 +61,13 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             return new RendererShapeKeys(PathOf(root, renderer.transform), keys, renderer.transform);
         }
 
+        /// <summary>
+        /// Every key of the renderer evaluated as live from the weight it holds to full weight: the liveness of a renderer
+        /// whose drivers are not known, which judges it against every state its keys can reach.
+        /// </summary>
+        public static ShapeKeyLiveness[] EveryKeyLive(SkinnedMeshRenderer renderer, Transform root) =>
+            Describe(renderer, root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
+
         /// <summary>Every shape-key curve in every controller NDMF holds; see <see cref="AnimatedCurves.FromAnimatorServices"/>.</summary>
         public static IEnumerable<ShapeKeyBinding> FromAnimatorServices(AnimatorServicesContext services, Transform root) =>
             AnimatedCurves.FromAnimatorServices(services, root, IsShapeKey).Select(c => Binding(root, c));
@@ -67,7 +78,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         static ShapeKeyBinding Binding(Transform root, AnimatedCurve c) =>
             new ShapeKeyBinding(PathOf(root, c.Target), c.Binding.propertyName.Substring(BlendShapePrefix.Length),
-                ShapeKeyClassifier.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip, c.Layer, c.Order, c.Masked, c.Target);
+                AnimatedCurves.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip, c.Layer, c.Order, c.Masked, c.Target);
 
         /// <summary>The descriptor's visemes, jaw flap and eyelids, which VRChat drives without a clip.</summary>
         public static IEnumerable<DrivenKey> FromDescriptor(Transform root)
