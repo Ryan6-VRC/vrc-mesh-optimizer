@@ -22,8 +22,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
     }
 
     /// <summary>
-    /// One vertex's displacement in one frame, in avatar-root space, already scaled to the largest
-    /// weight the frame is ever driven to.
+    /// One vertex's displacement in one frame, in avatar-root space: from where it stands at rest to where
+    /// the frame's configuration puts it.
     /// </summary>
     public struct ShapeDelta
     {
@@ -33,16 +33,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
 
     /// <summary>
     /// A renderer's geometry as the algorithms evaluate it: avatar-root space, metres, skinned at the
-    /// pose the avatar stands in, with every frozen shape key applied. One space and one unit across
-    /// renderers is what makes an error comparable between them and lets one occlude another.
+    /// pose the avatar stands in, with every shape key at the weight the renderer holds it at. One space
+    /// and one unit across renderers is what makes an error comparable between them and lets one occlude
+    /// another.
     ///
     /// Indices are the source mesh's own vertex indices. The algorithms never create or move a vertex,
     /// so their whole output is stated over these indices and the source mesh is never rebuilt from
     /// this struct.
     ///
-    /// A configuration is the rest state or one entry of <see cref="Frames"/>. Vertex v stands at
-    /// Positions[v] in the rest state, and at Positions[v] plus the frame's delta for v, if it has
-    /// one, in that frame's configuration.
+    /// A configuration is the rest state or one entry of <see cref="Frames"/>. The rest state is the
+    /// avatar as it stands; a frame is one live shape key moved from its held weight to another weight
+    /// it reaches, every other key held. Vertex v stands at Positions[v] in the rest state, and at
+    /// Positions[v] plus the frame's delta for v, if it has one, in that frame's configuration.
     /// </summary>
     public struct EvalMesh : IDisposable
     {
@@ -60,7 +62,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
         /// <summary>Per vertex: weight descending, summing to 1. An unskinned renderer has one influence per vertex, its own Transform.</summary>
         public NativeArray<BoneInfluence> Weights;
 
-        /// <summary>Live frames only. Frozen keys are already in Positions, and dead keys are not evaluated.</summary>
+        /// <summary>Live frames only. Every key's held weight is already in Positions, and dead keys are not evaluated.</summary>
         public NativeArray<ShapeFrame> Frames;
         /// <summary>Grouped by frame, vertex ascending within a frame. A vertex a frame does not move has no entry.</summary>
         public NativeArray<ShapeDelta> Deltas;

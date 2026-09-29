@@ -12,45 +12,52 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 {
     internal enum ConfigurationKind : byte
     {
-        /// <summary>Frozen keys at their frozen weights, every other key at zero, bones where the avatar stands.</summary>
-        Rest,
         /// <summary>
-        /// Rest, with every live key at the weight the renderer held when the gate was called: the shapes the avatar is
-        /// seen in by default. Present only when some live key is held off zero.
+        /// Every key at the weight the renderer holds, which is the weight liveness recorded, bones where the avatar stands: the
+        /// state the avatar is seen in by default, and the one the optimizer evaluates as rest.
         /// </summary>
         AsItStands,
-        /// <summary>Rest, with one live key at one authored frame weight under its driven maximum, or at that maximum.</summary>
+        /// <summary>
+        /// Frozen keys at their held weights, every live key at zero, bones where the avatar stands. Present only when some
+        /// live key is held off zero; otherwise it is the avatar as it stands.
+        /// </summary>
+        LiveKeysAtZero,
+        /// <summary>
+        /// As it stands, with one live key moved to one other weight it reaches, the weights the optimizer evaluates it at
+        /// (<see cref="MeshExtractor.Configurations"/>).
+        /// </summary>
         ShapeKey,
-        /// <summary>Rest, or as it stands when <see cref="GateConfiguration.AtHeldWeights"/>, with the bones posed.</summary>
+        /// <summary>As it stands, or with live keys at zero when <see cref="GateConfiguration.LiveKeysAtZero"/>, with the bones posed.</summary>
         Pose,
     }
 
     internal readonly struct GateConfiguration
     {
         public readonly ConfigurationKind Kind;
-        /// <summary>"rest", "as it stands", the shape key's name, or the pose's name.</summary>
+        /// <summary>"as it stands", "live keys at zero", the shape key's name, or the pose's name.</summary>
         public readonly string Name;
         /// <summary>For a shape key configuration, the key's index; otherwise -1.</summary>
         public readonly int ShapeKey;
         /// <summary>For a shape key configuration, the weight it is driven to, in the renderer's units; otherwise 0.</summary>
         public readonly float Weight;
-        /// <summary>For a pose, whether its live keys are at the weights the renderer held rather than at rest.</summary>
-        public readonly bool AtHeldWeights;
+        /// <summary>For a pose, whether its live keys are at zero rather than at the weights the renderer held.</summary>
+        public readonly bool LiveKeysAtZero;
 
-        public GateConfiguration(ConfigurationKind kind, string name, int shapeKey = -1, float weight = 0f, bool atHeldWeights = false)
+        public GateConfiguration(ConfigurationKind kind, string name, int shapeKey = -1, float weight = 0f, bool liveKeysAtZero = false)
         {
             Kind = kind;
             Name = name;
             ShapeKey = shapeKey;
             Weight = weight;
-            AtHeldWeights = atHeldWeights;
+            LiveKeysAtZero = liveKeysAtZero;
         }
 
         public override string ToString() => Kind switch
         {
             ConfigurationKind.ShapeKey => $"shape key '{Name}' at {Weight.ToString("0.###", CultureInfo.InvariantCulture)}",
-            ConfigurationKind.Pose => AtHeldWeights ? $"pose '{Name}' as it stands" : $"pose '{Name}'",
-            ConfigurationKind.AsItStands => "as it stands, live keys at the weights the renderer holds",
+            ConfigurationKind.Pose => LiveKeysAtZero ? $"pose '{Name}' with live keys at zero" : $"pose '{Name}'",
+            ConfigurationKind.AsItStands => "as it stands, every key at the weight the renderer holds",
+            ConfigurationKind.LiveKeysAtZero => "live keys at zero, frozen keys held",
             _ => Name,
         };
     }
@@ -167,11 +174,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <param name="liveness">One entry per shape key of <paramref name="source"/>; may be null only for a mesh without shape keys.</param>
         /// <param name="poses">Poses to bake in, usually <see cref="PoseBank.Default"/>.</param>
         /// <remarks>
-        /// Configurations, in order: rest; as it stands, when a live key is held off zero; each live key alone at each
-        /// authored frame weight under its driven maximum and at that maximum; each pose at rest weights, and again as it
-        /// stands. A
-        /// MeshRenderer is measured at rest only: it never applies shape keys, and a pose moves it rigidly, which moves
-        /// no distance. A muscle pose on an avatar with no humanoid Avatar is skipped and named in the report. The avatar
+        /// Configurations, in order: as it stands; live keys at zero, when a live key is held off zero; each live key moved
+        /// alone, every other key as it stands, to each weight the optimizer evaluates it at; each pose as it stands, and
+        /// again with live keys at zero. A MeshRenderer is measured as it stands only: it never applies shape keys, and a
+        /// pose moves it rigidly, which moves no distance. A muscle pose on an avatar with no humanoid Avatar is skipped and named in the report. The avatar
         /// is left as it was found, every blendshape weight, every transform and the renderer's mesh, when this throws too.
         /// </remarks>
         public static GeometryReport Measure(Renderer renderer, Transform avatarRoot, Mesh source, Mesh optimized,
@@ -216,10 +222,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         {
             sides.A.Positions = input.Bake(input.Source, null, null, root);
             sides.B.Positions = input.Bake(input.Optimized, null, null, root);
-            var measured = new[] { new ConfigurationDistance(new GateConfiguration(ConfigurationKind.Rest, "rest"), SurfaceDistance.Measure(sides.A, sides.B, settings)) };
+            var measured = new[] { new ConfigurationDistance(new GateConfiguration(ConfigurationKind.AsItStands, "as it stands"), SurfaceDistance.Measure(sides.A, sides.B, settings)) };
             var skipped = new List<SkippedConfiguration>();
             foreach (var pose in poses)
-                skipped.Add(new SkippedConfiguration($"pose '{pose.Name}'", "a MeshRenderer moves rigidly with its bone, so every pose reads as rest does"));
+                skipped.Add(new SkippedConfiguration($"pose '{pose.Name}'", "a MeshRenderer moves rigidly with its bone, so every pose reads as it stands"));
             return new GeometryReport(input.Renderer, measured, skipped);
         }
 
@@ -227,19 +233,19 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         {
             var source = input.Source;
             var liveness = input.Liveness;
-            var restWeights = input.RestWeights();
-            var standingWeights = input.HeldWeights(out var standing);
+            var standingWeights = input.StandingWeights(out var liveOffZero);
+            var zeroWeights = input.LiveKeysAtZero();
             var configurations = new List<(GateConfiguration configuration, GatePose pose, float[] weights)>
             {
-                (new GateConfiguration(ConfigurationKind.Rest, "rest"), null, restWeights),
+                (new GateConfiguration(ConfigurationKind.AsItStands, "as it stands"), null, standingWeights),
             };
-            if (standing) configurations.Add((new GateConfiguration(ConfigurationKind.AsItStands, "as it stands"), null, standingWeights));
+            if (liveOffZero) configurations.Add((new GateConfiguration(ConfigurationKind.LiveKeysAtZero, "live keys at zero"), null, zeroWeights));
             for (var k = 0; k < source.blendShapeCount; k++)
             {
                 if (liveness[k].State != ShapeKeyState.Live) continue;
-                foreach (var weight in KeyWeights(source, k, liveness[k].DrivenMax))
+                foreach (var weight in KeyWeights(source, k, liveness[k], standingWeights[k]))
                 {
-                    var weights = (float[])restWeights.Clone();
+                    var weights = (float[])standingWeights.Clone();
                     weights[k] = weight;
                     configurations.Add((new GateConfiguration(ConfigurationKind.ShapeKey, source.GetBlendShapeName(k), k, weight), null, weights));
                 }
@@ -249,8 +255,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var usable = GatePoses.Usable(root, poses, skipped, out var humanoid);
             foreach (var pose in usable)
             {
-                configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name), pose, restWeights));
-                if (standing) configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name, atHeldWeights: true), pose, standingWeights));
+                configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name), pose, standingWeights));
+                if (liveOffZero) configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name, liveKeysAtZero: true), pose, zeroWeights));
             }
 
             var measured = new List<ConfigurationDistance>(configurations.Count);
@@ -285,21 +291,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         }
 
         /// <summary>
-        /// The weights a live key is measured at: each authored frame weight it passes on the way to its driven maximum,
-        /// then the maximum itself, as <see cref="MeshExtractor.Configurations"/> evaluates it for the decimator. A key
-        /// driven below zero is measured at that weight only.
+        /// The weights a live key is measured at, departing from <paramref name="held"/>: the ones the optimizer evaluates it
+        /// at, by the same rule, <see cref="MeshExtractor.Configurations"/>.
         /// </summary>
-        internal static List<float> KeyWeights(Mesh mesh, int key, float drivenMax)
-        {
-            var frames = mesh.GetBlendShapeFrameCount(key);
-            var driven = drivenMax * mesh.GetBlendShapeFrameWeight(key, frames - 1);
-            var weights = new List<float>();
-            if (driven > 0f)
-                for (var f = 0; f < frames; f++)
-                    if (mesh.GetBlendShapeFrameWeight(key, f) < driven) weights.Add(mesh.GetBlendShapeFrameWeight(key, f));
-            weights.Add(driven);
-            return weights;
-        }
+        internal static List<float> KeyWeights(Mesh mesh, int key, in ShapeKeyLiveness liveness, float held) =>
+            MeshExtractor.Configurations(ShapeKeyFrames.WeightsOf(mesh, key), liveness, held);
 
         static void Replace(ref NativeArray<float3> array, NativeArray<float3> with)
         {

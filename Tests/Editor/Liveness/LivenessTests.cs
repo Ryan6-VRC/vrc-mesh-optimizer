@@ -53,17 +53,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         }
 
         [Test]
-        public void KeyDrivenToZeroFromANonzeroWeight_IsLive_AtItsOwnWeight()
+        public void KeyDrivenToZeroFromANonzeroWeight_IsLive_HeldAtItsOwnWeight()
         {
-            // A toggle that flattens a key the renderer holds at 60 moves it between 0 and 60.
+            // A toggle that flattens a key the renderer holds at 60 moves it between 0 and 60, and the avatar stands at 60.
             var body = new RendererShapeKeys("Body", new[] { Key("shrink", 60f) });
             var result = Classify(new[] { body }, new[] { new ShapeKeyBinding("Body", "shrink", new[] { 0f }) });
 
-            Assert.That(result[0][0], Is.EqualTo(ShapeKeyLiveness.Live(0.6f)));
+            Assert.That(result[0][0], Is.EqualTo(ShapeKeyLiveness.Live(0f, 0.6f, 60f)));
         }
 
         [Test]
-        public void KeyDrivenOnlyNegative_IsLive_AtItsLargestMagnitude()
+        public void KeyDrivenOnlyNegative_IsLive_DownToItsLowestValue()
         {
             var body = new RendererShapeKeys("Body", new[] { Key("dent") });
             var result = Classify(new[] { body }, new[] { new ShapeKeyBinding("Body", "dent", new[] { 0f, -20f, -50f }) });
@@ -72,12 +72,27 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
         }
 
         [Test]
-        public void KeyDrivenBelowItsOwnWeight_IsLive_AtItsOwnWeight()
+        public void KeyDrivenBelowItsOwnWeight_IsLive_BetweenTheTwo_HeldAtItsOwnWeight()
         {
             var body = new RendererShapeKeys("Body", new[] { Key("chest", 80f) });
             var result = Classify(new[] { body }, new[] { new ShapeKeyBinding("Body", "chest", new[] { 30f }) });
 
-            Assert.That(result[0][0], Is.EqualTo(ShapeKeyLiveness.Live(0.8f)));
+            Assert.That(result[0][0], Is.EqualTo(ShapeKeyLiveness.Live(0.3f, 0.8f, 80f)));
+        }
+
+        [Test]
+        public void KeyDrivenBothAboveAndBelowZero_KeepsBothEnds()
+        {
+            // Held at 50, driven to -100 by one clip and 80 by another: a single signed extreme would keep -100 and lose
+            // the 80, the one configuration here that pushes the surface further out than the avatar stands.
+            var body = new RendererShapeKeys("Body", new[] { Key("swell", 50f) });
+            var bindings = new[]
+            {
+                new ShapeKeyBinding("Body", "swell", new[] { -100f }),
+                new ShapeKeyBinding("Body", "swell", new[] { 80f }),
+            };
+
+            Assert.That(Classify(new[] { body }, bindings)[0][0], Is.EqualTo(ShapeKeyLiveness.Live(-1f, 0.8f, 50f)));
         }
 
         [Test]
