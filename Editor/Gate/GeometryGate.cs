@@ -192,6 +192,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     throw new ArgumentException($"the optimized mesh has {optimized.blendShapeCount} shape keys and the source {source.blendShapeCount}; an optimized mesh keeps every one", nameof(optimized));
                 if (optimized.bindposes.Length != source.bindposes.Length)
                     throw new ArgumentException($"the optimized mesh has {optimized.bindposes.Length} bind poses and the source {source.bindposes.Length}; both must skin to the renderer's bones", nameof(optimized));
+                var holds = skinned.sharedMesh;
+                if (holds != null && holds != source && holds != optimized && !SameKeys(holds, source))
+                    throw new ArgumentException(
+                        $"'{renderer.name}' holds '{holds.name}', whose shape keys are not the source's by name and index, so its weights cannot say how the avatar stands; hand the gate the renderer holding the source or the optimized mesh",
+                        nameof(renderer));
                 var keys = liveness?.Count ?? 0;
                 if (keys != source.blendShapeCount)
                     throw new ArgumentException($"liveness has {keys} entries for a source mesh with {source.blendShapeCount} shape keys; pass the renderer's liveness table", nameof(liveness));
@@ -258,8 +263,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             };
             for (var k = 0; k < keyCount; k++)
                 if (liveness[k].State == ShapeKeyState.Frozen) restWeights[k] = liveness[k].FrozenWeight;
-            // Read before any weight is set. A renderer holding a mesh with fewer keys holds the rest at zero.
-            var heldCount = renderer.sharedMesh != null ? Math.Min(renderer.sharedMesh.blendShapeCount, keyCount) : 0;
+            // Read before any weight is set, from a mesh whose keys are the source's by index (checked by Measure).
+            var heldCount = renderer.sharedMesh != null ? keyCount : 0;
             var standingWeights = (float[])restWeights.Clone();
             var standing = false;
             for (var k = 0; k < heldCount; k++)
@@ -333,6 +338,14 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 }
             }
             return new GeometryReport(renderer, measured, skipped);
+        }
+
+        static bool SameKeys(Mesh a, Mesh b)
+        {
+            if (a.blendShapeCount != b.blendShapeCount) return false;
+            for (var k = 0; k < a.blendShapeCount; k++)
+                if (a.GetBlendShapeName(k) != b.GetBlendShapeName(k)) return false;
+            return true;
         }
 
         /// <summary>

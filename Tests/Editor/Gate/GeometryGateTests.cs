@@ -334,6 +334,29 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(State.Of(root, renderer), Is.EqualTo(before));
         }
 
+        [Test]
+        public void RendererHoldingAMeshWithOtherKeys_IsRefused_BecauseItsWeightsCannotSayHowTheAvatarStands()
+        {
+            var (root, renderer, source, optimized) = SheetRig();
+            var other = _scene.Track(Sheet.Mesh("other"));
+            Sheet.AddKey(other, "held", new Vector3(0, 0, 0.004f));
+            renderer.sharedMesh = other;
+            renderer.SetBlendShapeWeight(0, 100f);
+            var liveness = new[] { ShapeKeyLiveness.Live(1f), ShapeKeyLiveness.Live(1f), ShapeKeyLiveness.Dead };
+
+            var e = Assert.Throws<ArgumentException>(() => GeometryGate.Measure(renderer, root, source, optimized, null, liveness, null, Settings));
+            StringAssert.Contains("'other'", e.Message);
+
+            // Holding the optimized mesh, whose keys are the source's by index, is how the gate may find a built avatar.
+            renderer.sharedMesh = optimized;
+            renderer.SetBlendShapeWeight(0, 0f);
+            renderer.SetBlendShapeWeight(1, 100f);
+            var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, null, Settings);
+            Assert.That(report.Configurations[1].Configuration.Kind, Is.EqualTo(ConfigurationKind.AsItStands));
+            Assert.That(report.Stats(1, GateDirection.SourceToOptimized).Max, Is.EqualTo(0.004f).Within(1e-5f));
+            Assert.That(renderer.sharedMesh, Is.SameAs(optimized));
+        }
+
         sealed class ThrowingPose : GatePose
         {
             public ThrowingPose() : base("throws") { }
