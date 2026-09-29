@@ -70,7 +70,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float Error { get; internal set; }
         public int FloorTriangles { get; internal set; }
         public float Weight { get; internal set; }
-        /// <summary>Vertices no collapse could remove: on a finger, or on a bone a clip can grow.</summary>
+        /// <summary>Vertices no collapse could remove: on a finger, on a bone a clip can grow, or of a triangle drawn with fur.</summary>
         public int LockedVertices { get; internal set; }
         /// <summary>
         /// Of <see cref="LockedVertices"/>, those with weight on a bone a clip can grow above its rest scale, whose cost
@@ -83,6 +83,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public long ClearanceRefused { get; internal set; }
         /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
         public int KeptOnUnstableBones { get; internal set; }
+        /// <summary>Triangles occlusion found covered but kept because their material grows fur past the cover.</summary>
+        public int KeptForFur { get; internal set; }
         /// <summary>
         /// Triangles occlusion kept because an outline draws their back, though their front was covered: at most what
         /// judging the outline's side cost this renderer. Zero unless the component's outlines show the inside.
@@ -235,6 +237,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var growing = Renderers.Sum(r => r.LockedOnGrowingBones);
             if (growing > 0)
                 sb.Append($"\n  {growing} vertices on bones a clip grows were kept from decimation.");
+            var fur = Renderers.Sum(r => r.KeptForFur);
+            if (fur > 0)
+                sb.Append($"\n  fur kept {fur} covered triangles.");
             if (KeptForOutline > 0)
                 sb.Append($"\n  outlines kept up to {KeptForOutline} triangles whose front was covered.");
             foreach (var m in UnmatchedMaterialOverrides)

@@ -528,6 +528,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
                     job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable);
+                    job.Report.KeptForFur = KeepFur(job);
                     job.Report.KeptForOutline = outlines ? KeptForOutline(job, results[i]) : 0;
                     job.Report.HiddenSourceTriangles = job.Hidden;
                     var d = results[i].Declined;
@@ -558,6 +559,23 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (results != null) foreach (var r in results) r.Dispose();
                 foreach (var o in owned) o.Dispose();
             }
+        }
+
+        /// <summary>
+        /// A triangle drawn with fur grows it past its cover (<see cref="MaterialFur"/>), so it is never deleted. Like
+        /// <see cref="KeepUnstable"/>, this only clears flags after the solve. Returns how many triangles it kept.
+        /// </summary>
+        static int KeepFur(Job job)
+        {
+            var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
+            var kept = 0;
+            for (var t = 0; t < job.Hidden.Length; t++)
+            {
+                if (!job.Hidden[t] || !fur[job.Eval.TriangleSubmesh[t]]) continue;
+                job.Hidden[t] = false;
+                kept++;
+            }
+            return kept;
         }
 
         /// <summary>
@@ -813,6 +831,20 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 }
 
                 var locks = protection.Locks(eval, out var lockedCount, out var growingCount);
+                // Fur is grown per triangle, so its density is the triangle count: every vertex of a furred triangle is locked.
+                var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
+                foreach (var t in reduced)
+                {
+                    if (!fur[eval.TriangleSubmesh[t]]) continue;
+                    var tri = eval.Triangles[t];
+                    for (var c = 0; c < 3; c++)
+                    {
+                        locks ??= new byte[eval.VertexCount];
+                        if (locks[tri[c]] != 0) continue;
+                        locks[tri[c]] = 1;
+                        lockedCount++;
+                    }
+                }
                 var vertexProtection = new VertexProtection();
                 if (locks != null)
                 {
