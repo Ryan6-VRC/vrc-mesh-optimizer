@@ -134,7 +134,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     internal static class Samples
     {
         public const int MaxBones = 8;
-        public const int MaxSubdivision = 8;
+        /// <summary>Lattice steps per edge at most. A triangle that needs more at the spacing is kept, never sampled coarser.</summary>
+        public const int MaxSubdivision = 16;
 
         public static float3 UsableNormal(float3 n, float3 fallback, out bool ok)
         {
@@ -163,6 +164,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public float MinInfluence;
         public NativeArray<int> TriSampleStart;
         public NativeArray<int> TriSampleCount;
+        /// <summary>Out: lattice steps per edge sampled, 0 for corners only.</summary>
+        public NativeArray<int> TriSubdivision;
+        /// <summary>Out: set for a triangle too large to sample at the spacing, which is then never hidden.</summary>
+        public NativeArray<bool> TriVeto;
         public NativeList<float3> SamplePos;
         public NativeList<float3> SampleNrm;
         public NativeList<int> SampleMesh;
@@ -181,7 +186,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 float3 a = Pos[tri.x], b = Pos[tri.y], c = Pos[tri.z];
                 var longest = math.sqrt(math.max(math.distancesq(a, b), math.max(math.distancesq(b, c), math.distancesq(c, a))));
                 if (longest <= Spacing) continue;
-                var n = math.clamp((int)math.ceil(longest / Spacing), 2, Samples.MaxSubdivision);
+                var n = math.max(2, (int)math.ceil(longest / Spacing));
+                if (n > Samples.MaxSubdivision)
+                {
+                    TriVeto[t] = true;
+                    continue;
+                }
+                TriSubdivision[t] = n;
                 TriSampleStart[t] = SamplePos.Length;
                 var added = 0;
                 for (var i = 0; i <= n; i++)
@@ -295,6 +306,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     internal struct FramePrepJob : IJob
     {
         public int Mesh;
+        public float Spacing;
         public int DeltaStart;
         public int DeltaCount;
         public bool MeshOccludes;
@@ -311,6 +323,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int> TriOcc;
         [ReadOnly] public NativeArray<int> TriSampleStart;
         [ReadOnly] public NativeArray<int> TriSampleCount;
+        [ReadOnly] public NativeArray<int> TriSubdivision;
+        /// <summary>Set for a triangle the frame stretches past its sampled lattice: it is never hidden.</summary>
+        public NativeArray<bool> TriVeto;
         [ReadOnly] public NativeArray<float3> SamplePos;
         [ReadOnly] public NativeArray<float3> SampleNrm;
         [ReadOnly] public NativeArray<float3> SampleBary;
@@ -348,7 +363,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 DeltaScratch[d.Vertex] = d.Delta;
                 moved.Add(d.Vertex);
             }
-            if (moved.Length == 0) return;
+            if (moved.Length == 0)
+            {
+                moved.Dispose();
+                return;
+            }
 
             // Triangles the frame reshapes, and every corner of them: those corners' normals change.
             var tris = new NativeList<int>(Allocator.Temp);
@@ -359,6 +378,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     if (TriMark[t]) continue;
                     TriMark[t] = true;
                     tris.Add(t);
+                }
+            // The rest lattice is only as fine as the rest triangle; one the frame stretches past it is kept.
+            if (Spacing > 0f)
+                foreach (var t in tris)
+                {
+                    var tri = Tris[t];
+                    float3 a = At(tri.x), b = At(tri.y), c = At(tri.z);
+                    var longest = math.sqrt(math.max(math.distancesq(a, b), math.max(math.distancesq(b, c), math.distancesq(c, a))));
+                    var need = longest > Spacing ? (int)math.ceil(longest / Spacing) : 1;
+                    if (need > math.max(1, TriSubdivision[t])) TriVeto[t] = true;
                 }
             var affected = new NativeList<int>(Allocator.Temp);
             foreach (var t in tris)
@@ -402,7 +431,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         var b = SampleBary[s];
                         var p = b.x * At(tri.x) + b.y * At(tri.y) + b.z * At(tri.z);
                         var n = b.x * NormalAt(tri.x) + b.y * NormalAt(tri.y) + b.z * NormalAt(tri.z);
-                        Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = math.lengthsq(n) > 1e-12f ? math.normalize(n) : SampleNrm[s] });
+                        if (math.lengthsq(n) <= 1e-12f) n = math.cross(At(tri.y) - At(tri.x), At(tri.z) - At(tri.x));
+                        // Still degenerate, the triangle has no area in the frame and renders nothing.
+                        Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = math.lengthsq(n) > 1e-24f ? math.normalize(n) : SampleNrm[s] });
                     }
                 }
 
@@ -514,7 +545,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<byte> Result;
         [ReadOnly] public NativeArray<int> Rays;
         [ReadOnly] public NativeArray<ulong> Witness;
-        /// <summary>Per sample: every mesh that blocked one of its rays in any live frame.</summary>
+        /// <summary>Per sample: every mesh that blocked one of its rays in any live frame, or at rest before the deletion pass re-cast it.</summary>
         public NativeArray<ulong> FrameWitness;
         [ReadOnly] public NativeArray<int> MovedOcc;
         public byte ExposeFlag;
@@ -555,6 +586,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     {
         [ReadOnly] public NativeArray<int3> Tris;
         [ReadOnly] public NativeArray<bool> Eligible;
+        [ReadOnly] public NativeArray<bool> TriVeto;
         [ReadOnly] public NativeArray<bool> Covered;
         [ReadOnly] public NativeArray<int> TriSampleStart;
         [ReadOnly] public NativeArray<int> TriSampleCount;
@@ -569,7 +601,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             for (var t = 0; t < Tris.Length; t++)
             {
                 var tri = Tris[t];
-                var ok = Eligible[t] && Covered[tri.x] && Covered[tri.y] && Covered[tri.z];
+                var ok = Eligible[t] && !TriVeto[t] && Covered[tri.x] && Covered[tri.y] && Covered[tri.z];
                 for (var s = TriSampleStart[t]; ok && s < TriSampleStart[t] + TriSampleCount[t]; s++) ok = Covered[s];
                 Candidate[t] = ok;
                 if (!ok) continue;

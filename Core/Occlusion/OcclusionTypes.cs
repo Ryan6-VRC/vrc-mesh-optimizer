@@ -55,13 +55,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             Alpha = (byte[])alpha.Clone();
         }
 
-        /// <summary>Alpha as floats in [0, 1], stored quantised to bytes.</summary>
+        /// <summary>Alpha as floats in [0, 1], stored quantised down to bytes, so a texel under the threshold never reads over it.</summary>
         public AlphaMap(int width, int height, float[] alpha, float threshold)
         {
             Check(width, height, alpha?.Length ?? -1);
             Width = width; Height = height; Threshold = threshold;
             Alpha = new byte[alpha.Length];
-            for (var i = 0; i < alpha.Length; i++) Alpha[i] = (byte)math.round(math.saturate(alpha[i]) * 255f);
+            for (var i = 0; i < alpha.Length; i++) Alpha[i] = (byte)math.floor(math.saturate(alpha[i]) * 255f);
         }
 
         static void Check(int width, int height, int length)
@@ -128,8 +128,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public float OriginOffset;
         /// <summary>
         /// A triangle whose longest edge exceeds this, in metres, is also sampled inside, on a lattice this fine
-        /// (at most 8 steps an edge), so a hole in the cover over its middle keeps it. Zero turns interior
-        /// sampling off.
+        /// (at most 16 steps an edge; a triangle needing more, at rest or in a live frame, is kept), so a hole in
+        /// the cover over its middle keeps it. Zero turns interior sampling off.
         /// </summary>
         public float InteriorSpacing;
         /// <summary>A shape delta shorter than this, in metres, does not move its vertex.</summary>

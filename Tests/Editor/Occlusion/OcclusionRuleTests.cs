@@ -344,14 +344,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Assert.That(r[0].Declined.Escaped, Is.EqualTo(inner.ReferencedVertexCount));
         }
 
-        // A skin triangle 20 cm across facing +Y, under a cover grid 1 cm above it.
-        static MeshBuilder SkinTriangle()
+        // A skin triangle 20 cm across (times scale) facing +Y, under a cover grid 1 cm above it.
+        static MeshBuilder SkinTriangle(float scale = 1f)
         {
             var b = new MeshBuilder();
             var up = new float3(0, 1, 0);
-            var a = b.AddVertex(new float3(-0.1f, 0, -0.06f), up, float2.zero, MeshBuilder.On(1));
-            var c = b.AddVertex(new float3(0f, 0, 0.12f), up, float2.zero, MeshBuilder.On(1));
-            var d = b.AddVertex(new float3(0.1f, 0, -0.06f), up, float2.zero, MeshBuilder.On(1));
+            var a = b.AddVertex(scale * new float3(-0.1f, 0, -0.06f), up, float2.zero, MeshBuilder.On(1));
+            var c = b.AddVertex(scale * new float3(0f, 0, 0.12f), up, float2.zero, MeshBuilder.On(1));
+            var d = b.AddVertex(scale * new float3(0.1f, 0, -0.06f), up, float2.zero, MeshBuilder.On(1));
             b.AddTriangle(a, c, d);
             return b;
         }
@@ -377,6 +377,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             var s = Defaults;
             s.InteriorSpacing = 0f;
             Assert.That(scene.Solve(s, Bones)[0].HiddenTriangles[0], Is.True, "control: from its corners alone it reads as covered");
+        }
+
+        [Test]
+        public void TriangleTooLargeToSampleAtTheSpacing_Stays()
+        {
+            // 41 cm needs 21 lattice steps at 2 cm, past the cap: it is kept, never sampled coarser.
+            scene.Add(SkinTriangle(2f), occludes: false);
+            scene.Add(Cover(0.505f, 0f), occludes: true);
+            Assert.That(scene.Solve(Defaults, Bones)[0].HiddenTriangles[0], Is.False);
+            var s = Defaults;
+            s.InteriorSpacing = 0f;
+            Assert.That(scene.Solve(s, Bones)[0].HiddenTriangles[0], Is.True, "control: under a whole cover its corners are covered");
+        }
+
+        [Test]
+        public void TriangleAFrameStretchesPastItsLattice_Stays()
+        {
+            // 1.5 cm at rest, so sampled at its corners only; the frame stretches it to 4.6 cm, still under cover.
+            var skin = SkinTriangle(0.075f);
+            scene.Add(skin, occludes: false);
+            scene.Add(Cover(0.505f, 0f), occludes: true);
+            Assert.That(scene.Solve(Defaults, Bones)[0].HiddenTriangles[0], Is.True, "control: without the frame it is hidden");
+            scene.Dispose();
+
+            scene = new Scene();
+            skin = SkinTriangle(0.075f);
+            var frame = skin.AddFrame();
+            for (var v = 0; v < 3; v++) frame.Add(new ShapeDelta { Vertex = v, Delta = skin.Position(v) * 2f });
+            scene.Add(skin, occludes: false);
+            scene.Add(Cover(0.505f, 0f), occludes: true);
+            var r = scene.Solve(Defaults, Bones);
+            Assert.That(r[0].CoveredVertices.ToArray(), Is.All.True, "the stretched corners stay under the cover");
+            Assert.That(r[0].HiddenTriangles[0], Is.False, "the rest lattice cannot vouch for the stretched interior");
         }
 
         [Test]
@@ -413,6 +446,35 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Assert.That(r[0].HiddenCount, Is.Zero, "A's only co-moving cover is B, which goes");
             Assert.That(r[0].Declined.ExposedByDeletion, Is.EqualTo(a.ReferencedVertexCount));
             Assert.That(r[0].Declined.Swings, Is.EqualTo(a.ReferencedVertexCount), "with B gone its rays meet only C");
+        }
+
+        [Test]
+        public void DeletedCover_StillCountsForFramesItMadeIrrelevant()
+        {
+            // A on bone 1 under L (bone 2, its child), under K (bone 1, a shell whose cap a frame moves away),
+            // under M (bone 4: kin of L, not of A). At rest L is A's witness, so pass one skips K's frame for
+            // A. L is hidden and deleted; A re-cast finds K. K's frame must then be re-run for A, since with L
+            // gone and K's cap away only M, which swings, is over A's top.
+            var bones = new[] { -1, 0, 1, 2, 3 };
+            var a = InnerSphere(bone: 1);
+            var l = OuterSphere(MeshBuilder.On(2));
+            var k = new MeshBuilder();
+            var capFirst = k.SphereBand(Centre, 0.11f, 0f, 35f, 6, 48, MeshBuilder.On(1));
+            var capEnd = k.VertexCount;
+            k.SphereBand(Centre, 0.11f, 35f, 180f, 20, 48, MeshBuilder.On(1));
+            var frame = k.AddFrame();
+            for (var v = capFirst; v < capEnd; v++) frame.Add(new ShapeDelta { Vertex = v, Delta = new float3(0.5f, 0f, 0f) });
+            var m = new MeshBuilder();
+            m.Sphere(Centre, 0.115f, 24, 48, MeshBuilder.On(4));
+            scene.Add(a, occludes: false);
+            scene.Add(l, occludes: true);
+            scene.Add(k, occludes: true);
+            scene.Add(m, occludes: true);
+            var r = scene.Solve(Defaults, bones);
+            Assert.That(r[1].HiddenCount, Is.EqualTo(l.TriangleCount), "L is covered by K, and by M where K's cap leaves");
+            AssertAll(r[0], TrianglesWithin(a, 0f, 20f), false, "in K's frame, with L deleted, nothing co-moving is over it");
+            AssertAll(r[0], TrianglesWithin(a, 90f, 180f), true, "K covers the lower half in every configuration");
+            Assert.That(r[0].Declined.ExposedByDeletion, Is.GreaterThan(0));
         }
 
         [Test]

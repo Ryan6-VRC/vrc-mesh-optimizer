@@ -240,7 +240,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     Alpha[i] = new AlphaInfo
                     {
                         Width = map.Width, Height = map.Height, Offset = off,
-                        ThresholdByte = (int)math.ceil(math.saturate(map.Threshold) * 255f - 1e-4f),
+                        ThresholdByte = (int)math.ceil(math.saturate(map.Threshold) * 255f),
                         ScaleOffset = map.ScaleOffset,
                     };
                     off += map.Alpha.Length;
@@ -297,7 +297,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             NativeList<bool> Covered, Relevant;
             NativeList<ulong> Witness, FrameWitness;
             NativeList<int> RelevantList;
-            NativeArray<int> TriSampleStart, TriSampleCount;
+            NativeArray<int> TriSampleStart, TriSampleCount, TriSubdivision;
+            NativeArray<bool> TriVeto;
             NativeArray<bool> Disabled, Moved, Eligible, Candidate;
             NativeArray<BvhNode> EmptyNodes;
             NativeArray<BvhTri> EmptyPrims;
@@ -326,6 +327,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 Covered = new NativeList<bool>(V, a); Relevant = new NativeList<bool>(V, a); Witness = new NativeList<ulong>(V, a); FrameWitness = new NativeList<ulong>(V, a);
                 RelevantList = new NativeList<int>(V, a);
                 TriSampleStart = new NativeArray<int>(T, a); TriSampleCount = new NativeArray<int>(T, a);
+                TriSubdivision = new NativeArray<int>(T, a); TriVeto = new NativeArray<bool>(T, a);
                 Disabled = new NativeArray<bool>(O, a); Moved = new NativeArray<bool>(O, a);
                 Eligible = new NativeArray<bool>(T, a); Candidate = new NativeArray<bool>(T, a);
                 EmptyNodes = new NativeArray<BvhNode>(0, a); EmptyPrims = new NativeArray<BvhTri>(0, a);
@@ -364,7 +366,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 {
                     Pos = S.Pos, Tris = S.Tris, TriMesh = S.TriMesh, WeightStart = S.WeightStart, Weights = S.Weights,
                     Covered = Covered.AsArray(), Spacing = Cfg.InteriorSpacing, MinInfluence = Cfg.MinInfluence,
-                    TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount,
+                    TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount, TriSubdivision = TriSubdivision, TriVeto = TriVeto,
                     SamplePos = SamplePos, SampleNrm = SampleNrm, SampleMesh = SampleMesh, SampleBoneStart = SampleBoneStart,
                     SampleBones = SampleBones, SampleState = SampleState, SampleBary = SampleBary,
                 }.Run();
@@ -406,6 +408,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     {
                         foreach (var s in RelevantList) if (((Witness[s] | FrameWitness[s]) & lostFaces) != 0) again.Add(s);
                         stats.DeletionPassSamples = again.Length;
+                        // The re-cast replaces the rest witness. A frame pass 1 skipped because a now-deleted face
+                        // covered the sample must still be re-run, so the old dependency is kept.
+                        foreach (var s in again) FrameWitness[s] |= Witness[s];
                         RestEval(again.AsArray(), ExposedByDeletion);
                     }
                     Candidates();
@@ -469,7 +474,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 new CandidatesJob
                 {
-                    Tris = S.Tris, Eligible = Eligible, Covered = Covered.AsArray(), TriSampleStart = TriSampleStart,
+                    Tris = S.Tris, Eligible = Eligible, TriVeto = TriVeto, Covered = Covered.AsArray(), TriSampleStart = TriSampleStart,
                     TriSampleCount = TriSampleCount, Candidate = Candidate, Relevant = Relevant.AsArray(), RelevantList = RelevantList,
                 }.Run();
             }
@@ -482,10 +487,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     prepWatch.Start();
                     new FramePrepJob
                     {
-                        Mesh = mesh, DeltaStart = start, DeltaCount = count, MeshOccludes = S.MeshRoot[mesh] >= 0,
+                        Mesh = mesh, Spacing = Cfg.InteriorSpacing, DeltaStart = start, DeltaCount = count, MeshOccludes = S.MeshRoot[mesh] >= 0,
                         MoveEpsilon = Cfg.MoveEpsilon, Reach = Cfg.Reach, ConeRadians = math.radians(Cfg.ConeDegrees), Split = Cfg.Split,
                         Deltas = S.Deltas, Pos = S.Pos, GeoN = S.GeoN, VTStart = S.VTStart, VTList = S.VTList, Tris = S.Tris, TriOcc = S.TriOcc,
-                        TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount, SamplePos = SamplePos.AsArray(),
+                        TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount, TriSubdivision = TriSubdivision, TriVeto = TriVeto,
+                        SamplePos = SamplePos.AsArray(),
                         SampleNrm = SampleNrm.AsArray(), SampleBary = SampleBary.AsArray(), SampleMesh = SampleMesh.AsArray(),
                         Witness = Witness.AsArray(), Covered = Covered.AsArray(), Relevant = Relevant.AsArray(), RelevantList = RelevantList.AsArray(),
                         DeltaScratch = DeltaScratch, NormalScratch = NormalScratch, VertMark = VertMark, TriMark = TriMark, TriMark2 = TriMark2,
@@ -552,7 +558,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 void D<T>(ref NativeArray<T> x) where T : struct { if (x.IsCreated) x.Dispose(); }
                 void L<T>(ref NativeList<T> x) where T : unmanaged { if (x.IsCreated) x.Dispose(); }
-                D(ref Cone); D(ref TriSampleStart); D(ref TriSampleCount); D(ref Disabled); D(ref Moved); D(ref Eligible); D(ref Candidate);
+                D(ref Cone); D(ref TriSampleStart); D(ref TriSampleCount); D(ref TriSubdivision); D(ref TriVeto); D(ref Disabled); D(ref Moved); D(ref Eligible); D(ref Candidate);
                 D(ref EmptyNodes); D(ref EmptyPrims); D(ref RiskBox); D(ref DeltaScratch); D(ref NormalScratch); D(ref VertMark); D(ref TriMark); D(ref TriMark2);
                 L(ref SamplePos); L(ref SampleNrm); L(ref SampleBary); L(ref SampleMesh); L(ref SampleBoneStart); L(ref SampleBones);
                 L(ref SampleState); L(ref SampleReason); L(ref SampleFlags); L(ref Covered); L(ref Relevant);
