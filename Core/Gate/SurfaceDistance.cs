@@ -174,7 +174,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             }
         }
 
-        static void Validate(in Surface s, string side)
+        /// <summary>Refuses, by name, a surface a gate measure cannot read.</summary>
+        internal static void Validate(in Surface s, string side)
         {
             if (!s.Positions.IsCreated || !s.Triangles.IsCreated)
                 throw new ArgumentException($"surface {side} needs Positions and Triangles", side);
