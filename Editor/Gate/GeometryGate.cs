@@ -177,46 +177,19 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public static GeometryReport Measure(Renderer renderer, Transform avatarRoot, Mesh source, Mesh optimized,
             bool[] removedTriangles, IReadOnlyList<ShapeKeyLiveness> liveness, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings)
         {
-            if (renderer == null) throw new ArgumentNullException(nameof(renderer));
             if (avatarRoot == null) throw new ArgumentNullException(nameof(avatarRoot));
-            if (source == null) throw new ArgumentNullException(nameof(source));
-            if (optimized == null) throw new ArgumentNullException(nameof(optimized));
-            if (!renderer.transform.IsChildOf(avatarRoot))
-                throw new ArgumentException($"'{renderer.name}' is not under the avatar root '{avatarRoot.name}'", nameof(renderer));
-            var skinned = renderer as SkinnedMeshRenderer;
-            if (skinned == null && !(renderer is MeshRenderer))
-                throw new ArgumentException($"'{renderer.name}' is a {renderer.GetType().Name}; the gate measures a SkinnedMeshRenderer or a MeshRenderer", nameof(renderer));
-            if (skinned != null)
-            {
-                if (optimized.blendShapeCount != source.blendShapeCount)
-                    throw new ArgumentException($"the optimized mesh has {optimized.blendShapeCount} shape keys and the source {source.blendShapeCount}; an optimized mesh keeps every one", nameof(optimized));
-                if (optimized.bindposes.Length != source.bindposes.Length)
-                    throw new ArgumentException($"the optimized mesh has {optimized.bindposes.Length} bind poses and the source {source.bindposes.Length}; both must skin to the renderer's bones", nameof(optimized));
-                var holds = skinned.sharedMesh;
-                if (holds != null && holds != source && holds != optimized && !SameKeys(holds, source))
-                    throw new ArgumentException(
-                        $"'{renderer.name}' holds '{holds.name}', whose shape keys are not the source's by name and index, so its weights cannot say how the avatar stands; hand the gate the renderer holding the source or the optimized mesh",
-                        nameof(renderer));
-                var keys = liveness?.Count ?? 0;
-                if (keys != source.blendShapeCount)
-                    throw new ArgumentException($"liveness has {keys} entries for a source mesh with {source.blendShapeCount} shape keys; pass the renderer's liveness table", nameof(liveness));
-            }
-
-            var sourceTriangles = ReadTriangles(source);
-            var optimizedTriangles = ReadTriangles(optimized);
-            if (removedTriangles != null && removedTriangles.Length != sourceTriangles.Length)
-                throw new ArgumentException($"{removedTriangles.Length} removed-triangle flags for a source mesh with {sourceTriangles.Length} triangles", nameof(removedTriangles));
+            var input = new GateInput(renderer, source, optimized, removedTriangles, liveness);
+            input.Check(avatarRoot);
 
             var sides = new Sides();
             try
             {
-                sides.A.Triangles = new NativeArray<int3>(sourceTriangles, Allocator.Persistent);
-                sides.B.Triangles = new NativeArray<int3>(optimizedTriangles, Allocator.Persistent);
+                sides.A.Triangles = new NativeArray<int3>(ReadTriangles(source), Allocator.Persistent);
+                sides.B.Triangles = new NativeArray<int3>(ReadTriangles(optimized), Allocator.Persistent);
                 if (removedTriangles != null) sides.A.Excluded = new NativeArray<bool>(removedTriangles, Allocator.Persistent);
-                var poseList = poses ?? Array.Empty<GatePose>();
-                return skinned != null
-                    ? MeasureSkinned(skinned, avatarRoot, source, optimized, liveness, poseList, settings, ref sides)
-                    : MeasureRigid(renderer, avatarRoot, source, optimized, poseList, settings, ref sides);
+                return input.Skinned != null
+                    ? MeasureSkinned(input, avatarRoot, poses, settings, ref sides)
+                    : MeasureRigid(input, avatarRoot, poses ?? Array.Empty<GatePose>(), settings, ref sides);
             }
             finally
             {
@@ -239,42 +212,29 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             }
         }
 
-        static GeometryReport MeasureRigid(Renderer renderer, Transform root, Mesh source, Mesh optimized,
-            IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings, ref Sides sides)
+        static GeometryReport MeasureRigid(GateInput input, Transform root, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings, ref Sides sides)
         {
-            var toRoot = RendererExtraction.WorldToRoot(root) * renderer.transform.localToWorldMatrix;
-            sides.A.Positions = ToRoot(source.vertices, toRoot);
-            sides.B.Positions = ToRoot(optimized.vertices, toRoot);
+            sides.A.Positions = input.Bake(input.Source, null, null, root);
+            sides.B.Positions = input.Bake(input.Optimized, null, null, root);
             var measured = new[] { new ConfigurationDistance(new GateConfiguration(ConfigurationKind.Rest, "rest"), SurfaceDistance.Measure(sides.A, sides.B, settings)) };
             var skipped = new List<SkippedConfiguration>();
             foreach (var pose in poses)
                 skipped.Add(new SkippedConfiguration($"pose '{pose.Name}'", "a MeshRenderer moves rigidly with its bone, so every pose reads as rest does"));
-            return new GeometryReport(renderer, measured, skipped);
+            return new GeometryReport(input.Renderer, measured, skipped);
         }
 
-        static GeometryReport MeasureSkinned(SkinnedMeshRenderer renderer, Transform root, Mesh source, Mesh optimized,
-            IReadOnlyList<ShapeKeyLiveness> liveness, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings, ref Sides sides)
+        static GeometryReport MeasureSkinned(GateInput input, Transform root, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings, ref Sides sides)
         {
-            var keyCount = source.blendShapeCount;
-            var restWeights = new float[keyCount];
+            var source = input.Source;
+            var liveness = input.Liveness;
+            var restWeights = input.RestWeights();
+            var standingWeights = input.HeldWeights(out var standing);
             var configurations = new List<(GateConfiguration configuration, GatePose pose, float[] weights)>
             {
                 (new GateConfiguration(ConfigurationKind.Rest, "rest"), null, restWeights),
             };
-            for (var k = 0; k < keyCount; k++)
-                if (liveness[k].State == ShapeKeyState.Frozen) restWeights[k] = liveness[k].FrozenWeight;
-            // Read before any weight is set, from a mesh whose keys are the source's by index (checked by Measure).
-            var heldCount = renderer.sharedMesh != null ? keyCount : 0;
-            var standingWeights = (float[])restWeights.Clone();
-            var standing = false;
-            for (var k = 0; k < heldCount; k++)
-            {
-                if (liveness[k].State != ShapeKeyState.Live) continue;
-                standingWeights[k] = renderer.GetBlendShapeWeight(k);
-                standing |= standingWeights[k] != 0f;
-            }
             if (standing) configurations.Add((new GateConfiguration(ConfigurationKind.AsItStands, "as it stands"), null, standingWeights));
-            for (var k = 0; k < keyCount; k++)
+            for (var k = 0; k < source.blendShapeCount; k++)
             {
                 if (liveness[k].State != ShapeKeyState.Live) continue;
                 foreach (var weight in KeyWeights(source, k, liveness[k].DrivenMax))
@@ -286,41 +246,26 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             }
 
             var skipped = new List<SkippedConfiguration>();
-            var animator = root.GetComponent<Animator>();
-            var humanoid = animator != null && animator.avatar != null && animator.avatar.isValid && animator.avatar.isHuman;
-            var needsHumanoid = false;
-            foreach (var pose in poses)
+            var usable = GatePoses.Usable(root, poses, skipped, out var humanoid);
+            foreach (var pose in usable)
             {
-                if (pose.NeedsHumanoid && !humanoid)
-                {
-                    skipped.Add(new SkippedConfiguration($"pose '{pose.Name}'",
-                        $"it drives humanoid muscles and '{root.name}' has no Animator with a valid humanoid Avatar; pass a BoneRotationPose for this rig"));
-                    continue;
-                }
-                pose.Check(root);
-                needsHumanoid |= pose.NeedsHumanoid;
                 configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name), pose, restWeights));
                 if (standing) configurations.Add((new GateConfiguration(ConfigurationKind.Pose, pose.Name, atHeldWeights: true), pose, standingWeights));
             }
 
             var measured = new List<ConfigurationDistance>(configurations.Count);
-            var state = new AvatarState(root, renderer);
+            var state = new AvatarState(root, new[] { input.Skinned });
             HumanPoseHandler handler = null;
-            var bakedA = new Mesh { name = "gate-source-bake" };
-            var bakedB = new Mesh { name = "gate-optimized-bake" };
+            var scratch = new Mesh { name = "gate-bake" };
             try
             {
-                if (needsHumanoid) handler = new HumanPoseHandler(animator.avatar, animator.transform);
+                if (humanoid != null) handler = new HumanPoseHandler(humanoid.avatar, humanoid.transform);
                 foreach (var (configuration, pose, weights) in configurations)
                 {
                     state.RestoreTransforms();
                     pose?.Apply(root, handler);
-                    Bake(renderer, source, weights, bakedA);
-                    Bake(renderer, optimized, weights, bakedB);
-                    // With its scale, a bake is in the renderer's local space, so its local-to-world matrix places it once.
-                    var toRoot = RendererExtraction.WorldToRoot(root) * renderer.transform.localToWorldMatrix;
-                    Replace(ref sides.A.Positions, ToRoot(bakedA.vertices, toRoot));
-                    Replace(ref sides.B.Positions, ToRoot(bakedB.vertices, toRoot));
+                    Replace(ref sides.A.Positions, input.Bake(source, weights, scratch, root));
+                    Replace(ref sides.B.Positions, input.Bake(input.Optimized, weights, scratch, root));
                     measured.Add(new ConfigurationDistance(configuration, SurfaceDistance.Measure(sides.A, sides.B, settings)));
                 }
             }
@@ -333,19 +278,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 finally
                 {
                     handler?.Dispose();
-                    UnityEngine.Object.DestroyImmediate(bakedA);
-                    UnityEngine.Object.DestroyImmediate(bakedB);
+                    UnityEngine.Object.DestroyImmediate(scratch);
                 }
             }
-            return new GeometryReport(renderer, measured, skipped);
-        }
-
-        static bool SameKeys(Mesh a, Mesh b)
-        {
-            if (a.blendShapeCount != b.blendShapeCount) return false;
-            for (var k = 0; k < a.blendShapeCount; k++)
-                if (a.GetBlendShapeName(k) != b.GetBlendShapeName(k)) return false;
-            return true;
+            return new GeometryReport(input.Renderer, measured, skipped);
         }
 
         /// <summary>
@@ -365,26 +301,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             return weights;
         }
 
-        static void Bake(SkinnedMeshRenderer renderer, Mesh mesh, float[] weights, Mesh into)
-        {
-            renderer.sharedMesh = mesh;
-            for (var k = 0; k < weights.Length; k++) renderer.SetBlendShapeWeight(k, weights[k]);
-            renderer.BakeMesh(into, true);
-            if (into.vertexCount != mesh.vertexCount)
-                throw new InvalidOperationException($"baking '{mesh.name}' on '{renderer.name}' gave {into.vertexCount} vertices for a mesh with {mesh.vertexCount}");
-        }
-
         static void Replace(ref NativeArray<float3> array, NativeArray<float3> with)
         {
             if (array.IsCreated) array.Dispose();
             array = with;
-        }
-
-        static NativeArray<float3> ToRoot(Vector3[] vertices, Matrix4x4 toRoot)
-        {
-            var result = new NativeArray<float3>(vertices.Length, Allocator.Persistent);
-            for (var v = 0; v < vertices.Length; v++) result[v] = toRoot.MultiplyPoint3x4(vertices[v]);
-            return result;
         }
 
         /// <summary>Every triangle submesh's triangles, in submesh order: the order the evaluation mesh numbers them in.</summary>
@@ -398,59 +318,6 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 for (var i = 0; i + 2 < indices.Length; i += 3) triangles.Add(new int3(indices[i], indices[i + 1], indices[i + 2]));
             }
             return triangles.ToArray();
-        }
-
-        /// <summary>What the gate changes on the avatar, as it was found.</summary>
-        sealed class AvatarState
-        {
-            readonly Transform[] _transforms;
-            readonly Vector3[] _positions;
-            readonly Quaternion[] _rotations;
-            readonly Vector3[] _scales;
-            readonly SkinnedMeshRenderer _renderer;
-            readonly Mesh _mesh;
-            readonly float[] _weights;
-
-            public AvatarState(Transform root, SkinnedMeshRenderer renderer)
-            {
-                _transforms = root.GetComponentsInChildren<Transform>(true);
-                _positions = new Vector3[_transforms.Length];
-                _rotations = new Quaternion[_transforms.Length];
-                _scales = new Vector3[_transforms.Length];
-                for (var i = 0; i < _transforms.Length; i++)
-                {
-                    _positions[i] = _transforms[i].localPosition;
-                    _rotations[i] = _transforms[i].localRotation;
-                    _scales[i] = _transforms[i].localScale;
-                }
-                _renderer = renderer;
-                _mesh = renderer.sharedMesh;
-                _weights = new float[_mesh != null ? _mesh.blendShapeCount : 0];
-                for (var k = 0; k < _weights.Length; k++) _weights[k] = renderer.GetBlendShapeWeight(k);
-            }
-
-            /// <summary>Writes back only what differs, bit for bit, so an untouched transform is not written at all.</summary>
-            public void RestoreTransforms()
-            {
-                for (var i = 0; i < _transforms.Length; i++)
-                {
-                    var t = _transforms[i];
-                    if (t == null) continue;
-                    if (!t.localPosition.Equals(_positions[i])) t.localPosition = _positions[i];
-                    if (!t.localRotation.Equals(_rotations[i])) t.localRotation = _rotations[i];
-                    if (!t.localScale.Equals(_scales[i])) t.localScale = _scales[i];
-                }
-            }
-
-            /// <summary>Transforms first, so they come back even when the renderer is gone.</summary>
-            public void Restore()
-            {
-                RestoreTransforms();
-                if (_renderer == null) return;
-                if (_renderer.sharedMesh != _mesh) _renderer.sharedMesh = _mesh;
-                for (var k = 0; k < _weights.Length; k++)
-                    if (!_renderer.GetBlendShapeWeight(k).Equals(_weights[k])) _renderer.SetBlendShapeWeight(k, _weights[k]);
-            }
         }
     }
 }

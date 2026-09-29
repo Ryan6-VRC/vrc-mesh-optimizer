@@ -422,7 +422,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         }
 
         /// <summary>Everything the gate may touch, as exact text: every transform, the renderer's mesh and weights, and how many meshes and objects exist.</summary>
-        static class State
+        internal static class State
         {
             public static string[] Of(Transform root, SkinnedMeshRenderer renderer)
             {
