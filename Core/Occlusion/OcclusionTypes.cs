@@ -103,10 +103,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     {
         /// <summary>Read, never disposed, by the solver.</summary>
         public EvalMesh Mesh;
-        /// <summary>True only for a renderer that is always on. Every mesh is a candidate to be hidden; only these block rays.</summary>
+        /// <summary>True only for a renderer that is always on. Every mesh has candidates to be hidden; only these block rays.</summary>
         public bool Occludes;
         /// <summary>Per submesh index, for every renderer, occluder or not: culling Off or Front owes a triangle cover on both sides. A missing or null entry reads as Auto, back-culled, opaque.</summary>
         public OccluderSubmesh[] Submeshes;
+        /// <summary>
+        /// Optional, per triangle: true for one that may be hidden. Any other is never hidden, and a vertex only such
+        /// triangles use is never sampled, so a solve costs what its candidates cost. Null reads as every triangle.
+        /// </summary>
+        public bool[] Candidate;
+        /// <summary>
+        /// Optional, per triangle: true for one that blocks rays, when <see cref="Occludes"/>; the rule's own limits on
+        /// an occluder still hold. Null reads as every triangle. With <see cref="Candidate"/> it asks whether one set of
+        /// a renderer's triangles is covered while another set stands, over the same vertices, and the renderer still
+        /// never covers itself, since both sets are one mesh.
+        /// </summary>
+        public bool[] Blocks;
     }
 
     /// <summary>The avatar's bone tree, indexed by the avatar-wide bone id <see cref="BoneInfluence.Bone"/> names. Read, never disposed, by the solver.</summary>
@@ -187,7 +199,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 
     /// <summary>
     /// Why a mesh's vertices were not covered, one reason per declined vertex: the first failure met, at rest
-    /// before any configuration. Only vertices some triangle uses are counted.
+    /// before any configuration. Only vertices some candidate triangle uses are counted.
     /// </summary>
     public struct DeclineCounts
     {

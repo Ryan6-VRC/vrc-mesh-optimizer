@@ -176,8 +176,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>
-    /// Interior samples on a lattice over each large triangle whose corners are all covered, so a hole
-    /// in the cover smaller than the triangle and away from its corners still keeps it. A triangle that
+    /// Interior samples on a lattice over each large candidate triangle whose corners are all covered, so a
+    /// hole in the cover smaller than the triangle and away from its corners still keeps it. A triangle that
     /// renders its back gets the lattice on each side.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
@@ -186,6 +186,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<float3> Pos;
         [ReadOnly] public NativeArray<int3> Tris;
         [ReadOnly] public NativeArray<int> TriMesh;
+        [ReadOnly] public NativeArray<bool> TriCandidate;
         [ReadOnly] public NativeArray<bool> TriTwoSided;
         [ReadOnly] public NativeArray<int> VertBack;
         [ReadOnly] public NativeArray<int> WeightStart;
@@ -213,6 +214,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             if (Spacing <= 0f) return;
             for (var t = 0; t < Tris.Length; t++)
             {
+                if (!TriCandidate[t]) continue;
                 var tri = Tris[t];
                 var twoSided = TriTwoSided[t];
                 if (!Covered[tri.x] || !Covered[tri.y] || !Covered[tri.z]) continue;

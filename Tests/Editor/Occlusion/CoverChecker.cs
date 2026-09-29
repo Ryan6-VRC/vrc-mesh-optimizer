@@ -17,7 +17,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     /// The rule it applies, per sample of a hidden triangle (its corners, and the lattice the rule samples
     /// inside a large one): the sample is weighted, and every ray of the cone about its geometric normal, on
     /// the side it renders, is
-    /// blocked by a kept face of another always-on renderer that holds the share on the sample's kin bones
+    /// blocked by a kept face of another always-on renderer, one its mesh lets block, that holds the share on the sample's kin bones
     /// and renders opaque where the ray meets it. A triangle whose material renders its back is owed cover on
     /// that side too. It is lenient in the solver's favour only by float noise (<see cref="EdgeSlack"/>), so
     /// two implementations' rounding never reads as a failure.
@@ -48,6 +48,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             public List<Dictionary<int, double3>> Frames = new List<Dictionary<int, double3>>();
             public List<int> FrameIds = new List<int>();
             public bool Occludes;
+            /// <summary>Per triangle, whether it may block; null for every triangle.</summary>
+            public bool[] Blocks;
             public OccluderSubmesh[] Submeshes;
             public List<int>[] VertTris;
         }
@@ -99,7 +101,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             static MeshData Load(OcclusionMesh om)
             {
                 var e = om.Mesh;
-                var d = new MeshData { Occludes = om.Occludes, Submeshes = om.Submeshes };
+                var d = new MeshData { Occludes = om.Occludes, Blocks = om.Blocks, Submeshes = om.Submeshes };
                 var n = e.Positions.Length;
                 d.Pos = new double3[n];
                 d.Nrm = new double3[n];
@@ -208,7 +210,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                     if (d.Occludes)
                         for (var t = 0; t < d.Tris.Length; t++)
                         {
-                            if (results[m].HiddenTriangles[t]) continue;
+                            if (results[m].HiddenTriangles[t] || d.Blocks != null && !d.Blocks[t]) continue;
                             var sub = Sub(d, t);
                             if (sub != null && sub.Mode == OccluderMode.NeverOccludes) continue;
                             if (TouchesVanishing(d, d.Tris[t])) continue;
