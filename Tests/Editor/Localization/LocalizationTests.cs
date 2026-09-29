@@ -6,7 +6,6 @@ using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
 using UnityEngine;
-using MeshOptimizerComponent = Ryan6Vrc.MeshOptimizer.Runtime.MeshOptimizer;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
 {
@@ -38,7 +37,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
         public void EveryComponentField_HasALabel()
         {
             var en = Entries("en-us.po");
-            var fields = typeof(MeshOptimizerComponent).GetFields().Select(f => $"MeshOptimizer:{f.Name}")
+            var fields = typeof(AvatarMeshOptimizer).GetFields().Select(f => $"MeshOptimizer:{f.Name}")
                 .Concat(typeof(RendererSettings).GetFields().Select(f => $"RendererSettings:{f.Name}"))
                 .Concat(typeof(MaterialOcclusion).GetFields().Select(f => $"MaterialOcclusion:{f.Name}"))
                 .Concat(System.Enum.GetNames(typeof(OcclusionMode)).Select(n => $"OcclusionMode:{n}"))

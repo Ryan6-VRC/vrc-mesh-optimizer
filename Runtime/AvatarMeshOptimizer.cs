@@ -8,10 +8,12 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
     /// <summary>
     /// Settings for the build-time mesh optimizer, one per avatar. Data only: the build reads it, applies
     /// it to the avatar's clone and removes it, so nothing here reaches the uploaded avatar.
+    /// Unity titles the Inspector with the last segment of <see cref="AddComponentMenu"/>, so it reads "Mesh
+    /// Optimizer" while the class name stays clear of the <c>Ryan6Vrc.MeshOptimizer</c> namespace.
     /// </summary>
     [DisallowMultipleComponent]
     [AddComponentMenu("Mesh Optimizer/Mesh Optimizer")]
-    public sealed class MeshOptimizer : MonoBehaviour, INDMFEditorOnly
+    public sealed class AvatarMeshOptimizer : MonoBehaviour, INDMFEditorOnly
     {
         public bool decimate = true;
         public bool removeHiddenTriangles = true;
