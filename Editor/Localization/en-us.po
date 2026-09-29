@@ -1,0 +1,96 @@
+msgid ""
+msgstr ""
+"Language: en-us\n"
+
+msgid "MeshOptimizer"
+msgstr "Mesh Optimizer"
+
+msgid "MeshOptimizer:decimate"
+msgstr "Decimate"
+
+msgid "MeshOptimizer:decimate:tooltip"
+msgstr "Collapse edges to lower the triangle count, keeping the shape wherever the avatar deforms or animates it."
+
+msgid "MeshOptimizer:removeHiddenTriangles"
+msgstr "Remove hidden triangles"
+
+msgid "MeshOptimizer:removeHiddenTriangles:tooltip"
+msgstr "Delete triangles that an always-on renderer riding the same bones covers from every direction."
+
+msgid "MeshOptimizer:target"
+msgstr "Target"
+
+msgid "MeshOptimizer:target:tooltip"
+msgstr "Reduce to a triangle count for the whole avatar, or as far as a tolerance allows."
+
+msgid "TargetKind:TriangleBudget"
+msgstr "Triangle count"
+
+msgid "TargetKind:Tolerance"
+msgstr "Tolerance"
+
+msgid "MeshOptimizer:triangleBudget"
+msgstr "Triangle count"
+
+msgid "MeshOptimizer:triangleBudget:tooltip"
+msgstr "Triangles for the whole avatar after optimization."
+
+msgid "MeshOptimizer:tolerance"
+msgstr "Tolerance (mm)"
+
+msgid "MeshOptimizer:tolerance:tooltip"
+msgstr "The farthest, in millimetres, the optimized surface may stray from the original."
+
+msgid "MeshOptimizer:alwaysOn"
+msgstr "Always-on renderers"
+
+msgid "MeshOptimizer:alwaysOn:tooltip"
+msgstr "Renderers that are never hidden. Only these can hide another renderer's triangles, so leave out anything that can be toggled off."
+
+msgid "MeshOptimizer:materials"
+msgstr "Material occlusion"
+
+msgid "MeshOptimizer:materials:tooltip"
+msgstr "Per material, whether its surface hides what is behind it."
+
+msgid "MaterialOcclusion:material"
+msgstr "Material"
+
+msgid "MaterialOcclusion:mode"
+msgstr "Occlusion"
+
+msgid "OcclusionMode:Automatic"
+msgstr "Automatic"
+
+msgid "OcclusionMode:Automatic:tooltip"
+msgstr "Opaque when its render queue and render type say so; otherwise its texture's alpha decides."
+
+msgid "OcclusionMode:ForceOpaque"
+msgstr "Always opaque"
+
+msgid "OcclusionMode:ForceOpaque:tooltip"
+msgstr "Treat the whole surface as solid, whatever its alpha."
+
+msgid "OcclusionMode:NeverOccludes"
+msgstr "Never occludes"
+
+msgid "OcclusionMode:NeverOccludes:tooltip"
+msgstr "Never let this material hide anything behind it."
+
+msgid "MeshOptimizer:renderers"
+msgstr "Renderer settings"
+
+msgid "RendererSettings:renderer"
+msgstr "Renderer"
+
+msgid "RendererSettings:excludeFromDecimation"
+msgstr "Exclude from decimation"
+
+msgid "RendererSettings:excludeFromDecimation:tooltip"
+msgstr "Never decimate this renderer. Its hidden triangles are still removed."
+
+msgid "RendererSettings:protection"
+msgstr "Protection"
+
+msgid "RendererSettings:protection:tooltip"
+msgstr "How much detail this renderer keeps when the triangle count is shared out. 1 is neutral; higher keeps more."

@@ -1,0 +1,23 @@
+{
+    "name": "Ryan6VRC.MeshOptimizer.Editor",
+    "rootNamespace": "Ryan6Vrc.MeshOptimizer",
+    "references": [
+        "Ryan6VRC.MeshOptimizer.Core",
+        "Ryan6VRC.MeshOptimizer.Runtime",
+        "nadena.dev.ndmf",
+        "nadena.dev.ndmf.runtime",
+        "Unity.Collections",
+        "Unity.Mathematics"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
