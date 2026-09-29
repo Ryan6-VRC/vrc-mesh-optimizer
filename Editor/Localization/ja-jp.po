@@ -47,6 +47,12 @@ msgstr "常時表示のレンダラー"
 msgid "MeshOptimizer:alwaysOn:tooltip"
 msgstr "常に表示されるレンダラーです。他のレンダラーのポリゴンを隠せるのはここにあるレンダラーだけなので、オフにできるものは入れないでください。"
 
+msgid "MeshOptimizer:outlinesShowInside"
+msgstr "輪郭線で内側を見せる"
+
+msgid "MeshOptimizer:outlinesShowInside:tooltip"
+msgstr "マテリアルの輪郭線が裏面を描くポリゴンは、覆われていても残します。輪郭線越しに内側が見える衣装向けです。オフにすると、主に服の下の肌がより多く削除されます。"
+
 msgid "MeshOptimizer:materials"
 msgstr "マテリアルごとの遮蔽"
 

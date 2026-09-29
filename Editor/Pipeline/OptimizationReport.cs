@@ -72,7 +72,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int KeptOnUnstableBones { get; internal set; }
         /// <summary>
         /// Triangles occlusion kept because an outline draws their back, though their front was covered: at most what
-        /// judging the outline's side cost this renderer.
+        /// judging the outline's side cost this renderer. Zero unless the component's outlines show the inside.
         /// </summary>
         public int KeptForOutline { get; internal set; }
         public DeclineCounts Declined { get; internal set; }

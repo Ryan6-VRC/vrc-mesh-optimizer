@@ -11,7 +11,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
     // lilToon and Poiyomi draw an outline as a second pass over the same triangles, pushed out along the normal and
     // culled front by default, so what shows of it is its back. A cup inside an always-on bowl, open to the top like a
     // skirt, has its outside covered and its inside facing the open top: drawn back-culled it goes, but its outline
-    // draws that inside, so an outlined cup stays. The stand-in shaders declare only the properties and passes each
+    // draws that inside, so with outlines showing the inside, an outlined cup stays. By default outlines take no part
+    // and the cup goes as it would without one. The stand-in shaders declare only the properties and passes each
     // family's own source uses to switch and cull its outline.
     public class OutlineTests
     {
@@ -111,6 +112,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         SkinnedMeshRenderer Cup(Material material) =>
             a.Skinned("Cup", a.Sphere(0.1f, 16, 48, 100f, 180f, name: "cup"), new[] { chest }, material: material);
 
+        /// <summary>Turns on the rule that an outline draws the triangles under it as a candidate.</summary>
+        void OutlinesShowInside() => a.Optimizer().outlinesShowInside = true;
+
         /// <summary>The always-on cover: a bowl open at the top, or a closed shell.</summary>
         SkinnedMeshRenderer Cover(bool closed = false, Material material = null, bool inward = false)
         {
@@ -124,6 +128,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         {
             var cup = Cup(Toon(family, true));
             Cover();
+            OutlinesShowInside();
 
             var report = a.Run();
 
@@ -141,12 +146,33 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.GreaterThan(0), "back-culled, the cup's covered outside is all that draws");
         }
 
+        // By default an outline's back counts for nothing: the outlined cup loses exactly what the same cup without an
+        // outline loses, and the report says nothing about outlines.
+        [Test]
+        public void ByDefault_AnOutlinedCup_GoesAsTheSameCupWithoutOne([Values] Family family)
+        {
+            var cup = Cup(Toon(family, true));
+            Cover();
+            Assert.That(a.Optimizer().outlinesShowInside, Is.False, "a fresh component leaves outlines out");
+
+            var outlined = a.Run(apply: false);
+            cup.sharedMaterial = Toon(family, false);
+            var plain = a.Run(apply: false);
+
+            var removed = Of(plain, cup).HiddenRemoved;
+            Assert.That(removed, Is.GreaterThan(0));
+            Assert.That(Of(outlined, cup).HiddenRemoved, Is.EqualTo(removed));
+            Assert.That(outlined.KeptForOutline, Is.Zero);
+            Assert.That(outlined.Summary(), Does.Not.Contain("outlines kept"));
+        }
+
         // Inside a closed shell the cup's inside is covered too: its back rays cross the cup and meet the shell's far side.
         [Test]
         public void AnOutlinedCup_EnclosedOnBothSides_IsRemoved([Values(Family.LilToon, Family.Poiyomi9)] Family family)
         {
             var cup = Cup(Toon(family, true));
             Cover(closed: true);
+            OutlinesShowInside();
 
             Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.GreaterThan(0));
         }
@@ -176,6 +202,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             }
             var cup = Cup(material);
             Cover();
+            OutlinesShowInside();
 
             Assert.That(Of(a.Run(), cup).HiddenRemoved > 0, Is.EqualTo(removed));
         }
@@ -188,6 +215,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             material.SetVector("_AudioLinkOutlineSize", new Vector4(0, 0.5f, 0, 0));
             var cup = Cup(material);
             Cover();
+            OutlinesShowInside();
 
             Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.Zero);
         }
@@ -204,6 +232,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             material.SetFloat("_OutlineCull", outlineCull);
             var cup = Cup(material);
             Cover();
+            OutlinesShowInside();
 
             Assert.That(Of(a.Run(), cup).HiddenRemoved > 0, Is.EqualTo(removed));
         }
@@ -215,6 +244,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         {
             var cup = Cup(Stand("Hidden/MeshOptimizerTests/Unknown", "_OutlineWidth (\"Outline Width\", Float) = 0.1 _OutlineCull (\"Outline Cull\", Float) = 2", "Cull Back"));
             Cover();
+            OutlinesShowInside();
 
             var r = Of(a.Run(), cup);
             Assert.That(r.HiddenRemoved, Is.Zero);
@@ -228,6 +258,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         {
             var cup = Cup(Toon(Family.LilToon, true));
             var cover = Cover();
+            OutlinesShowInside();
             var outlined = a.Run(apply: false);
             cup.sharedMaterial = Toon(Family.LilToon, false);
             var plain = a.Run(apply: false);
@@ -293,13 +324,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         // As cover, an outlined material blocks as its main pass does. An inward-facing bowl culled back shows only its
         // back to a viewer outside, and its outline, culled front, draws only its back too: read as drawing its back it
-        // would block, which deletes what shows through it.
-        [TestCase(false, true)]
-        [TestCase(true, false)]
-        public void AnOutlinedCover_BlocksAsItsMainPassDoes(bool inward, bool hides)
+        // would block, which deletes what shows through it. That holds whether or not outlines show the inside.
+        [TestCase(false, true, false)]
+        [TestCase(true, false, false)]
+        [TestCase(false, true, true)]
+        [TestCase(true, false, true)]
+        public void AnOutlinedCover_BlocksAsItsMainPassDoes(bool inward, bool hides, bool showInside)
         {
             var body = a.Skinned("Body", a.Sphere(0.1f, 16, 32, name: "body"), new[] { chest });
             Cover(material: Toon(Family.LilToon, true), inward: inward);
+            if (showInside) OutlinesShowInside();
 
             Assert.That(Of(a.Run(), body).HiddenRemoved > 0, Is.EqualTo(hides));
         }
@@ -312,6 +346,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var cup = Cup(Stand("Hidden/MeshOptimizerTests/OtherToon", "_Cull (\"Cull\", Float) = 2 _OutlineCull (\"Outline Cull\", Float) = 1 _EnableOutlines (\"Outlines\", Float) = 0",
                 "Name \"FORWARD\" Cull [_Cull]", "Name \"OUTLINE\" Cull [_OutlineCull]"));
             Cover();
+            OutlinesShowInside();
 
             Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.Zero);
         }
@@ -323,6 +358,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var cup = Cup(Toon(Family.LilToon, false));
             cup.sharedMaterials = new[] { Toon(Family.LilToon, false), Toon(Family.LilToon, true) };
             Cover();
+            OutlinesShowInside();
 
             Assert.That(Of(a.Run(), cup).HiddenRemoved, Is.Zero);
         }
