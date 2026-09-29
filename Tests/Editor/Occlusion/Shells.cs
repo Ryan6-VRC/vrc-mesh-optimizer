@@ -34,7 +34,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     }
 
     /// <summary>
-    /// A closed UV sphere about the origin, one renderer or split by azimuth into several, optionally with a
+    /// A closed UV sphere about its centre, one renderer or split by azimuth into several, optionally with a
     /// hole, a bulge that makes two shells cross, and live frames. Vertices are shared, poles included, so
     /// the surface is closed exactly; normals are the geometry's own.
     /// </summary>

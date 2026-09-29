@@ -14,7 +14,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     /// face share, culling and alpha footprint.
     ///
     /// The rule it applies, per sample of a hidden triangle (its corners, and the lattice the rule samples
-    /// inside a large one): the sample is weighted, and every ray of the cone about the side it renders is
+    /// inside a large one): the sample is weighted, and every ray of the cone about its geometric normal, on
+    /// the side it renders, is
     /// blocked by a kept face of another always-on renderer that holds the share on the sample's kin bones
     /// and renders opaque where the ray meets it. A triangle whose material renders its back is owed cover on
     /// that side too. It is lenient in the solver's favour only by float noise (<see cref="EdgeSlack"/>), so
@@ -38,7 +39,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         sealed class MeshData
         {
             public double3[] Pos;
-            public double3[] Nrm;          // authored, unit
+            public double3[] Nrm;          // unit: the faces' area-weighted normal, or the authored one where they have no area
             public (int bone, float w)[][] Weights;
             public int3[] Tris;
             public int[] Sub;
@@ -118,6 +119,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 for (var v = 0; v < n; v++) d.VertTris[v] = new List<int>();
                 for (var t = 0; t < d.Tris.Length; t++)
                     for (var k = 0; k < 3; k++) if (!d.VertTris[d.Tris[t][k]].Contains(t)) d.VertTris[d.Tris[t][k]].Add(t);
+                for (var v = 0; v < n; v++)
+                {
+                    var g = double3.zero;
+                    foreach (var t in d.VertTris[v])
+                    {
+                        var tri = d.Tris[t];
+                        g += math.cross(d.Pos[tri.y] - d.Pos[tri.x], d.Pos[tri.z] - d.Pos[tri.x]);
+                    }
+                    if (math.lengthsq(g) > 1e-30) d.Nrm[v] = math.normalize(g);
+                }
                 if (e.Frames.IsCreated)
                     foreach (var f in e.Frames)
                     {
