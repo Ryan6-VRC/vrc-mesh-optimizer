@@ -85,6 +85,59 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public ShapeKeyLiveness[] Liveness { get; internal set; }
     }
 
+    /// <summary>One shape key on one renderer: the renderer, its path from the avatar root, and the key by index and name.</summary>
+    public readonly struct ShapeKeyRef
+    {
+        public readonly Renderer Renderer;
+        public readonly string Path;
+        public readonly int Key;
+        public readonly string Name;
+
+        public ShapeKeyRef(Renderer renderer, string path, int key, string name)
+        {
+            Renderer = renderer;
+            Path = path;
+            Key = key;
+            Name = name;
+        }
+
+        public override string ToString() => $"{Path}:{Name}";
+    }
+
+    /// <summary>Shape keys the pass found cannot be driven apart, and so evaluated only together.</summary>
+    public sealed class LinkReport
+    {
+        public IReadOnlyList<ShapeKeyRef> Keys { get; }
+
+        internal LinkReport(IReadOnlyList<ShapeKeyRef> keys) => Keys = keys;
+
+        public override string ToString() => string.Join(", ", Keys);
+    }
+
+    /// <summary>
+    /// One state of the whole avatar occlusion evaluated besides rest: a link's keys, each at <see cref="Weight"/> of its full
+    /// scale, every other key on every renderer where it is held. <see cref="Id"/> is the id its frames carry.
+    /// </summary>
+    public sealed class ConfigurationReport
+    {
+        public int Id { get; }
+        public LinkReport Link { get; }
+        /// <summary>The fraction of its full scale every key of the link stands at.</summary>
+        public float Weight { get; }
+        /// <summary>Per key of <see cref="Link"/>, in order, the weight it stands at, in its renderer's units.</summary>
+        public IReadOnlyList<float> Weights { get; }
+
+        internal ConfigurationReport(int id, LinkReport link, float weight, IReadOnlyList<float> weights)
+        {
+            Id = id;
+            Link = link;
+            Weight = weight;
+            Weights = weights;
+        }
+
+        public override string ToString() => $"{Link} at {Weight.ToString("0.###", CultureInfo.InvariantCulture)}";
+    }
+
     /// <summary>Wall-clock per stage, in milliseconds.</summary>
     public struct StageTimes
     {
@@ -120,6 +173,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float ErrorLevel { get; internal set; }
         public bool TargetMet { get; internal set; }
 
+        /// <summary>Groups of shape keys the pass evaluated only together, over the renderers it extracted.</summary>
+        public List<LinkReport> Links { get; } = new List<LinkReport>();
+        /// <summary>
+        /// The states of the whole avatar the links make, each a link at one weight. Every other live key was evaluated moved
+        /// alone, its renderer taking its own frame and every other renderer at rest.
+        /// </summary>
+        public List<ConfigurationReport> Configurations { get; } = new List<ConfigurationReport>();
+
         public bool OcclusionRan { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
         public OcclusionStats OcclusionStats { get; internal set; }
@@ -154,6 +215,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var refused = Renderers.Sum(r => r.ClearanceRefused);
             if (refused > 0)
                 sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused.");
+            foreach (var link in Links)
+                sb.Append($"\n  linked {link}: {Configurations.Count(x => x.Link == link)} configurations.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
             if (KeptForOutline > 0)

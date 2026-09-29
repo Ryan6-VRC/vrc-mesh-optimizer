@@ -8,7 +8,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 {
     /// <summary>
     /// An independent statement of what the solver owes: every triangle it marks hidden is covered, at rest
-    /// and in each live frame on its own, by faces that are kept. Brute force in double precision against
+    /// and in each configuration of the avatar, by faces that are kept. A configuration is one frame alone, or
+    /// every frame that carries one nonzero configuration id, each on its own mesh, moved together. Brute force in double precision against
     /// every kept occluder face, with nothing of the solver's but its input types and the rule's definition:
     /// no tree, no witness record, no risk filter, no deletion bookkeeping, and its own cone, kin walk,
     /// face share, culling and alpha footprint.
@@ -45,6 +46,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             public int[] Sub;
             public float2[] Uv;
             public List<Dictionary<int, double3>> Frames = new List<Dictionary<int, double3>>();
+            public List<int> FrameIds = new List<int>();
             public bool Occludes;
             public OccluderSubmesh[] Submeshes;
             public List<int>[] VertTris;
@@ -140,6 +142,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                             map[sd.Vertex] = sd.Delta;
                         }
                         d.Frames.Add(map);
+                        d.FrameIds.Add(f.Configuration);
                     }
                 return d;
             }
@@ -150,7 +153,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 return d.Submeshes != null && i < d.Submeshes.Length ? d.Submeshes[i] : null;
             }
 
-            // --- one configuration: the rest state, or one mesh's one frame ------------------------------
+            // --- one configuration: the rest state, one mesh's one frame, or the frames of one id -----------
 
             // The kept occluder faces, bucketed in a hashed grid so a ray tests the faces along it rather than
             // all of them. A face sits in every cell its bounds, padded, touch; a fault here can only drop a
@@ -160,8 +163,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 public string Name;
                 public double3[][] Pos;
                 public double3[][] Nrm;
-                /// <summary>The frame moves some vertex, and some kept occluder face with it.</summary>
+                /// <summary>The configuration moves some vertex, and some kept occluder face with it.</summary>
                 public bool Moves, FacesMove;
+                /// <summary>Per mesh: one of its frames is part of the configuration.</summary>
+                public bool[] InFrame;
                 public Face[] Faces;
                 public double Cell;
                 public Dictionary<long, List<int>> Grid;
@@ -171,13 +176,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 
             static long Key(long x, long y, long z) => ((x + (1L << 20)) << 42) | ((y + (1L << 20)) << 21) | (z + (1L << 20));
 
-            Config Build(int frameMesh, int frame)
+            // frameOf[m] is the frame mesh m takes in the configuration, or -1 for rest.
+            Config Build(string name, int[] frameOf)
             {
                 var c = new Config
                 {
-                    Name = frameMesh < 0 ? "rest" : $"frame {frame} of mesh {frameMesh}",
+                    Name = name,
                     Pos = new double3[M.Length][],
                     Nrm = new double3[M.Length][],
+                    InFrame = new bool[M.Length],
                 };
                 var faces = new List<Face>();
                 for (var m = 0; m < M.Length; m++)
@@ -185,10 +192,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                     var d = M[m];
                     c.Pos[m] = d.Pos;
                     c.Nrm[m] = d.Nrm;
-                    if (m == frameMesh)
+                    if (frameOf[m] >= 0)
                     {
+                        c.InFrame[m] = true;
                         var p = (double3[])d.Pos.Clone();
-                        foreach (var kv in d.Frames[frame])
+                        foreach (var kv in d.Frames[frameOf[m]])
                             if (math.length(kv.Value) > s.MoveEpsilon)
                             {
                                 p[kv.Key] = d.Pos[kv.Key] + kv.Value;
@@ -206,7 +214,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                             if (TouchesVanishing(d, d.Tris[t])) continue;
                             var tri = d.Tris[t];
                             double3 a = c.Pos[m][tri.x], b = c.Pos[m][tri.y], cc = c.Pos[m][tri.z];
-                            if (m == frameMesh && (math.any(a != d.Pos[tri.x]) || math.any(b != d.Pos[tri.y]) || math.any(cc != d.Pos[tri.z]))) c.FacesMove = true;
+                            if (c.InFrame[m] && (math.any(a != d.Pos[tri.x]) || math.any(b != d.Pos[tri.y]) || math.any(cc != d.Pos[tri.z]))) c.FacesMove = true;
                             var centre = (a + b + cc) / 3.0;
                             var r = math.sqrt(math.max(math.distancesq(centre, a), math.max(math.distancesq(centre, b), math.distancesq(centre, cc))));
                             faces.Add(new Face { A = a, B = b, C = cc, Centre = centre, Radius = r * (1 + 1e-6) + 1e-9, Mesh = m, Tri = t });
@@ -286,35 +294,63 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 
             // --- the pass --------------------------------------------------------------------------------
 
+            // Rest, named null; then each frame of id zero on its own; then each nonzero id, every mesh taking its
+            // frame of that id. A mesh with two frames of one id is outside the contract and fails the check.
+            IEnumerable<(string name, int[] frameOf)> Configurations()
+            {
+                int[] None()
+                {
+                    var a = new int[M.Length];
+                    for (var i = 0; i < a.Length; i++) a[i] = -1;
+                    return a;
+                }
+                yield return (null, None());
+                var byId = new SortedDictionary<int, int[]>();
+                for (var m = 0; m < M.Length; m++)
+                    for (var f = 0; f < M[m].Frames.Count; f++)
+                    {
+                        var id = M[m].FrameIds[f];
+                        if (id == 0)
+                        {
+                            var alone = None();
+                            alone[m] = f;
+                            yield return ($"frame {f} of mesh {m}", alone);
+                            continue;
+                        }
+                        if (!byId.TryGetValue(id, out var frameOf)) byId[id] = frameOf = None();
+                        if (frameOf[m] >= 0) R.Violations.Add($"mesh {m} carries frames {frameOf[m]} and {f} of configuration {id}");
+                        frameOf[m] = f;
+                    }
+                foreach (var kv in byId) yield return ($"configuration {kv.Key}", kv.Value);
+            }
+
             public void Run()
             {
-                var configs = new List<(int mesh, int frame)> { (-1, -1) };
-                for (var m = 0; m < M.Length; m++)
-                    for (var f = 0; f < M[m].Frames.Count; f++) configs.Add((m, f));
-                foreach (var (fm, ff) in configs)
+                foreach (var (name, frameOf) in Configurations())
                 {
-                    var cfg = Build(fm, ff);
-                    // A frame that moves nothing is the rest state again. One that moves no kept occluder face
-                    // leaves every other mesh's samples and every blocking face where the rest state has them.
-                    if (fm >= 0 && !cfg.Moves) continue;
+                    var rest = name == null;
+                    var cfg = Build(name ?? "rest", frameOf);
+                    // A configuration that moves nothing is the rest state again. One that moves no kept occluder face
+                    // leaves every mesh it does not move, and every blocking face, where the rest state has them.
+                    if (!rest && !cfg.Moves) continue;
                     for (var m = 0; m < M.Length && R.Violations.Count < maxViolations; m++)
                     {
-                        if (fm >= 0 && m != fm && !cfg.FacesMove) continue;
+                        if (!rest && !cfg.InFrame[m] && !cfg.FacesMove) continue;
                         var d = M[m];
                         var vertexCache = new Dictionary<(int, bool), string>();
                         var latticeCache = new Dictionary<(double3, double3, string), string>();
                         for (var t = 0; t < d.Tris.Length && R.Violations.Count < maxViolations; t++)
                         {
                             if (!results[m].HiddenTriangles[t]) continue;
-                            if (fm < 0) R.HiddenChecked++;
-                            var why = CheckTriangle(cfg, fm, m, t, vertexCache, latticeCache);
+                            if (rest) R.HiddenChecked++;
+                            var why = CheckTriangle(cfg, m, t, vertexCache, latticeCache);
                             if (why != null) R.Violations.Add($"mesh {m} triangle {t}, {cfg.Name}: {why}");
                         }
                     }
                 }
             }
 
-            string CheckTriangle(Config cfg, int frameMesh, int m, int t, Dictionary<(int, bool), string> vertexCache,
+            string CheckTriangle(Config cfg, int m, int t, Dictionary<(int, bool), string> vertexCache,
                                  Dictionary<(double3, double3, string), string> latticeCache)
             {
                 var d = M[m];
@@ -332,7 +368,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                     n = math.max(2, (int)math.ceil(longest / s.InteriorSpacing));
                     if (n > 16) return $"hidden, though {longest:F4} m is too large to sample at the spacing";
                 }
-                if (frameMesh == m && s.InteriorSpacing > 0f)
+                if (cfg.InFrame[m] && s.InteriorSpacing > 0f)
                 {
                     float3 fa = (float3)cfg.Pos[m][tri.x], fb = (float3)cfg.Pos[m][tri.y], fc = (float3)cfg.Pos[m][tri.z];
                     var fl = math.sqrt(math.max(math.distancesq(fa, fb), math.max(math.distancesq(fb, fc), math.distancesq(fc, fa))));

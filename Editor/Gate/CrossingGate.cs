@@ -12,7 +12,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     /// <summary>
     /// One state of the whole avatar to measure crossing in: an optional pose, and the weights each renderer holds. A
     /// renderer <see cref="Weights"/> does not name holds the weights it stands at. The crossing gate builds as it stands,
-    /// live keys at zero and the poses itself; a caller passes any others, such as avatar-wide shape-key states.
+    /// live keys at zero and the poses itself; a caller passes any others, such as the linked states
+    /// <see cref="GateReportInputs.Configurations"/> builds from a report.
     /// </summary>
     internal sealed class AvatarConfiguration
     {

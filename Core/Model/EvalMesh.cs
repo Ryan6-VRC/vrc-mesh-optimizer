@@ -14,11 +14,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
         public float Weight;
     }
 
-    /// <summary>A live shape key frame: a run of <see cref="EvalMesh.Deltas"/>.</summary>
+    /// <summary>A live shape key frame: a run of <see cref="EvalMesh.Deltas"/>, and the state of the avatar it is part of.</summary>
     public struct ShapeFrame
     {
         public int DeltaStart;
         public int DeltaCount;
+        /// <summary>
+        /// The avatar-wide configuration this frame is this mesh's part of. Frames of different meshes carrying the same
+        /// nonzero id are one state of the avatar and move together; a mesh carries at most one frame of each id. Zero is a
+        /// configuration of this frame alone, every other mesh at rest.
+        /// </summary>
+        public int Configuration;
     }
 
     /// <summary>
@@ -41,9 +47,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
     /// so their whole output is stated over these indices and the source mesh is never rebuilt from
     /// this struct.
     ///
-    /// A configuration is the rest state or one entry of <see cref="Frames"/>. The rest state is the
-    /// avatar as it stands; a frame is one live shape key moved from its held weight to another weight
-    /// it reaches, every other key held. Vertex v stands at Positions[v] in the rest state, and at
+    /// A configuration is the rest state or one state of the whole avatar, in which this mesh takes at most
+    /// one entry of <see cref="Frames"/> (see <see cref="ShapeFrame.Configuration"/>). The rest state is the
+    /// avatar as it stands; a frame is live shape keys moved together from their held weights to other
+    /// weights they reach, every other key held. Vertex v stands at Positions[v] in the rest state, and at
     /// Positions[v] plus the frame's delta for v, if it has one, in that frame's configuration.
     /// </summary>
     public struct EvalMesh : IDisposable

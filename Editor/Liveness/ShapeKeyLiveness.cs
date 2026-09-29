@@ -97,20 +97,40 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     }
 
     /// <summary>
-    /// One animation curve on a shape key: the renderer's path from the avatar root, the key's name, and the
-    /// values the curve takes.
+    /// One animation curve on a shape key: the renderer's path from the avatar root, the key's name, the values the
+    /// curve takes as <see cref="ShapeKeyClassifier.CurveValues"/> reads them, and, for linking, the clip it is in and
+    /// the times of its keys.
     /// </summary>
     internal readonly struct ShapeKeyBinding
     {
         public readonly string Path;
         public readonly string Key;
         public readonly float[] Values;
+        /// <summary>The times of the curve's keys, which with <see cref="Values"/> say what the curve is. Null when unknown.</summary>
+        public readonly float[] Times;
+        /// <summary>
+        /// The clip object the curve is in, by identity: two curves in one clip always play together. Null when unknown,
+        /// and a key a curve of unknown clip drives never links.
+        /// </summary>
+        public readonly object Clip;
+        /// <summary>The layer that plays the curve, by identity. Null when unknown: the curve is then a layer of its own, of unknown order.</summary>
+        public readonly object Layer;
+        /// <summary>Where <see cref="Layer"/> plays among the avatar's layers, later overriding earlier; null when not known.</summary>
+        public readonly long? Order;
 
-        public ShapeKeyBinding(string path, string key, float[] values)
+        /// <summary>An avatar mask on <see cref="Layer"/> may keep the curve from the key; such a key never links.</summary>
+        public readonly bool Masked;
+
+        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null, object layer = null, long? order = null, bool masked = false)
         {
+            Masked = masked;
+            Layer = layer;
+            Order = order;
             Path = path;
             Key = key;
             Values = values;
+            Times = times;
+            Clip = clip;
         }
     }
 

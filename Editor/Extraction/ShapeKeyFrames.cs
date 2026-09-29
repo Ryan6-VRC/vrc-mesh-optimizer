@@ -62,6 +62,12 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         public void PositionsBetween(float from, float to, Vector3[] positions)
         {
             Array.Clear(positions, 0, positions.Length);
+            AddBetween(from, to, positions);
+        }
+
+        /// <summary>As <see cref="PositionsBetween"/>, added to what <paramref name="positions"/> holds: keys moved together add.</summary>
+        public void AddBetween(float from, float to, Vector3[] positions)
+        {
             var (f0, a0, f1, a1) = Blend(to);
             Add(_positions, f0, a0, f1, a1, positions);
             (f0, a0, f1, a1) = Blend(from);

@@ -327,26 +327,25 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public int Sample;
         public float3 Pos;
         public float3 Nrm;
-        /// <summary>Unmoved by the frame and at risk only through the moved faces: cast only rays toward them.</summary>
+        /// <summary>Unmoved by the configuration and at risk only through other meshes' moved faces: cast only rays toward them.</summary>
         public bool OnlyRisky;
     }
 
     /// <summary>
-    /// Everything one live frame puts at risk, and the geometry it moves. A frame moves one mesh, so it
-    /// changes coverage in two ways only. The mesh's own samples whose position or normal it changes are
-    /// re-cast against every other mesh at rest. Every other sample is at risk only if the frame moves a
-    /// face that was its witness: a ray blocked at rest by an unmoved face stays blocked, and a face moved
-    /// into a ray can only add cover. So a sample is re-cast when its witness set names this mesh and its
-    /// cone can reach the moved faces' rest bounds.
+    /// Everything one configuration puts at risk, and the geometry it moves. A configuration moves the vertices of
+    /// one or more meshes, each by its own frame, so it changes coverage in two ways only. A sample the configuration
+    /// moves, in position or normal, is re-cast against every other mesh as the configuration places it: the faces it
+    /// moves in the frame trees, the rest where they stand. Every other sample, on a moved mesh or not, is at risk only
+    /// if the configuration moves a face of another mesh that was its witness: a ray blocked at rest by an unmoved face
+    /// stays blocked, and a face moved into a ray can only add cover. So such a sample is re-cast when its witness set
+    /// names a moved mesh other than its own and its cone can reach that mesh's moved faces' rest bounds.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct FramePrepJob : IJob
     {
-        public int Mesh;
         public float Spacing;
         public int DeltaStart;
         public int DeltaCount;
-        public bool MeshOccludes;
         public float MoveEpsilon;
         public float Reach;
         public float OriginOffset;
@@ -358,11 +357,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int> VTStart;
         [ReadOnly] public NativeArray<int> VTList;
         [ReadOnly] public NativeArray<int3> Tris;
+        [ReadOnly] public NativeArray<int> TriMesh;
         [ReadOnly] public NativeArray<int> TriOcc;
         [ReadOnly] public NativeArray<int> TriSampleStart;
         [ReadOnly] public NativeArray<int> TriSampleCount;
         [ReadOnly] public NativeArray<int> TriSubdivision;
-        /// <summary>Set for a triangle the frame stretches past its sampled lattice: it is never hidden.</summary>
+        /// <summary>Set for a triangle the configuration stretches past its sampled lattice: it is never hidden.</summary>
         public NativeArray<bool> TriVeto;
         [ReadOnly] public NativeArray<float3> SamplePos;
         [ReadOnly] public NativeArray<float3> SampleNrm;
@@ -379,19 +379,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public NativeArray<bool> VertMark;
         public NativeArray<bool> TriMark;
         public NativeArray<bool> TriMark2;
+        /// <summary>Per sample: already queued as moved, so not queued again as at risk. Clear on entry and on return.</summary>
+        public NativeArray<bool> SampleMark;
         public NativeArray<bool> Moved;
         public NativeList<FrameWork> Work;
         public NativeList<int> MovedOcc;
+        /// <summary>Out: one tree per mesh with moved occluder faces, over <see cref="FrameNodes"/> and <see cref="FramePrims"/>.</summary>
+        public NativeList<FrameTree> FrameTrees;
         public NativeList<BvhNode> FrameNodes;
         public NativeList<BvhTri> FramePrims;
-        /// <summary>Out: the rest bounds of the moved occluder faces, min then max.</summary>
-        public NativeArray<float3> RiskBox;
 
         public void Execute()
         {
             Work.Clear();
-            RiskBox[0] = RiskBox[1] = float3.zero;
             MovedOcc.Clear();
+            FrameTrees.Clear();
             FrameNodes.Clear();
             FramePrims.Clear();
             var moved = new NativeList<int>(Allocator.Temp);
@@ -409,7 +411,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 return;
             }
 
-            // Triangles the frame reshapes, and every corner of them: those corners' normals change.
+            // Triangles the configuration reshapes, and every corner of them: those corners' normals change.
             var tris = new NativeList<int>(Allocator.Temp);
             foreach (var v in moved)
                 for (var k = VTStart[v]; k < VTStart[v + 1]; k++)
@@ -419,7 +421,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     TriMark[t] = true;
                     tris.Add(t);
                 }
-            // The rest lattice is only as fine as the rest triangle; one the frame stretches past it is kept.
+            // The rest lattice is only as fine as the rest triangle; one the configuration stretches past it is kept.
             if (Spacing > 0f)
                 foreach (var t in tris)
                 {
@@ -452,14 +454,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 NormalScratch[a] = Rotate(SampleNrm[a], GeoN[a], g);
             }
 
-            // The mesh's own samples the frame changes, each side of each.
+            // The samples the configuration moves, each side of each, on every mesh it moves.
             foreach (var a in affected)
             {
                 if (Relevant[a] && Covered[a])
-                    Work.Add(new FrameWork { Sample = a, Pos = At(a), Nrm = NormalScratch[a] });
+                    Queue(new FrameWork { Sample = a, Pos = At(a), Nrm = NormalScratch[a] });
                 var back = VertBack[a];
                 if (back >= 0 && Relevant[back] && Covered[back])
-                    Work.Add(new FrameWork { Sample = back, Pos = At(a), Nrm = -NormalScratch[a] });
+                    Queue(new FrameWork { Sample = back, Pos = At(a), Nrm = -NormalScratch[a] });
             }
             var tris2 = new NativeList<int>(Allocator.Temp);
             foreach (var a in affected)
@@ -478,72 +480,82 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         var n = b.x * NormalAt(tri.x) + b.y * NormalAt(tri.y) + b.z * NormalAt(tri.z);
                         if (math.lengthsq(n) <= 1e-12f) n = math.cross(At(tri.y) - At(tri.x), At(tri.z) - At(tri.x));
                         if (SampleBack[s]) n = -n;
-                        // Still degenerate, the triangle has no area in the frame and renders nothing.
-                        Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = math.lengthsq(n) > 1e-24f ? math.normalize(n) : SampleNrm[s] });
+                        // Still degenerate, the triangle has no area in the configuration and renders nothing.
+                        Queue(new FrameWork { Sample = s, Pos = p, Nrm = math.lengthsq(n) > 1e-24f ? math.normalize(n) : SampleNrm[s] });
                     }
                 }
 
-            // Other meshes' samples whose cover the frame can take away.
-            if (MeshOccludes)
+            // The moved occluder faces, one tree per mesh. A triangle is reached only from its own mesh's vertices, and
+            // a configuration's deltas run mesh by mesh, so each mesh's faces are one run; were they not, a mesh would
+            // only get two trees.
+            var bmin = new NativeList<float3>(Allocator.Temp);
+            var bmax = new NativeList<float3>(Allocator.Temp);
+            var restMin = new NativeList<float3>(Allocator.Temp);
+            var restMax = new NativeList<float3>(Allocator.Temp);
+            var primMesh = new NativeList<int>(Allocator.Temp);
+            foreach (var t in tris)
             {
-                var lo = new float3(float.MaxValue);
-                var hi = new float3(float.MinValue);
-                var bmin = new NativeList<float3>(Allocator.Temp);
-                var bmax = new NativeList<float3>(Allocator.Temp);
-                foreach (var t in tris)
+                var occ = TriOcc[t];
+                if (occ < 0) continue;
+                var tri = Tris[t];
+                MovedOcc.Add(occ);
+                Moved[occ] = true;
+                restMin.Add(math.min(Pos[tri.x], math.min(Pos[tri.y], Pos[tri.z])));
+                restMax.Add(math.max(Pos[tri.x], math.max(Pos[tri.y], Pos[tri.z])));
+                float3 p0 = At(tri.x), p1 = At(tri.y), p2 = At(tri.z);
+                bmin.Add(math.min(p0, math.min(p1, p2)));
+                bmax.Add(math.max(p0, math.max(p1, p2)));
+                FramePrims.Add(new BvhTri { V0 = p0, V1 = p1, V2 = p2, Occ = occ });
+                primMesh.Add(TriMesh[t]);
+            }
+            ulong movedMeshes = 0;
+            if (MovedOcc.Length > 0)
+            {
+                var unordered = new NativeArray<BvhTri>(FramePrims.AsArray(), Allocator.Temp);
+                for (var start = 0; start < primMesh.Length;)
                 {
-                    var occ = TriOcc[t];
-                    if (occ < 0) continue;
-                    var tri = Tris[t];
-                    MovedOcc.Add(occ);
-                    Moved[occ] = true;
-                    lo = math.min(lo, math.min(Pos[tri.x], math.min(Pos[tri.y], Pos[tri.z])));
-                    hi = math.max(hi, math.max(Pos[tri.x], math.max(Pos[tri.y], Pos[tri.z])));
-                    float3 p0 = At(tri.x), p1 = At(tri.y), p2 = At(tri.z);
-                    bmin.Add(math.min(p0, math.min(p1, p2)));
-                    bmax.Add(math.max(p0, math.max(p1, p2)));
-                    FramePrims.Add(new BvhTri { V0 = p0, V1 = p1, V2 = p2, Occ = occ });
-                }
-                if (MovedOcc.Length > 0)
-                {
+                    var mesh = primMesh[start];
+                    var end = start + 1;
+                    while (end < primMesh.Length && primMesh[end] == mesh) end++;
+                    var lo = new float3(float.MaxValue);
+                    var hi = new float3(float.MinValue);
+                    var order = new NativeArray<int>(end - start, Allocator.Temp);
+                    for (var i = start; i < end; i++)
+                    {
+                        lo = math.min(lo, restMin[i]);
+                        hi = math.max(hi, restMax[i]);
+                        order[i - start] = i;
+                    }
                     // Padded past float noise, so a ray that met a moved face at rest cannot slip outside the
                     // box it is tested against and be taken as still blocked.
                     var pad = 1e-5f + 1e-5f * math.cmax(hi - lo);
-                    lo -= pad;
-                    hi += pad;
-                    RiskBox[0] = lo;
-                    RiskBox[1] = hi;
-                    var order = new NativeArray<int>(MovedOcc.Length, Allocator.Temp);
-                    for (var i = 0; i < order.Length; i++) order[i] = i;
-                    Bvh.Build(bmin.AsArray(), bmax.AsArray(), order, FrameNodes, 0, Split);
-                    var unordered = new NativeArray<BvhTri>(FramePrims.AsArray(), Allocator.Temp);
-                    for (var i = 0; i < order.Length; i++) FramePrims[i] = unordered[order[i]];
-                    unordered.Dispose();
+                    var root = Bvh.Build(bmin.AsArray(), bmax.AsArray(), order, FrameNodes, start, Split);
+                    for (var i = 0; i < order.Length; i++) FramePrims[start + i] = unordered[order[i]];
                     order.Dispose();
+                    FrameTrees.Add(new FrameTree { Mesh = mesh, Root = root, RiskMin = lo - pad, RiskMax = hi + pad });
+                    movedMeshes |= CoverageKernel.Bit(mesh);
+                    start = end;
+                }
+                unordered.Dispose();
 
-                    var bit = CoverageKernel.Bit(Mesh);
-                    var centre = (lo + hi) * 0.5f;
-                    var radius = math.length(hi - lo) * 0.5f;
-                    foreach (var s in RelevantList)
+                // Samples the configuration does not move, whose cover it can take away.
+                foreach (var s in RelevantList)
+                {
+                    var witness = Witness[s];
+                    if (!Covered[s] || SampleMark[s] || (witness & movedMeshes) == 0) continue;
+                    var p = SamplePos[s];
+                    var own = SampleMesh[s];
+                    for (var k = 0; k < FrameTrees.Length; k++)
                     {
-                        if (!Covered[s] || SampleMesh[s] == Mesh || (Witness[s] & bit) == 0) continue;
-                        var p = SamplePos[s];
-                        var to = centre - p;
-                        var dist = math.length(to);
-                        // A ray starts OriginOffset along the normal, so it reaches that much past Reach from the sample.
-                        if (dist - radius > Reach + OriginOffset) continue;
-                        if (dist > radius)
-                        {
-                            var off = math.acos(math.clamp(math.dot(to / dist, SampleNrm[s]), -1f, 1f));
-                            if (off - math.asin(math.saturate(radius / dist)) > ConeRadians + 1e-3f) continue;
-                        }
+                        var tree = FrameTrees[k];
+                        if (tree.Mesh == own || (witness & CoverageKernel.Bit(tree.Mesh)) == 0 || !Reaches(p, SampleNrm[s], tree)) continue;
                         Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = SampleNrm[s], OnlyRisky = true });
+                        break;
                     }
                 }
-                bmin.Dispose();
-                bmax.Dispose();
             }
 
+            foreach (var w in Work) SampleMark[w.Sample] = false;
             foreach (var v in moved) DeltaScratch[v] = float3.zero;
             foreach (var v in affected) VertMark[v] = false;
             foreach (var t in tris) TriMark[t] = false;
@@ -552,6 +564,31 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             tris.Dispose();
             tris2.Dispose();
             affected.Dispose();
+            bmin.Dispose();
+            bmax.Dispose();
+            restMin.Dispose();
+            restMax.Dispose();
+            primMesh.Dispose();
+        }
+
+        void Queue(in FrameWork w)
+        {
+            SampleMark[w.Sample] = true;
+            Work.Add(w);
+        }
+
+        /// <summary>Whether the sample's cone, from its ray origins out to reach, can meet the tree's rest bounds.</summary>
+        bool Reaches(float3 p, float3 n, in FrameTree tree)
+        {
+            var centre = (tree.RiskMin + tree.RiskMax) * 0.5f;
+            var radius = math.length(tree.RiskMax - tree.RiskMin) * 0.5f;
+            var to = centre - p;
+            var dist = math.length(to);
+            // A ray starts OriginOffset along the normal, so it reaches that much past Reach from the sample.
+            if (dist - radius > Reach + OriginOffset) return false;
+            if (dist <= radius) return true;
+            var off = math.acos(math.clamp(math.dot(to / dist, n), -1f, 1f));
+            return off - math.asin(math.saturate(radius / dist)) <= ConeRadians + 1e-3f;
         }
 
         float3 At(int v) => Pos[v] + DeltaScratch[v];
@@ -573,7 +610,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
     }
 
-    /// <summary>Re-casts one frame's work items.</summary>
+    /// <summary>Re-casts one configuration's work items.</summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct FrameEvalJob : IJobParallelFor
     {
@@ -592,7 +629,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
     }
 
-    /// <summary>Uncovers what a frame exposed, records what covered the rest, and puts the moved faces back.</summary>
+    /// <summary>Uncovers what a configuration exposed, records what covered the rest, and puts the moved faces back.</summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct FrameApplyJob : IJob
     {
@@ -600,7 +637,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<byte> Result;
         [ReadOnly] public NativeArray<int> Rays;
         [ReadOnly] public NativeArray<ulong> Witness;
-        /// <summary>Per sample: every mesh that blocked one of its rays in any live frame, or at rest before the deletion pass re-cast it.</summary>
+        /// <summary>Per sample: every mesh that blocked one of its rays in any configuration, or at rest before the deletion pass re-cast it.</summary>
         public NativeArray<ulong> FrameWitness;
         [ReadOnly] public NativeArray<int> MovedOcc;
         public byte ExposeFlag;

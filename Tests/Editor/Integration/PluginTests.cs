@@ -152,6 +152,105 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(OptimizationReports.Latest.UnstableBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
         }
 
+        public enum Second { None, DrivesAfter, HoldsBefore, HoldsAfter, HoldsInGesture, DriverInGestureHoldInFx, SyncedHoldAfter, MaskOmitsOne, MaskHasBoth, FirstLayerMaskOmitsOne, HumanoidMask }
+
+        // Links read the merged layers through NDMF's animator services, by clip object and by the order layers play in:
+        // one FX clip driving a key on two renderers links them; a second clip driving it on one keeps them apart; a layer
+        // that only holds one where the renderer holds it takes no part if it plays before the driver, and refuses the
+        // link if it plays after it. Gesture plays before FX.
+        [TestCase(Second.None, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_LinksThem")]
+        [TestCase(Second.DrivesAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_Control_ASecondClipDrivingOneKeepsThemApart")]
+        [TestCase(Second.HoldsBefore, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInAnEarlierLayerTakesNoPart")]
+        [TestCase(Second.HoldsAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInALaterLayerRefuses")]
+        [TestCase(Second.HoldsInGesture, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_AHoldOnOneInGestureTakesNoPart")]
+        [TestCase(Second.DriverInGestureHoldInFx, false, TestName = "AGestureClipDrivingAKeyOnTwoRenderers_AHoldOnOneInFxRefuses")]
+        [TestCase(Second.SyncedHoldAfter, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_ALaterLayerSyncedToAHoldOnOneRefuses")]
+        [TestCase(Second.MaskOmitsOne, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_InALayerWhoseMaskOmitsOneRefuses")]
+        [TestCase(Second.FirstLayerMaskOmitsOne, false, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_UnderAFirstLayerMaskOmittingOneRefuses")]
+        [TestCase(Second.MaskHasBoth, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_InALayerWhoseMaskHasBothLinks")]
+        [TestCase(Second.HumanoidMask, true, TestName = "AnFxClipDrivingAKeyOnTwoRenderers_InALayerWithAHumanoidOnlyMaskLinks")]
+        public void ClipsLayersAndLinks(Second second, bool links)
+        {
+            var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
+            var chest = a.Bone("Armature/Hips/Chest");
+            SkinnedMeshRenderer Layer(string name, float radius)
+            {
+                var mesh = a.Sphere(radius, 16, 32, name: name);
+                mesh.AddBlendShapeFrame("heels", 100f, mesh.vertices.Select(v => v.normalized * 0.01f).ToArray(), null, null);
+                return a.Skinned(name, mesh, new[] { chest });
+            }
+            Layer("Body", 0.1f);
+            a.Optimizer().alwaysOn.Add(Layer("Tights", 0.105f));
+
+            AnimationClip Clip(string name, params (string path, float[] values)[] curves)
+            {
+                var clip = a.Made(new AnimationClip { name = name });
+                foreach (var (path, values) in curves)
+                    clip.SetCurve(path, typeof(SkinnedMeshRenderer), "blendShape.heels", new AnimationCurve(values.Select((v, i) => new Keyframe(i, v)).ToArray()));
+                return clip;
+            }
+            UnityEditor.Animations.AnimatorController Controller(string name) => a.Made(new UnityEditor.Animations.AnimatorController { name = name });
+            void AddLayer(UnityEditor.Animations.AnimatorController c, string name, AnimationClip clip)
+            {
+                c.AddLayer(name);
+                c.layers[c.layers.Length - 1].stateMachine.AddState(name).motion = clip;
+            }
+            void Masked(UnityEditor.Animations.AnimatorController c, int index, params (string path, bool active)[] transforms)
+            {
+                var mask = a.Made(new AvatarMask { name = "mask" });
+                mask.transformCount = transforms.Length;
+                for (var i = 0; i < transforms.Length; i++)
+                {
+                    mask.SetTransformPath(i, transforms[i].path);
+                    mask.SetTransformActive(i, transforms[i].active);
+                }
+                var layers = c.layers;
+                layers[index].avatarMask = mask;
+                c.layers = layers;
+            }
+            var heels = Clip("heels", ("Body", new[] { 0f, 100f }), ("Tights", new[] { 0f, 100f }));
+            var hold = Clip("sweater", ("Tights", new[] { 0f, 0f }));
+            var fx = Controller("fx");
+            var gesture = Controller("gesture");
+            switch (second)
+            {
+                case Second.None: AddLayer(fx, "heels", heels); break;
+                case Second.DrivesAfter: AddLayer(fx, "heels", heels); AddLayer(fx, "sweater", Clip("sweater", ("Tights", new[] { 0f, 50f }))); break;
+                case Second.HoldsBefore: AddLayer(fx, "sweater", hold); AddLayer(fx, "heels", heels); break;
+                case Second.HoldsAfter: AddLayer(fx, "heels", heels); AddLayer(fx, "sweater", hold); break;
+                case Second.HoldsInGesture: AddLayer(gesture, "sweater", hold); AddLayer(fx, "heels", heels); break;
+                case Second.DriverInGestureHoldInFx: AddLayer(gesture, "heels", heels); AddLayer(fx, "sweater", hold); break;
+                case Second.SyncedHoldAfter:
+                    AddLayer(fx, "sweater", hold);
+                    AddLayer(fx, "heels", heels);
+                    fx.AddLayer(new UnityEditor.Animations.AnimatorControllerLayer { name = "synced", syncedLayerIndex = 0, defaultWeight = 1f, stateMachine = a.Made(new UnityEditor.Animations.AnimatorStateMachine()) });
+                    break;
+                case Second.MaskOmitsOne: AddLayer(fx, "heels", heels); Masked(fx, 0, ("Body", true), ("Tights", false)); break;
+                case Second.MaskHasBoth: AddLayer(fx, "heels", heels); Masked(fx, 0, ("Body", true), ("Tights", true)); break;
+                case Second.FirstLayerMaskOmitsOne: AddLayer(fx, "base", Clip("empty")); AddLayer(fx, "heels", heels); Masked(fx, 0, ("Body", true)); break;
+                case Second.HumanoidMask: AddLayer(fx, "heels", heels); Masked(fx, 0); break;
+            }
+            descriptor.customizeAnimationLayers = true;
+            descriptor.baseAnimationLayers = new[]
+            {
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.Gesture, animatorController = gesture, isDefault = false },
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, animatorController = fx, isDefault = false },
+            };
+            descriptor.specialAnimationLayers = new VRCAvatarDescriptor.CustomAnimLayer[0];
+
+            Process();
+
+            Assert.That(errors, Is.Empty, "the build logs no error");
+            var report = OptimizationReports.Latest;
+            Assert.That(report.AvatarName, Is.EqualTo(a.Root.name));
+            if (links)
+            {
+                Assert.That(report.Links.Single().ToString(), Is.EqualTo("Body:heels, Tights:heels"));
+                Assert.That(report.Configurations.Select(c => c.Weight), Is.EqualTo(new[] { 1f }));
+            }
+            else Assert.That(report.Links, Is.Empty);
+        }
+
         [Test]
         public void WithoutTheComponent_ThePassChangesNothing()
         {

@@ -40,7 +40,12 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// <paramref name="liveness"/> is ignored for a MeshRenderer, which never applies shape keys.
         /// </summary>
         public static EvalMesh Extract(Renderer renderer, AvatarBones bones, IReadOnlyList<ShapeKeyLiveness> liveness,
-            Allocator allocator, out LiveFrame[] liveFrames)
+            Allocator allocator, out LiveFrame[] liveFrames) =>
+            Extract(renderer, bones, liveness, null, allocator, out liveFrames);
+
+        /// <summary>As the overload without it, with the keys of <paramref name="linked"/> moved together (see <see cref="MeshExtractor"/>).</summary>
+        public static EvalMesh Extract(Renderer renderer, AvatarBones bones, IReadOnlyList<ShapeKeyLiveness> liveness,
+            IReadOnlyList<LiveFrame> linked, Allocator allocator, out LiveFrame[] liveFrames)
         {
             var mesh = MeshOf(renderer);
             if (mesh == null) throw new ArgumentException($"{renderer.name} draws no mesh", nameof(renderer));
@@ -63,7 +68,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 ids[b] = bones.Id(bone);
             }
             var pose = new SkinningPose(boneToRoot, ids, rendererToRoot, rendererId);
-            return MeshExtractor.Extract(mesh, pose, liveness, allocator, out liveFrames);
+            return MeshExtractor.Extract(mesh, pose, liveness, linked, allocator, out liveFrames);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Unity.Collections;
@@ -31,16 +32,43 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             new SkinningPose(null, null, rendererToRoot, rendererBoneId);
     }
 
-    /// <summary>Which shape key, moved from the weight it is held at to which weight, an entry of <see cref="EvalMesh.Frames"/> is.</summary>
-    internal readonly struct LiveFrame
+    /// <summary>
+    /// Which shape keys an entry of <see cref="EvalMesh.Frames"/> moves together, each from the weight it is held at to
+    /// which weight, and the avatar-wide configuration it is part of: zero for one key moved alone.
+    /// </summary>
+    internal readonly struct LiveFrame : IEquatable<LiveFrame>
     {
-        public readonly int ShapeKey;
-        public readonly float Weight;
+        public readonly int Configuration;
+        /// <summary>The keys the frame moves; one for a key moved alone.</summary>
+        public readonly int[] Keys;
+        /// <summary>Per key, the weight it is moved to, in the renderer's units.</summary>
+        public readonly float[] Weights;
 
-        public LiveFrame(int shapeKey, float weight)
+        /// <summary>A key moved alone.</summary>
+        public LiveFrame(int shapeKey, float weight) : this(0, new[] { shapeKey }, new[] { weight }) { }
+
+        public LiveFrame(int configuration, int[] keys, float[] weights)
         {
-            ShapeKey = shapeKey;
-            Weight = weight;
+            if (keys == null || weights == null || keys.Length == 0 || keys.Length != weights.Length)
+                throw new ArgumentException("a frame moves one or more keys, each to one weight");
+            Configuration = configuration;
+            Keys = keys;
+            Weights = weights;
+        }
+
+        /// <summary>The first key the frame moves: the only one for a key moved alone.</summary>
+        public int ShapeKey => Keys[0];
+        /// <summary>The weight the first key is moved to.</summary>
+        public float Weight => Weights[0];
+
+        public bool Equals(LiveFrame other) =>
+            Configuration == other.Configuration && Keys.SequenceEqual(other.Keys) && Weights.SequenceEqual(other.Weights);
+        public override bool Equals(object obj) => obj is LiveFrame other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Configuration, Keys[0], Weights[0]);
+        public override string ToString()
+        {
+            var weights = Weights;
+            return $"configuration {Configuration}: {string.Join(", ", Keys.Select((k, i) => $"key {k} at {weights[i]}"))}";
         }
     }
 
@@ -57,8 +85,22 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// treats every key as dead, as a MeshRenderer, which never applies shape keys, needs.
         /// </summary>
         public static EvalMesh Extract(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness,
-            Allocator allocator, out LiveFrame[] liveFrames)
+            Allocator allocator, out LiveFrame[] liveFrames) =>
+            Extract(mesh, pose, liveness, null, allocator, out liveFrames);
+
+        /// <summary>
+        /// As the overload without <paramref name="linked"/>, but a key some entry of <paramref name="linked"/> names is not
+        /// moved alone: each entry is one frame instead, moving its keys together from their held weights to its weights and
+        /// carrying its configuration, after the frames of keys moved alone and in the order given.
+        /// </summary>
+        public static EvalMesh Extract(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness,
+            IReadOnlyList<LiveFrame> linked, Allocator allocator, out LiveFrame[] liveFrames)
         {
+            linked ??= Array.Empty<LiveFrame>();
+            foreach (var f in linked)
+                foreach (var k in f.Keys)
+                    if (liveness == null || k < 0 || k >= Math.Min(liveness.Count, mesh.blendShapeCount))
+                        throw new ArgumentException($"a linked frame moves shape key {k}, which '{mesh.name}' does not evaluate", nameof(linked));
             var vertexCount = mesh.vertexCount;
             var positions = mesh.vertices;
             var normals = mesh.normals;
@@ -80,7 +122,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var result = new EvalMesh();
             try
             {
-                liveFrames = Fill(mesh, pose, liveness, keyCount, shapes, positions, normals, triangles, triangleSubmesh, allocator, ref result);
+                liveFrames = Fill(mesh, pose, liveness, linked, keyCount, shapes, positions, normals, triangles, triangleSubmesh, allocator, ref result);
                 return result;
             }
             catch
@@ -90,7 +132,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             }
         }
 
-        static LiveFrame[] Fill(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness, int keyCount,
+        static LiveFrame[] Fill(Mesh mesh, in SkinningPose pose, IReadOnlyList<ShapeKeyLiveness> liveness, IReadOnlyList<LiveFrame> linked, int keyCount,
             ShapeKeyFrames shapes, Vector3[] positions, Vector3[] normals, List<int3> triangles, List<int> triangleSubmesh,
             Allocator allocator, ref EvalMesh result)
         {
@@ -109,25 +151,42 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var deltas = new List<ShapeDelta>();
             var sources = new List<LiveFrame>();
             var scratch = new Vector3[vertexCount];
+            void Emit(in LiveFrame source)
+            {
+                var start = deltas.Count;
+                for (var v = 0; v < vertexCount; v++)
+                {
+                    var s = scratch[v];
+                    if (s.x == 0f && s.y == 0f && s.z == 0f) continue;
+                    var d = math.mul(linear[v], (float3)s);
+                    if (math.lengthsq(d) > DeltaEpsilonSq) deltas.Add(new ShapeDelta { Vertex = v, Delta = d });
+                }
+                frames.Add(new ShapeFrame { DeltaStart = start, DeltaCount = deltas.Count - start, Configuration = source.Configuration });
+                sources.Add(source);
+            }
+
+            var moveTogether = new HashSet<int>(linked.SelectMany(f => f.Keys));
             for (var k = 0; k < keyCount; k++)
             {
-                if (liveness[k].State != ShapeKeyState.Live) continue;
+                if (liveness[k].State != ShapeKeyState.Live || moveTogether.Contains(k)) continue;
                 shapes.Load(mesh, k);
                 var held = liveness[k].HeldWeight;
                 foreach (var weight in Configurations(shapes.Weights, liveness[k], held))
                 {
                     shapes.PositionsBetween(held, weight, scratch);
-                    var start = deltas.Count;
-                    for (var v = 0; v < vertexCount; v++)
-                    {
-                        var s = scratch[v];
-                        if (s.x == 0f && s.y == 0f && s.z == 0f) continue;
-                        var d = math.mul(linear[v], (float3)s);
-                        if (math.lengthsq(d) > DeltaEpsilonSq) deltas.Add(new ShapeDelta { Vertex = v, Delta = d });
-                    }
-                    frames.Add(new ShapeFrame { DeltaStart = start, DeltaCount = deltas.Count - start });
-                    sources.Add(new LiveFrame(k, weight));
+                    Emit(new LiveFrame(k, weight));
                 }
+            }
+            // Keys moved together add, each from where it is held.
+            foreach (var f in linked)
+            {
+                Array.Clear(scratch, 0, scratch.Length);
+                for (var i = 0; i < f.Keys.Length; i++)
+                {
+                    shapes.Load(mesh, f.Keys[i]);
+                    shapes.AddBetween(liveness[f.Keys[i]].HeldWeight, f.Weights[i], scratch);
+                }
+                Emit(f);
             }
             result.Frames = new NativeArray<ShapeFrame>(frames.ToArray(), allocator);
             result.Deltas = new NativeArray<ShapeDelta>(deltas.ToArray(), allocator);

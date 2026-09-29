@@ -391,10 +391,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 $"by the deletion {ExposedByDeletion}, deletion-pass samples {DeletionPassSamples}, checker rays {Rays}";
         }
 
-        /// <summary>Solves one random scene and checks it; returns the failure, or null.</summary>
-        internal static string RunRandom(uint seed, ref Tally tally, int minSectors = 1, int maxSectors = 4)
+        /// <summary>Solves one random scene and checks it; returns the failure, or null. <paramref name="link"/> may give frames configuration ids before the scene is built.</summary>
+        internal static string RunRandom(uint seed, ref Tally tally, int minSectors = 1, int maxSectors = 4, Action<List<Shell>> link = null)
         {
             var shells = RandomShells(seed, out var vanishes, minSectors, maxSectors);
+            link?.Invoke(shells);
             var context = new StringBuilder($"seed {seed}:");
             foreach (var s in shells) context.Append("\n  ").Append(s);
             using var scene = new Scene();

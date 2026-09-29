@@ -117,6 +117,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// </summary>
         public NativeArray<float3> Bake(Mesh mesh, float[] weights, Mesh scratch, Transform root)
         {
+            // A mesh the pass emptied has no surface to place; baking it would leave the scratch mesh as it was.
+            if (mesh.vertexCount == 0) return new NativeArray<float3>(0, Allocator.Persistent);
             var skinned = Skinned;
             Vector3[] vertices;
             if (skinned != null)

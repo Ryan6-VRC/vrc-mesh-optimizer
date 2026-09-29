@@ -107,6 +107,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         }
 
         [Test]
+        public void ARendererThePassEmptied_IsMeasuredAsNoSurface()
+        {
+            // Every triangle of the tights removed: after the pass nothing is left to cross the skin or itself.
+            var rig = TwoLayers();
+            var emptied = _scene.Optimized(rig.Tights.Source, new int[0]);
+            rig.Tights = new GateInput(rig.Tights.Renderer, rig.Tights.Source, emptied, null, rig.Tights.Liveness);
+
+            var report = MeasureRig(rig, new[] { Bent });
+
+            foreach (var configuration in new[] { "as it stands", "pose 'bent'" })
+            {
+                Assert.That(Pair(report, "Skin", "Tights", configuration).Change.After.Length, Is.Zero, configuration);
+                Assert.That(Pair(report, "Tights", "Tights", configuration).Change.After.Length, Is.Zero, configuration);
+                Assert.That(Pair(report, "Skin", "Tights", configuration).Change.New, Is.Zero, configuration);
+            }
+        }
+
+        [Test]
         public void RenderersApart_AreNotPaired_AndEveryRendererIsMeasuredAgainstItself()
         {
             var rig = TwoLayers();
