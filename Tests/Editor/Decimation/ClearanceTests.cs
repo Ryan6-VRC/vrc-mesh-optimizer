@@ -16,6 +16,18 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         const float Gap = 0.001f;
         static readonly float[] Levels = { 0.0005f, 0.001f, 0.002f, 0.004f };
 
+        /// <summary>
+        /// The cost without the normal term, for the two cases below whose bounds hold on the order the position cost alone
+        /// collapses in. The normal term keeps more of a rippled tube whether the rule is on or not, so a count of vertices
+        /// kept near a line reads higher; and where layers meet at under about 6 degrees the rule lets a crossing move
+        /// farther than the gate's 5 mm (see CrossingDrift), so there another order can read as new crossing.
+        /// </summary>
+        static DecimationSettings PositionCostOnly(DecimationSettings s)
+        {
+            s.Normal.Weight = 0f;
+            return s;
+        }
+
         static Scene SkinAndLayer(float gap)
         {
             var scene = new Scene();
@@ -128,10 +140,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         {
             using var scene = SkinAndSlopedLayer(from, to);
             var before = Crossing(scene.Builders[0], scene.Builders[1]);
-            using var skinOff = scene.Decimate(0, false, out _);
-            using var layerOff = scene.Decimate(1, false, out _);
-            using var skinOn = scene.Decimate(0, true, out var skinStats);
-            using var layerOn = scene.Decimate(1, true, out var layerStats);
+            using var skinOff = scene.Decimate(0, false, out _, PositionCostOnly);
+            using var layerOff = scene.Decimate(1, false, out _, PositionCostOnly);
+            using var skinOn = scene.Decimate(0, true, out var skinStats, PositionCostOnly);
+            using var layerOn = scene.Decimate(1, true, out var layerStats, PositionCostOnly);
             var line = lineAt * Length;
             const float band = 0.006f;
             var sourceNear = Enumerable.Range(0, scene.Builders[1].VertexCount).Count(v => math.abs(scene.Builders[1].Positions[v].y - line) < band);
@@ -188,7 +200,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         // a collapse may not lengthen the crossing; it may not move it either, by shortening it against one of the
         // boot's triangles and lengthening it against another.
         // At meetings shallower than about a degree a crossing moves along by millimetres for every hundredth of a
-        // millimetre either surface moves, which the gate reads as new by its own stated design; this holds 2 degrees.
+        // millimetre either surface moves, which the gate reads as new by its own stated design; this holds 2 degrees on
+        // the position cost's collapse order, below the 6 degrees the rule itself answers for.
         [TestCase(0.004f, TestName = "{m}(meeting at about 2 degrees)")]
         public void AFineLayerCrossingACoarseOne_GainsNoNewCrossing(float reach)
         {
@@ -196,7 +209,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             scene.Add(SkinTube());
             scene.Add(Tube(10, 4, Length, (a, y) => Skin(a, y) + math.lerp(-reach, reach, y / Length), 0.3f));
             scene.BuildSurface();
-            using var skin = scene.Decimate(0, true, out _);
+            using var skin = scene.Decimate(0, true, out _, PositionCostOnly);
             var result = new Dictionary<float, float>();
             foreach (var level in Levels)
             {

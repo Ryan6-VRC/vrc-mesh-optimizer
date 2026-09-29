@@ -33,10 +33,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         [ReadOnly] public NativeArray<int> NormalStart;
         [ReadOnly] public NativeArray<int> NormalCount;
         [ReadOnly] public NativeArray<FrameNormal> NormalFrames;
+        /// <summary>Per source vertex, the normal the mesh carries; empty when the normal term is off.</summary>
+        [ReadOnly] public NativeArray<float3> VertexNormals;
 
         public NativeArray<int3> Triangles;
         public NativeArray<Quadric> Rest;
         public NativeArray<UvQuadric> Uv;
+        /// <summary>Per working vertex, its normal quadric; empty when the normal term is off.</summary>
+        public NativeArray<NormalQuadric> NormalField;
         public NativeArray<int> SparseStart;
         public NativeArray<int> SparseCount;
         public NativeList<FrameQuadric> Sparse;
@@ -98,6 +102,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         NativeArray<int3> _tri;
         NativeArray<Quadric> _rest;
         NativeArray<UvQuadric> _uv;
+        NativeArray<NormalQuadric> _field;
+        NativeArray<float3> _vertexNormals;
+        bool _shading;
         NativeArray<int> _sparseStart;
         NativeArray<int> _sparseCount;
         NativeList<FrameQuadric> _sparse;
@@ -186,6 +193,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _tri = job.Triangles;
             _rest = job.Rest;
             _uv = job.Uv;
+            _field = job.NormalField;
+            _vertexNormals = job.VertexNormals;
+            _shading = job.NormalField.Length > 0;
             _sparseStart = job.SparseStart;
             _sparseCount = job.SparseCount;
             _sparse = job.Sparse;
@@ -458,10 +468,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             // at the larger growth of the two, and of both pairs for a seam or border pair.
             var mult = math.max(_multiplier[u1], _multiplier[v1]);
             if (u2 >= 0) mult = math.max(mult, math.max(_multiplier[u2], _multiplier[v2]));
-            return (float)(math.sqrt(agg2 + uv2 + skin * skin) * mult);
+            var sum2 = agg2 + uv2 + skin * skin;
+            // Off, the term touches nothing, so the sequence is exactly the one without it.
+            if (_shading) sum2 += Shading2(u1, v1, u2, v2);
+            return (float)(math.sqrt(sum2) * mult);
         }
 
         float2 Uv(int w) => _uv0.Length > 0 ? _uv0[_origin[w]] : float2.zero;
+
+        /// <summary>
+        /// The normal term's error squared, in metres squared (see <see cref="NormalSettings"/>): how far each target's
+        /// normal lies from the normal fields of the surface its removed vertex stands for, summed over a seam or border
+        /// pair's two sides, each side with its own normals.
+        /// </summary>
+        double Shading2(int u1, int v1, int u2, int v2)
+        {
+            var e = _field[u1].Evaluate(_p[v1], NormalQuadric.Readable(_vertexNormals[_origin[v1]]));
+            if (u2 >= 0) e += _field[u2].Evaluate(_p[v2], NormalQuadric.Readable(_vertexNormals[_origin[v2]]));
+            var w = (double)_s.Normal.Weight;
+            return w * w * e;
+        }
 
         /// <summary>Half the L1 distance between two vertices' influence distributions: 0 alike, 1 disjoint.</summary>
         double SkinDistance(int a, int b)
@@ -912,7 +938,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         /// <summary>
         /// No triangle that moves with u may flip or collapse to a sliver, at rest or in any live frame that
-        /// moves u's one-ring (every other frame leaves the ring as it is at rest).
+        /// moves one of its corners (every other frame leaves it as it is at rest). u's frames cover the source
+        /// surface it stands for, but a corner reached through earlier collapses need not be a corner of that
+        /// surface, so the frames moving v and the triangle's other corners are checked too.
         /// </summary>
         bool NoFlip(int u, int v)
         {
@@ -930,16 +958,49 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var reference = _normalRest[v] + _normalRest[x] + _normalRest[y];
                 if (!TriangleHolds(_p[u], _p[v], _p[x], _p[y], reference)) return false;
                 for (var i = fs; i < fe; i++)
-                {
-                    var f = _sparse[i].Frame;
-                    reference = NormalIn(v, f) + NormalIn(x, f) + NormalIn(y, f);
-                    if (!TriangleHolds(
-                            _p[u] + (double3)Delta(u, f), _p[v] + (double3)Delta(v, f),
-                            _p[x] + (double3)Delta(x, f), _p[y] + (double3)Delta(y, f), reference))
-                        return false;
-                }
+                    if (!HoldsIn(u, v, x, y, _sparse[i].Frame)) return false;
+                if (!HoldsInFramesOf(v, u, v, x, y, fs, fe)) return false;
+                if (!HoldsInFramesOf(x, u, v, x, y, fs, fe)) return false;
+                if (!HoldsInFramesOf(y, u, v, x, y, fs, fe)) return false;
             }
             return true;
+        }
+
+        /// <summary>The moved triangle (u, x, y) becoming (v, x, y) holds in frame f.</summary>
+        bool HoldsIn(int u, int v, int x, int y, int f)
+        {
+            var reference = NormalIn(v, f) + NormalIn(x, f) + NormalIn(y, f);
+            return TriangleHolds(
+                _p[u] + (double3)Delta(u, f), _p[v] + (double3)Delta(v, f),
+                _p[x] + (double3)Delta(x, f), _p[y] + (double3)Delta(y, f), reference);
+        }
+
+        /// <summary>The moved triangle holds in every frame that moves corner w and is not among u's frames, Sparse[fs .. fe).</summary>
+        bool HoldsInFramesOf(int w, int u, int v, int x, int y, int fs, int fe)
+        {
+            var o = _origin[w];
+            for (var j = _deltaStart[o]; j < _deltaStart[o + 1]; j++)
+            {
+                var f = _deltaFrame[j];
+                if (HasFrame(fs, fe, f)) continue;
+                if (!HoldsIn(u, v, x, y, f)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Whether frame f is among Sparse[lo .. hi), which is frame ascending.</summary>
+        bool HasFrame(int lo, int hi, int f)
+        {
+            hi--;
+            while (lo <= hi)
+            {
+                var mid = (lo + hi) >> 1;
+                var m = _sparse[mid].Frame;
+                if (m == f) return true;
+                if (m < f) lo = mid + 1;
+                else hi = mid - 1;
+            }
+            return false;
         }
 
         /// <summary>The source surface's normal at w in a frame: as at rest unless the frame moves w's ring.</summary>
@@ -1074,6 +1135,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             var uv = _uv[v];
             uv.Add(_uv[u]);
             _uv[v] = uv;
+            if (_shading)
+            {
+                var field = _field[v];
+                field.Add(_field[u]);
+                _field[v] = field;
+            }
 
             var n = _merged.Length;
             if (n > _sparseCap[v])

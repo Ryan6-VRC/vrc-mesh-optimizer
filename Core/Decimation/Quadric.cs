@@ -132,6 +132,66 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         }
     }
 
+    /// <summary>
+    /// A vertex normal's deviation from each accumulated triangle's linear normal field: the three channels'
+    /// <see cref="AttributeQuadric"/>s, summed into one, since they share every triangle's weight. Evaluate(p, n) = sum of
+    /// weight * |G p + d - n|^2, where row c of G and entry c of d are channel c's gradient and offset.
+    /// </summary>
+    internal struct NormalQuadric
+    {
+        // M = sum over channels of w (g,d)(g,d)^T, X/Y/Z = w (g,d) per channel, S = sum w.
+        public double M00, M01, M02, M03, M11, M12, M13, M22, M23, M33;
+        public double4 X, Y, Z;
+        public double S;
+
+        /// <summary>
+        /// A mesh normal as the term reads it. One with a non-finite component reads as zero, a full unit from every unit
+        /// normal, so the vertex carrying it is priced as unlike its neighbours' shading: in a quadric it would evaluate to a
+        /// non-finite error, read as free, and pass to every vertex that absorbs it.
+        /// </summary>
+        public static double3 Readable(float3 n) => math.all(math.isfinite(n)) ? (double3)n : double3.zero;
+
+        /// <summary>One triangle's field at the given weight: channel c is gx/gy/gz[c] . p + d[c].</summary>
+        public static NormalQuadric FromField(double3 gx, double3 gy, double3 gz, double3 d, double weight)
+        {
+            var q = new NormalQuadric { S = weight };
+            q.X = weight * new double4(gx, d.x);
+            q.Y = weight * new double4(gy, d.y);
+            q.Z = weight * new double4(gz, d.z);
+            q.Channel(new double4(gx, d.x), weight);
+            q.Channel(new double4(gy, d.y), weight);
+            q.Channel(new double4(gz, d.z), weight);
+            return q;
+        }
+
+        void Channel(double4 h, double w)
+        {
+            M00 += w * h.x * h.x; M01 += w * h.x * h.y; M02 += w * h.x * h.z; M03 += w * h.x * h.w;
+            M11 += w * h.y * h.y; M12 += w * h.y * h.z; M13 += w * h.y * h.w;
+            M22 += w * h.z * h.z; M23 += w * h.z * h.w;
+            M33 += w * h.w * h.w;
+        }
+
+        public double Evaluate(double3 p, double3 n)
+        {
+            var hx = M00 * p.x + M01 * p.y + M02 * p.z + M03;
+            var hy = M01 * p.x + M11 * p.y + M12 * p.z + M13;
+            var hz = M02 * p.x + M12 * p.y + M22 * p.z + M23;
+            var hw = M03 * p.x + M13 * p.y + M23 * p.z + M33;
+            var quad = p.x * hx + p.y * hy + p.z * hz + hw;
+            var h = new double4(p, 1.0);
+            var lin = n.x * math.dot(X, h) + n.y * math.dot(Y, h) + n.z * math.dot(Z, h);
+            return math.max(quad - 2.0 * lin + math.dot(n, n) * S, 0.0);
+        }
+
+        public void Add(in NormalQuadric q)
+        {
+            M00 += q.M00; M01 += q.M01; M02 += q.M02; M03 += q.M03; M11 += q.M11; M12 += q.M12; M13 += q.M13;
+            M22 += q.M22; M23 += q.M23; M33 += q.M33;
+            X += q.X; Y += q.Y; Z += q.Z; S += q.S;
+        }
+    }
+
     /// <summary>A vertex's quadric in one live frame's configuration.</summary>
     internal struct FrameQuadric
     {

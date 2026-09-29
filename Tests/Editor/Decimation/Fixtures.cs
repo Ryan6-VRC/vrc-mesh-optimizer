@@ -19,7 +19,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         /// <summary>Live frames: per frame, vertex to delta.</summary>
         public readonly List<Dictionary<int, float3>> Frames = new List<Dictionary<int, float3>>();
 
+        /// <summary>Authored vertex normals, one per vertex, as an artist sets them; null takes the area-weighted face normals.</summary>
+        public float3[] Normals;
+
         public int VertexCount => Positions.Count;
+
+        /// <summary>The normals the built mesh carries: <see cref="Normals"/> normalized, or else the area-weighted face normals.</summary>
+        public float3[] VertexNormals()
+        {
+            if (Normals != null) return Normals.Select(n => math.normalizesafe(n)).ToArray();
+            var normals = new float3[Positions.Count];
+            foreach (var t in Triangles)
+            {
+                var n = math.cross(Positions[t.y] - Positions[t.x], Positions[t.z] - Positions[t.x]);
+                normals[t.x] += n;
+                normals[t.y] += n;
+                normals[t.z] += n;
+            }
+            return normals.Select(n => math.normalizesafe(n)).ToArray();
+        }
 
         public int Add(float3 p, float2 uv = default)
         {
@@ -66,15 +84,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Triangles = new NativeArray<int3>(Triangles.ToArray(), a),
                 TriangleSubmesh = new NativeArray<int>(Submesh.ToArray(), a),
             };
-            var normals = new float3[Positions.Count];
-            foreach (var t in Triangles)
-            {
-                var n = math.cross(Positions[t.y] - Positions[t.x], Positions[t.z] - Positions[t.x]);
-                normals[t.x] += n;
-                normals[t.y] += n;
-                normals[t.z] += n;
-            }
-            mesh.Normals = new NativeArray<float3>(normals.Select(n => math.normalizesafe(n)).ToArray(), a);
+            mesh.Normals = new NativeArray<float3>(VertexNormals(), a);
 
             var start = new int[Positions.Count + 1];
             var weights = new List<BoneInfluence>();

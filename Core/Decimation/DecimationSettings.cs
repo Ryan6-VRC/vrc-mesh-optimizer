@@ -30,6 +30,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// the surface itself moving d metres.</summary>
         public float UvWeight;
 
+        /// <summary>The normal term: what a collapse does to the shading the mesh's own vertex normals give.</summary>
+        public NormalSettings Normal;
+
         /// <summary>
         /// The skin-weight-gradient term: collapsing u onto v costs SkinWeightPenalty * d * |u - v| metres, where
         /// d is half the L1 distance between their influence distributions. Linear blend skinning bends a weight
@@ -69,6 +72,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             Aggregation = ShapeAggregation.WorstCase,
             AggregationBlend = 0.5f,
             UvWeight = 1f,
+            Normal = NormalSettings.Default,
             SkinWeightPenalty = 1f,
             BorderWeight = 10f,
             SeamWeight = 1f,
@@ -77,6 +81,36 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             TargetTriangleCount = 0,
             MaxError = float.PositiveInfinity,
         };
+    }
+
+    /// <summary>
+    /// The normal term. A collapse moves no vertex and keeps every surviving vertex's normal as authored, but the larger
+    /// triangles it leaves interpolate between vertices whose normals differ, so the surface can shade differently where it
+    /// has not moved. Each vertex holds the linear normal field of every source triangle it stands for, three attribute
+    /// quadrics (Hoppe 1999) over the normals the mesh carries, and a collapse is priced at how far the target's normal
+    /// lies from those fields where the target stands, over the area they cover: <see cref="Weight"/> × sqrt(∫|Δn|² dA)
+    /// metres, where |Δn| is the chord between unit normals, near the angle in radians up to a right angle. A bump of
+    /// height h across a span L tilts the normal by about 2h/L, so a tilt θ over a span L reads like a displacement near
+    /// θL/2, and a large region is priced before a small one showing the same tilt. A length that grows with the surface,
+    /// it joins the position error as the UV term does, inside a vertex's cost multiplier
+    /// (<see cref="VertexProtection.CostMultiplier"/>), so the error level stays the one figure the tolerance is read against.
+    ///
+    /// Limits: normals are read at rest, and a live shape frame or a bend is priced with the rest normal field, so a shape
+    /// key that changes only the shading is not seen. A field is extended beyond its triangle across the triangle's plane,
+    /// so a sliver whose normals differ across its short side prices distant collapses high: that keeps triangles and
+    /// never loses shading. A smooth surface whose normals are not linear in position (anything but a sphere or a
+    /// cylinder) pays for the triangles its shading needs; decimation without the term mis-shades such a surface too, and
+    /// a strongly rippled one can cost twice as many triangles at a given tolerance.
+    /// </summary>
+    public struct NormalSettings
+    {
+        /// <summary>
+        /// A plain factor; 0 turns the term off, and the sequence is then exactly the one without it. The default, 0.5, is
+        /// the θL/2 reading's.
+        /// </summary>
+        public float Weight;
+
+        public static NormalSettings Default => new NormalSettings { Weight = 0.5f };
     }
 
     /// <summary>

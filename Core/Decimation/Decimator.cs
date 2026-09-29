@@ -126,6 +126,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             using var triangleClearance = new OptionalArray<float>(field.Triangle);
             using var starClearance = new OptionalArray<float>(field.Star);
             using var uv0 = new OptionalArray<float2>(mesh.Uv0);
+            using var vertexNormals = new OptionalArray<float3>(bank.NormalField.Length > 0 ? mesh.Normals : default);
             using var weightStart = new OptionalArray<int>(mesh.WeightStart);
             using var weights = new OptionalArray<BoneInfluence>(mesh.Weights);
             using var locked = new OptionalArray<byte>(protection.Locked);
@@ -160,9 +161,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 NormalStart = bank.NormalStart,
                 NormalCount = bank.NormalCount,
                 NormalFrames = bank.NormalFrames,
+                VertexNormals = vertexNormals.Array,
                 Triangles = triangles,
                 Rest = bank.Rest,
                 Uv = bank.Uv,
+                NormalField = bank.NormalField,
                 SparseStart = bank.SparseStart,
                 SparseCount = bank.SparseCount,
                 Sparse = sparse,

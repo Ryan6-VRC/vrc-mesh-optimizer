@@ -497,7 +497,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var mult = Enumerable.Repeat(1f, b.VertexCount).ToArray();
                 mult[u] = grown;
                 using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
-                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
+                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; s.Normal.Weight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
             }
             using var ungrown = Record(1f);
             using var grown = Record(10f);
@@ -530,7 +530,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var mult = Enumerable.Repeat(1f, b.VertexCount).ToArray();
                 mult[index[0, 1]] = mult[index[0, 3]] = grown;
                 using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
-                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
+                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; s.Normal.Weight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
             }
             using var ungrown = Record(1f);
             using var grown = Record(10f);
