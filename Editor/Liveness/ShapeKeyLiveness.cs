@@ -27,9 +27,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// key): the weight a frozen key keeps forever and a live key starts from. Zero for a dead key.
         /// </summary>
         public readonly float HeldWeight;
-        /// <summary>For a live key, the lowest weight it can take, as a fraction of its full weight (the weight of its last frame).</summary>
+        /// <summary>For a live key, the lowest weight it can take, as a fraction of <see cref="ShapeKeyClassifier.FullScale"/>.</summary>
         public readonly float DrivenMin;
-        /// <summary>For a live key, the highest weight it can take, as a fraction of its full weight.</summary>
+        /// <summary>For a live key, the highest weight it can take, as a fraction of <see cref="ShapeKeyClassifier.FullScale"/>.</summary>
         public readonly float DrivenMax;
 
         ShapeKeyLiveness(ShapeKeyState state, float heldWeight, float drivenMin, float drivenMax)
@@ -43,12 +43,12 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         public static ShapeKeyLiveness Dead => default;
         public static ShapeKeyLiveness Frozen(float weight) => new ShapeKeyLiveness(ShapeKeyState.Frozen, weight, 0f, 0f);
 
-        /// <summary>A live key held at zero and driven as far as <paramref name="driven"/>, a fraction of its full weight, of either sign.</summary>
+        /// <summary>A live key held at zero and driven as far as <paramref name="driven"/>, a fraction of its full scale, of either sign.</summary>
         public static ShapeKeyLiveness Live(float driven) => Live(Math.Min(0f, driven), Math.Max(0f, driven), 0f);
 
         /// <summary>
         /// A live key held at <paramref name="heldWeight"/>, in the renderer's units, reaching from <paramref name="drivenMin"/>
-        /// to <paramref name="drivenMax"/>, fractions of its full weight.
+        /// to <paramref name="drivenMax"/>, fractions of its full scale.
         /// </summary>
         public static ShapeKeyLiveness Live(float drivenMin, float drivenMax, float heldWeight) =>
             new ShapeKeyLiveness(ShapeKeyState.Live, heldWeight, drivenMin, drivenMax);
@@ -138,6 +138,12 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// </summary>
         public const float HoldTolerance = 1e-3f;
 
+        /// <summary>
+        /// The weight a live key's driven range is a fraction of: the weight of its last frame, or 100 when that frame weighs
+        /// nothing or less. Whoever reads the range back into weights reads it against this same scale.
+        /// </summary>
+        public static float FullScale(float lastFrameWeight) => lastFrameWeight > 0f ? lastFrameWeight : 100f;
+
         /// <summary>Classifies every key of every renderer. The result is indexed like the input.</summary>
         public static ShapeKeyLiveness[][] Classify(
             IReadOnlyList<RendererShapeKeys> renderers,
@@ -171,7 +177,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
         public static ShapeKeyLiveness ClassifyKey(ShapeKeyInput key, IEnumerable<float[]> curves, bool drivenToFull)
         {
-            var full = key.FullWeight > 0f ? key.FullWeight : 100f;
+            var full = FullScale(key.FullWeight);
             // The key's reachable weights: where the renderer holds it, and everywhere anything drives it.
             var lo = key.Weight;
             var hi = key.Weight;

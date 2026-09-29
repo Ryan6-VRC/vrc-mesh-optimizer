@@ -13,8 +13,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     internal enum ConfigurationKind : byte
     {
         /// <summary>
-        /// Every key at the weight the renderer held when the gate was called, bones where the avatar stands: the state the
-        /// avatar is seen in by default, and the one the optimizer evaluates as rest.
+        /// Every key at the weight the renderer holds, which is the weight liveness recorded, bones where the avatar stands: the
+        /// state the avatar is seen in by default, and the one the optimizer evaluates as rest.
         /// </summary>
         AsItStands,
         /// <summary>

@@ -152,6 +152,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             var tights = (SkinnedMeshRenderer)rig.Tights.Renderer;
             // The avatar as it stands: the skin's key held part-way, the joint already turned.
             skin.SetBlendShapeWeight(0, 40f);
+            rig.Skin = new GateInput(skin, rig.Skin.Source, rig.Skin.Optimized, null, new[] { ShapeKeyLiveness.Live(0f, 1f, 40f) });
             rig.Root.Find("Armature/Lower/Upper").localRotation = Quaternion.Euler(0, 0, 10);
             string[] State() => GeometryGateTests.State.Of(rig.Root, skin).Concat(GeometryGateTests.State.Of(rig.Root, tights)).ToArray();
             var before = State();

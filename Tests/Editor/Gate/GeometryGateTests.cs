@@ -245,6 +245,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
         public void FrozenKeyHoldsItsWeight_AndADeadKeyIsNeverApplied()
         {
             var (root, renderer, source, optimized) = SheetRig();
+            renderer.SetBlendShapeWeight(1, 50f);
             var liveness = new[] { ShapeKeyLiveness.Dead, ShapeKeyLiveness.Frozen(50f), ShapeKeyLiveness.Dead };
 
             var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, null, Settings);
@@ -363,6 +364,13 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             var missing = new BoneRotationPose("missing", ("Armature/Lower/Upper", Quaternion.identity), ("Armature/Nowhere", Quaternion.identity));
             e = Assert.Throws<ArgumentException>(() => GeometryGate.Measure(renderer, root, source, optimized, null, new[] { ShapeKeyLiveness.Dead }, new[] { missing }, Settings));
             StringAssert.Contains("Armature/Nowhere", e.Message);
+            Assert.That(State.Of(root, renderer), Is.EqualTo(before));
+
+            // The renderer holding a key where liveness does not record it: the avatar as it stands is not the optimizer's rest.
+            renderer.SetBlendShapeWeight(0, 100f);
+            before = State.Of(root, renderer);
+            e = Assert.Throws<ArgumentException>(() => GeometryGate.Measure(renderer, root, source, optimized, null, new[] { ShapeKeyLiveness.Live(1f) }, null, Settings));
+            StringAssert.Contains("holds shape key 'flare' at 100 and its liveness records 0", e.Message);
 
             Assert.That(State.Of(root, renderer), Is.EqualTo(before));
         }
@@ -384,6 +392,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             renderer.sharedMesh = optimized;
             renderer.SetBlendShapeWeight(0, 0f);
             renderer.SetBlendShapeWeight(1, 100f);
+            liveness = new[] { ShapeKeyLiveness.Live(1f), ShapeKeyLiveness.Live(0f, 1f, 100f), ShapeKeyLiveness.Dead };
             var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, null, Settings);
             Assert.That(report.Configurations[0].Configuration.Kind, Is.EqualTo(ConfigurationKind.AsItStands));
             Assert.That(report.Stats(0, GateDirection.SourceToOptimized).Max, Is.EqualTo(0.004f).Within(1e-5f));
@@ -438,7 +447,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             // The avatar as it stands: a key held off zero and the joint already turned.
             renderer.SetBlendShapeWeight(0, 37f);
             root.Find("Armature/Lower/Upper").localRotation = Quaternion.Euler(0, 0, 10);
-            var liveness = new[] { ShapeKeyLiveness.Live(1f) };
+            var liveness = new[] { ShapeKeyLiveness.Live(0f, 1f, 37f) };
             var before = State.Of(root, renderer);
 
             var report = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, new[] { Bent }, Settings);

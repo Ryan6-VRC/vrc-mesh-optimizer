@@ -142,13 +142,13 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// frames, so these weights and the held one are every corner of the path the key moves a vertex along.
         /// </summary>
         /// <param name="frameWeights">The key's authored frame weights, ascending.</param>
-        /// <param name="key">A live key's liveness, whose driven range is a fraction of the last frame's weight.</param>
+        /// <param name="key">A live key's liveness, whose driven range is a fraction of <see cref="ShapeKeyClassifier.FullScale"/>.</param>
         /// <param name="held">The weight the other configurations depart from, in the renderer's units.</param>
         internal static List<float> Configurations(IReadOnlyList<float> frameWeights, in ShapeKeyLiveness key, float held)
         {
-            var full = frameWeights[frameWeights.Count - 1];
-            var lo = Math.Min(Math.Min(key.DrivenMin * full, 0f), held);
-            var hi = Math.Max(Math.Max(key.DrivenMax * full, 0f), held);
+            var full = ShapeKeyClassifier.FullScale(frameWeights[frameWeights.Count - 1]);
+            var lo = Math.Min(Math.Min(Snap(key.DrivenMin * full, held), 0f), held);
+            var hi = Math.Max(Math.Max(Snap(key.DrivenMax * full, held), 0f), held);
             var candidates = new List<float> { lo, 0f, hi };
             foreach (var w in frameWeights)
                 if (w > lo && w < hi) candidates.Add(w);
@@ -157,13 +157,19 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var weights = new List<float>(candidates.Count);
             foreach (var w in candidates)
             {
-                // A weight within the classifier's hold tolerance of the held weight is the rest state again.
-                if (Math.Abs(w - held) <= ShapeKeyClassifier.HoldTolerance) continue;
+                // Only the held weight itself is the rest state again: a weight a hair from it can be an authored frame far from it in space.
+                if (w == held) continue;
                 if (weights.Count > 0 && weights[weights.Count - 1] == w) continue;
                 weights.Add(w);
             }
             return weights;
         }
+
+        /// <summary>
+        /// A range end read back from its fraction, put on the held weight when the classifier would have read it as a hold:
+        /// the round trip through a fraction can leave the held end a float's width off it.
+        /// </summary>
+        static float Snap(float end, float held) => Math.Abs(end - held) <= ShapeKeyClassifier.HoldTolerance ? held : end;
 
         static (List<int3>, List<int>) ReadTriangles(Mesh mesh)
         {

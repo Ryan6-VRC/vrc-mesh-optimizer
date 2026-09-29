@@ -251,6 +251,41 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             AssertNear(Displaced(eval, 2, 2), new Vector3(3, 1, 0), "the frame at 100");
         }
 
+        // The classifier states a key's range as a fraction of a scale it chooses, 100 when the last frame weighs nothing
+        // or less; extraction has to read the fraction back against that same scale, or a state the curve reaches is lost.
+        [TestCase(0f)]
+        [TestCase(-100f)]
+        public void KeyWhoseLastFrameIsAtZeroOrBelow_IsEvaluatedWhereItsCurveDrivesIt(float lastFrame)
+        {
+            var key = ShapeKeyClassifier.ClassifyKey(new ShapeKeyInput("odd", 0f, lastFrame), new[] { new[] { 0f, 50f } }, false);
+
+            Assert.That(MeshExtractor.Configurations(new[] { lastFrame }, key, 0f), Has.Member(50f));
+        }
+
+        [Test]
+        public void AKeyHeldAtAnEndOfItsRange_GetsNoConfigurationBesideItsHeldWeight()
+        {
+            // Driven from where it is held down to zero: the held end, read back from its fraction, is rest, not a frame.
+            var extra = new List<string>();
+            foreach (var full in new[] { 37f, 90f, 100f, 150f })
+                for (var held = 0.7f; held < full; held += 1.3f)
+                {
+                    var key = ShapeKeyClassifier.ClassifyKey(new ShapeKeyInput("k", held, full), new[] { new[] { 0f } }, false);
+                    var configurations = MeshExtractor.Configurations(new[] { full }, key, held);
+                    if (!configurations.SequenceEqual(new[] { 0f })) extra.Add($"held {held} of {full}: {string.Join(", ", configurations)}");
+                }
+            Assert.That(extra, Is.Empty);
+        }
+
+        [Test]
+        public void AnAuthoredFrameBesideTheHeldWeight_IsStillEvaluated()
+        {
+            // A weight close to the held one can still be a frame far from it in space; only the held weight itself is rest.
+            var configurations = MeshExtractor.Configurations(new[] { 0.0005f, 100f }, ShapeKeyLiveness.Live(0f, 1f, 0f), 0f);
+
+            Assert.That(configurations, Is.EqualTo(new[] { 0.0005f, 100f }));
+        }
+
         [TestCase(0f)]
         [TestCase(30f)]
         [TestCase(75f)]
