@@ -183,11 +183,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 Blocked = statsOut[1],
                 ClearanceRefused = statsOut[2],
             };
-            var sequence = new CollapseSequence
-            {
-                InitialTriangleCount = topology.LiveTriangleCount,
-                SourceVertexCount = topology.SourceVertexCount,
-            };
+            var sequence = new CollapseSequence { InitialTriangleCount = topology.LiveTriangleCount };
             try
             {
                 sequence.Steps = steps.ToArray(allocator);

@@ -127,7 +127,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         static int KeptNear(MeshBuilder b, in CutResult cut, float y, float band)
         {
             var n = 0;
-            foreach (var v in cut.KeptVertices)
+            foreach (var v in Fixtures.Kept(cut))
                 if (math.abs(b.Positions[v].y - y) < band) n++;
             return n;
         }

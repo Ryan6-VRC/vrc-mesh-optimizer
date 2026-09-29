@@ -35,7 +35,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>Per source triangle over working vertices; int3(-1) for a triangle dropped as degenerate input or excluded.</summary>
         public NativeArray<int3> WorkingTriangles;
         public int InitialTriangleCount;
-        public int SourceVertexCount;
 
         public int Length => Steps.Length;
 
@@ -53,7 +52,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             {
                 result.Triangles = new NativeList<int3>(TriangleCountAt(stepCount), allocator);
                 result.SourceTriangle = new NativeList<int>(TriangleCountAt(stepCount), allocator);
-                result.KeptVertices = new NativeList<int>(allocator);
                 RunCut(stepCount, result);
             }
             catch
@@ -72,11 +70,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 Records = Records,
                 WorkingOrigin = WorkingOrigin,
                 WorkingTriangles = WorkingTriangles,
-                SourceVertexCount = SourceVertexCount,
                 StepCount = stepCount,
                 Triangles = result.Triangles,
                 SourceTriangle = result.SourceTriangle,
-                KeptVertices = result.KeptVertices,
             }.Run();
         }
 
@@ -95,11 +91,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             [ReadOnly] public NativeArray<int2> Records;
             [ReadOnly] public NativeArray<int> WorkingOrigin;
             [ReadOnly] public NativeArray<int3> WorkingTriangles;
-            public int SourceVertexCount;
             public int StepCount;
             public NativeList<int3> Triangles;
             public NativeList<int> SourceTriangle;
-            public NativeList<int> KeptVertices;
 
             public void Execute()
             {
@@ -108,7 +102,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var records = StepCount == 0 ? 0 : Steps[StepCount - 1].RecordStart + Steps[StepCount - 1].RecordCount;
                 for (var i = 0; i < records; i++) parent[Records[i].x] = Records[i].y;
 
-                var kept = new NativeArray<byte>(SourceVertexCount, Allocator.Temp);
                 for (var t = 0; t < WorkingTriangles.Length; t++)
                 {
                     var tri = WorkingTriangles[t];
@@ -120,12 +113,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     var s = new int3(WorkingOrigin[r.x], WorkingOrigin[r.y], WorkingOrigin[r.z]);
                     Triangles.Add(s);
                     SourceTriangle.Add(t);
-                    kept[s.x] = 1;
-                    kept[s.y] = 1;
-                    kept[s.z] = 1;
                 }
-                for (var v = 0; v < SourceVertexCount; v++)
-                    if (kept[v] != 0) KeptVertices.Add(v);
             }
 
             static int Find(ref NativeArray<int> parent, int v)
@@ -150,14 +138,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public NativeList<int3> Triangles;
         /// <summary>Per surviving triangle, the source triangle it came from (its submesh is that one's).</summary>
         public NativeList<int> SourceTriangle;
-        /// <summary>Source vertices some surviving triangle uses, ascending.</summary>
-        public NativeList<int> KeptVertices;
 
         public void Dispose()
         {
             if (Triangles.IsCreated) Triangles.Dispose();
             if (SourceTriangle.IsCreated) SourceTriangle.Dispose();
-            if (KeptVertices.IsCreated) KeptVertices.Dispose();
         }
     }
 }
