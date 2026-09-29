@@ -78,16 +78,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// <summary>
     /// The clearance rule. Layers of clothing sit a millimetre or less apart, and a collapse that moves one layer's
     /// surface by less than the error level can still carry it through the next. So a collapse is refused when a
-    /// triangle it makes comes nearer another layer than (1 - Share) of the clearance the surface it replaces had
-    /// from that layer. The other layers are judged as they were before decimation, which is what lets each mesh be
-    /// decimated alone and in any order: with Share under one half, two layers that each keep to their share of the
-    /// gap between them cannot meet. Surface that already touches or crosses another layer has no clearance to keep;
-    /// there a collapse is refused only when it lengthens the line along which the layers cross.
+    /// triangle it makes comes nearer a source triangle of another layer than (1 - Share) of the gap there: the larger
+    /// of that triangle's own clearance and the clearance around the new triangle's corners. The gap is read on source
+    /// triangles, which stay as small as the source's own however far decimation goes, so it is the gap where the two
+    /// layers approach rather than the least gap anywhere under a grown triangle. The other layers are judged as they
+    /// were before decimation, which is what lets each mesh be decimated alone and in any order: with Share under one
+    /// half, two layers that each keep to their share of the gap between them cannot meet. Surface that already touches
+    /// or crosses another layer has no clearance to keep; there a collapse is refused only when it lengthens the line
+    /// along which the layers cross.
     ///
     /// Limits: clearance is measured at rest, so a shape key or pose that moves two layers differently is not checked;
-    /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem)
-    /// are one layer; and where a replaced triangle's clearance varies (beside a crossing or a seam), the least of it
-    /// stands for the whole.
+    /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
+    /// pieces meeting at one vertex) are one layer; and the gap is read per source triangle, so where it changes by a
+    /// large part of itself across one source triangle, the least of it stands for the whole.
     /// </summary>
     public struct ClearanceSettings
     {

@@ -29,8 +29,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         }
 
         /// <summary>
-        /// The length of the segment along which two triangles pass through each other; 0 when they do not, or lie in
-        /// one plane.
+        /// Metres a triangle must reach past the other's plane, on both sides, for the two to cross, and the shortest
+        /// crossing counted: a triangle sewn to another along an edge, resting an edge or a corner on it, or lying in its
+        /// plane touches it and reaches past by rounding only. The value and the rule are the gate's crossing measure's
+        /// (<c>CrossingSettings.Default.Touch</c>), so the rule and the gate that judges it agree on what crosses.
+        /// </summary>
+        public const float Touch = 1e-5f;
+
+        /// <summary>
+        /// The length of the segment along which two triangles pass through each other; 0 when they only touch, or
+        /// do not meet. See <see cref="Touch"/>.
         /// </summary>
         public static float IntersectionLength(float3 a0, float3 a1, float3 a2, float3 b0, float3 b1, float3 b2)
         {
@@ -41,25 +49,23 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             b1 -= a0;
             b2 -= a0;
             a0 = float3.zero;
-            var nA = math.cross(a1 - a0, a2 - a0);
-            var nB = math.cross(b1 - b0, b2 - b0);
-            var dir = math.cross(nA, nB);
-            var len = math.length(dir);
-            if (!(len > 0f)) return 0f;
-            dir /= len;
+            var nA = math.normalizesafe(math.cross(a1 - a0, a2 - a0));
+            var nB = math.normalizesafe(math.cross(b1 - b0, b2 - b0));
+            var dir = math.normalizesafe(math.cross(nA, nB));
+            if (math.all(dir == 0f)) return 0f;
             if (!Interval(a0, a1, a2, nB, b0, dir, out var aLo, out var aHi)) return 0f;
             if (!Interval(b0, b1, b2, nA, a0, dir, out var bLo, out var bHi)) return 0f;
-            return math.max(0f, math.min(aHi, bHi) - math.max(aLo, bLo));
+            var overlap = math.min(aHi, bHi) - math.max(aLo, bLo);
+            return overlap > Touch ? overlap : 0f;
         }
 
-        /// <summary>Where triangle t0 t1 t2 meets the plane through o with normal n, as an interval along dir; false when it lies to one side.</summary>
+        /// <summary>Where triangle t0 t1 t2 cuts the plane through o with unit normal n, as an interval along dir; false unless it reaches past the plane by more than <see cref="Touch"/> on both sides.</summary>
         static bool Interval(float3 t0, float3 t1, float3 t2, float3 n, float3 o, float3 dir, out float lo, out float hi)
         {
             float d0 = math.dot(n, t0 - o), d1 = math.dot(n, t1 - o), d2 = math.dot(n, t2 - o);
             lo = float.PositiveInfinity;
             hi = float.NegativeInfinity;
-            if (d0 > 0f && d1 > 0f && d2 > 0f || d0 < 0f && d1 < 0f && d2 < 0f) return false;
-            if (d0 == 0f && d1 == 0f && d2 == 0f) return false;
+            if (!(math.max(d0, math.max(d1, d2)) > Touch && math.min(d0, math.min(d1, d2)) < -Touch)) return false;
             Edge(t0, t1, d0, d1, dir, ref lo, ref hi);
             Edge(t1, t2, d1, d2, dir, ref lo, ref hi);
             Edge(t2, t0, d2, d0, dir, ref lo, ref hi);

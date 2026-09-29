@@ -34,12 +34,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
     {
         public NativeArray<float> Vertex;
         public NativeArray<float> Triangle;
+        /// <summary>Per source vertex, the least clearance of the live triangles around it: the gap its neighbourhood had.</summary>
+        public NativeArray<float> Star;
         public int NearVertices;
 
         public void Dispose()
         {
             if (Vertex.IsCreated) Vertex.Dispose();
             if (Triangle.IsCreated) Triangle.Dispose();
+            if (Star.IsCreated) Star.Dispose();
         }
 
         /// <summary><paramref name="live"/> is per triangle of <paramref name="triangles"/>: false for one decimation drops as degenerate.</summary>
@@ -67,6 +70,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                     Positions = positions, Triangles = triangles, Live = live, TriangleLayer = input.TriangleLayer,
                     VertexClearance = field.Vertex, Reach = reach, Clearance = field.Triangle,
                 }.Schedule(triangles.Length, 128).Complete();
+                field.Star = new NativeArray<float>(positions.Length, allocator);
+                new StarJob { Triangles = triangles, Live = live, Triangle = field.Triangle, Reach = reach, Star = field.Star }.Run();
                 for (var v = 0; v < positions.Length; v++)
                     if (vertexLayer[v] >= 0 && field.Vertex[v] < reach) field.NearVertices++;
                 return field;
@@ -75,6 +80,30 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             {
                 field.Dispose();
                 throw;
+            }
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        struct StarJob : IJob
+        {
+            [ReadOnly] public NativeArray<int3> Triangles;
+            [ReadOnly] public NativeArray<bool> Live;
+            [ReadOnly] public NativeArray<float> Triangle;
+            public float Reach;
+            public NativeArray<float> Star;
+
+            public void Execute()
+            {
+                for (var v = 0; v < Star.Length; v++) Star[v] = Reach;
+                for (var t = 0; t < Triangles.Length; t++)
+                {
+                    if (!Live[t]) continue;
+                    var tri = Triangles[t];
+                    var c = Triangle[t];
+                    Star[tri.x] = math.min(Star[tri.x], c);
+                    Star[tri.y] = math.min(Star[tri.y], c);
+                    Star[tri.z] = math.min(Star[tri.z], c);
+                }
             }
         }
 

@@ -389,7 +389,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (s != null && s.renderer != null) perRenderer[s.renderer] = s;
 
             var stage = Stopwatch.StartNew();
-            var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live) : default;
+            var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, input.Decimation.Clearance.Reach) : default;
             report.Times.Clearance = stage.Elapsed.TotalMilliseconds;
             try
             {
@@ -449,7 +449,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// it deleted is not there to be passed through. A renderer off at build is in it like any other, since whatever
         /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved.
         /// </summary>
-        static ClearanceSurface ClearanceSurfaceOf(List<Job> live)
+        static ClearanceSurface ClearanceSurfaceOf(List<Job> live, float reach)
         {
             var sources = new List<ClearanceLayerSource>();
             var owned = new List<IDisposable>();
@@ -468,7 +468,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     next += pieces;
                     sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = kept, TriangleLayer = job.Layers });
                 }
-                return ClearanceSurface.Build(sources, Allocator.Persistent);
+                return ClearanceSurface.Build(sources, reach, Allocator.Persistent);
             }
             finally
             {

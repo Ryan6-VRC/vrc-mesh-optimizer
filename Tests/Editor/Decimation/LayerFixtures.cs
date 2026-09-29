@@ -105,7 +105,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                     }
                     sources.Add(new ClearanceLayerSource { Positions = Meshes[i].Positions, Triangles = tris, TriangleLayer = layers });
                 }
-                Surface = ClearanceSurface.Build(sources, Allocator.Persistent);
+                Surface = ClearanceSurface.Build(sources, Core.Decimation.ClearanceSettings.Default.Reach, Allocator.Persistent);
             }
 
             public CollapseSequence Decimate(int mesh, bool rule, out ClearanceStats stats, Func<DecimationSettings, DecimationSettings> tweak = null)

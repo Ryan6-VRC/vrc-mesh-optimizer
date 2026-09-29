@@ -32,6 +32,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         internal NativeArray<int> PrimLayer;
         /// <summary>Per node, the one layer every prim under it belongs to, or -1 when they are mixed.</summary>
         internal NativeArray<int> NodeLayer;
+        /// <summary>
+        /// Per prim in leaf order, its clearance from every other layer, capped at <see cref="Reach"/>: the gap on this
+        /// side, where another layer comes near it.
+        /// </summary>
+        internal NativeArray<float> PrimClearance;
+        /// <summary>Per node, the largest <see cref="PrimClearance"/> under it.</summary>
+        internal NativeArray<float> NodeClearance;
+        /// <summary>The cap on every clearance here, in metres.</summary>
+        public float Reach;
 
         public bool IsCreated => Nodes.IsCreated;
         public int TriangleCount => Prims.IsCreated ? Prims.Length : 0;
@@ -42,11 +51,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             if (Prims.IsCreated) Prims.Dispose();
             if (PrimLayer.IsCreated) PrimLayer.Dispose();
             if (NodeLayer.IsCreated) NodeLayer.Dispose();
+            if (PrimClearance.IsCreated) PrimClearance.Dispose();
+            if (NodeClearance.IsCreated) NodeClearance.Dispose();
         }
 
-        /// <summary>A triangle with no area draws nothing and bounds nothing, so it is left out.</summary>
-        public static ClearanceSurface Build(IReadOnlyList<ClearanceLayerSource> sources, Allocator allocator)
+        /// <summary>
+        /// A triangle with no area draws nothing and bounds nothing, so it is left out. <paramref name="reach"/> caps each
+        /// triangle's clearance, in metres, and must be the reach decimation runs with.
+        /// </summary>
+        public static ClearanceSurface Build(IReadOnlyList<ClearanceLayerSource> sources, float reach, Allocator allocator)
         {
+            if (!(reach > 0f)) throw new ArgumentException($"reach {reach} m must be above 0");
             var total = 0;
             foreach (var s in sources)
             {
@@ -54,7 +69,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                     throw new ArgumentException($"a source has {s.Triangles.Length} triangles and {s.TriangleLayer.Length} layers; give one layer per triangle");
                 total += s.Triangles.Length;
             }
-            var surface = new ClearanceSurface();
+            var surface = new ClearanceSurface { Reach = reach };
             try
             {
                 using var prims = new NativeList<TreePrim>(total, Allocator.Persistent);
@@ -75,12 +90,59 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                     PrimLayer = surface.PrimLayer,
                     NodeLayer = surface.NodeLayer,
                 }.Run();
+                surface.PrimClearance = new NativeArray<float>(surface.Prims.Length, allocator);
+                surface.NodeClearance = new NativeArray<float>(surface.Nodes.Length, allocator);
+                new PrimClearanceJob
+                {
+                    Nodes = surface.Nodes, Prims = surface.Prims, PrimLayer = surface.PrimLayer, NodeLayer = surface.NodeLayer,
+                    Reach = reach, Clearance = surface.PrimClearance,
+                }.Schedule(surface.Prims.Length, 128).Complete();
+                new NodeClearanceJob { Nodes = surface.Nodes, PrimClearance = surface.PrimClearance, NodeClearance = surface.NodeClearance }.Run();
                 return surface;
             }
             catch
             {
                 surface.Dispose();
                 throw;
+            }
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        struct PrimClearanceJob : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<TreeNode> Nodes;
+            [ReadOnly] public NativeArray<TreePrim> Prims;
+            [ReadOnly] public NativeArray<int> PrimLayer;
+            [ReadOnly] public NativeArray<int> NodeLayer;
+            public float Reach;
+            public NativeArray<float> Clearance;
+
+            public void Execute(int i)
+            {
+                var p = Prims[i];
+                Clearance[i] = TriangleClearance(Nodes, Prims, PrimLayer, NodeLayer, p.A, p.B, p.C, PrimLayer[i], Reach);
+            }
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        struct NodeClearanceJob : IJob
+        {
+            [ReadOnly] public NativeArray<TreeNode> Nodes;
+            [ReadOnly] public NativeArray<float> PrimClearance;
+            public NativeArray<float> NodeClearance;
+
+            public void Execute()
+            {
+                // A child is always added after its parent, so walking back visits children first.
+                for (var i = Nodes.Length - 1; i >= 0; i--)
+                {
+                    var node = Nodes[i];
+                    var most = 0f;
+                    if (node.Count > 0)
+                        for (var k = node.Start; k < node.Start + node.Count; k++) most = math.max(most, PrimClearance[k]);
+                    else most = math.max(NodeClearance[node.Start], NodeClearance[node.Start + 1]);
+                    NodeClearance[i] = most;
+                }
             }
         }
 
@@ -268,15 +330,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         static float BoxPointSq(float3 p, in TreeNode node) => math.lengthsq(math.max(math.max(node.Min - p, p - node.Max), 0f));
 
         /// <summary>
-        /// A query triangle and the planes that bound the space within a gap of it: its own plane, on either side, and
-        /// outside each edge the plane through the edge square to the triangle. Whatever lies more than the gap beyond
-        /// one of them is farther than the gap from the triangle, which proves most pairs apart without the exact
-        /// distance.
+        /// A query triangle and four axes that often separate it from what is near it: its normal, and in its plane the
+        /// direction square to each edge. Along any axis at all, two sets whose projections lie more than a gap apart are
+        /// more than that gap apart, so each test compares projections and nothing depends on an axis being exact: a
+        /// sliver's normal, rounded into some other direction, only separates less.
         /// </summary>
         struct Query
         {
-            public float3 A, B, C, Lo, Hi, N;
-            float3 _m0, _m1, _m2;
+            public float3 A, B, C, Lo, Hi;
+            float3 _n, _m0, _m1, _m2;
+            float2 _sn, _s0, _s1, _s2;
 
             public Query(float3 a, float3 b, float3 c)
             {
@@ -285,17 +348,29 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 C = c;
                 Lo = math.min(a, math.min(b, c));
                 Hi = math.max(a, math.max(b, c));
-                N = math.normalizesafe(math.cross(b - a, c - a));
-                _m0 = Outward(a, b, c, N);
-                _m1 = Outward(b, c, a, N);
-                _m2 = Outward(c, a, b, N);
+                _n = math.normalizesafe(math.cross(b - a, c - a));
+                _m0 = math.normalizesafe(math.cross(b - a, _n));
+                _m1 = math.normalizesafe(math.cross(c - b, _n));
+                _m2 = math.normalizesafe(math.cross(a - c, _n));
+                _sn = Span(_n, a, b, c);
+                _s0 = Span(_m0, a, b, c);
+                _s1 = Span(_m1, a, b, c);
+                _s2 = Span(_m2, a, b, c);
             }
 
-            /// <summary>The unit normal of the plane through edge pq square to the triangle, facing away from r; zero for a triangle with no area.</summary>
-            static float3 Outward(float3 p, float3 q, float3 r, float3 n)
+            static float2 Span(float3 axis, float3 a, float3 b, float3 c)
             {
-                var m = math.normalizesafe(math.cross(q - p, n));
-                return math.dot(m, r - p) > 0f ? -m : m;
+                float da = math.dot(axis, a), db = math.dot(axis, b), dc = math.dot(axis, c);
+                return new float2(math.min(da, math.min(db, dc)), math.max(da, math.max(db, dc)));
+            }
+
+            static bool Apart(float2 s, float2 t, float gap) => t.x - s.y > gap || s.x - t.y > gap;
+
+            static float2 BoxSpan(float3 axis, float3 centre, float3 half)
+            {
+                var d = math.dot(axis, centre);
+                var e = math.dot(math.abs(axis), half);
+                return new float2(d - e, d + e);
             }
 
             public float BoxBoxSq(in TreeNode node) => math.lengthsq(math.max(math.max(node.Min - Hi, Lo - node.Max), 0f));
@@ -305,29 +380,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 if (math.any(node.Min - Hi > gap) || math.any(Lo - node.Max > gap)) return true;
                 var centre = (node.Min + node.Max) * 0.5f;
                 var half = (node.Max - node.Min) * 0.5f;
-                var d = math.dot(N, centre - A);
-                var e = math.dot(math.abs(N), half);
-                if (d - e > gap || d + e < -gap) return true;
-                return Beyond(_m0, A, centre, half, gap) || Beyond(_m1, B, centre, half, gap) || Beyond(_m2, C, centre, half, gap);
+                return Apart(_sn, BoxSpan(_n, centre, half), gap) || Apart(_s0, BoxSpan(_m0, centre, half), gap) ||
+                       Apart(_s1, BoxSpan(_m1, centre, half), gap) || Apart(_s2, BoxSpan(_m2, centre, half), gap);
             }
-
-            static bool Beyond(float3 m, float3 p, float3 centre, float3 half, float gap) =>
-                math.dot(m, centre - p) - math.dot(math.abs(m), half) > gap;
 
             public bool PrimApart(in TreePrim prim, float gap)
             {
                 var plo = math.min(prim.A, math.min(prim.B, prim.C));
                 var phi = math.max(prim.A, math.max(prim.B, prim.C));
                 if (math.any(plo - Hi > gap) || math.any(Lo - phi > gap)) return true;
-                var d = new float3(math.dot(N, prim.A - A), math.dot(N, prim.B - A), math.dot(N, prim.C - A));
-                if (math.all(d > gap) || math.all(d < -gap)) return true;
-                if (AllBeyond(_m0, A, prim, gap) || AllBeyond(_m1, B, prim, gap) || AllBeyond(_m2, C, prim, gap)) return true;
-                var e = new float3(math.dot(prim.N, A - prim.A), math.dot(prim.N, B - prim.A), math.dot(prim.N, C - prim.A));
-                return math.all(e > gap) || math.all(e < -gap);
+                if (Apart(_sn, Span(_n, prim.A, prim.B, prim.C), gap) || Apart(_s0, Span(_m0, prim.A, prim.B, prim.C), gap) ||
+                    Apart(_s1, Span(_m1, prim.A, prim.B, prim.C), gap) || Apart(_s2, Span(_m2, prim.A, prim.B, prim.C), gap)) return true;
+                return Apart(Span(prim.N, prim.A, prim.B, prim.C), Span(prim.N, A, B, C), gap);
             }
-
-            static bool AllBeyond(float3 m, float3 p, in TreePrim prim, float gap) =>
-                math.dot(m, prim.A - p) > gap && math.dot(m, prim.B - p) > gap && math.dot(m, prim.C - p) > gap;
         }
 
         /// <summary>
@@ -451,12 +516,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             return total;
         }
 
-        /// <summary>True when some triangle of a layer other than <paramref name="layer"/> comes nearer than <paramref name="reach"/> to triangle abc.</summary>
+        /// <summary>
+        /// True when some triangle P of a layer other than <paramref name="layer"/> comes nearer to triangle abc than
+        /// <paramref name="keep"/> times the larger of P's own clearance and <paramref name="least"/>. P's clearance is
+        /// the gap where P is, measured on a triangle of the source as small as the source's own, so it does not shrink
+        /// as decimated triangles grow; <paramref name="least"/> is the gap on abc's side.
+        /// </summary>
         internal static unsafe bool AnyWithin(in NativeArray<TreeNode> nodes, in NativeArray<TreePrim> prims, in NativeArray<int> primLayer,
-            in NativeArray<int> nodeLayer, float3 a, float3 b, float3 c, int layer, float reach)
+            in NativeArray<int> nodeLayer, in NativeArray<float> primClearance, in NativeArray<float> nodeClearance,
+            float3 a, float3 b, float3 c, int layer, float keep, float least)
         {
-            if (nodes.Length == 0 || !(reach > 0f)) return false;
-            var r2 = reach * reach;
+            if (nodes.Length == 0 || !(keep > 0f)) return false;
             var q = new Query(a, b, c);
             var stack = stackalloc int[StackSize];
             var top = 0;
@@ -466,15 +536,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 var i = stack[--top];
                 if (nodeLayer[i] == layer) continue;
                 var node = nodes[i];
-                if (q.BoxApart(node, reach)) continue;
+                var reach = keep * math.max(nodeClearance[i], least);
+                if (!(reach > 0f) || q.BoxApart(node, reach)) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
                         if (primLayer[k] == layer) continue;
                         var prim = prims[k];
-                        if (q.PrimApart(prim, reach)) continue;
-                        if (TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C) < r2) return true;
+                        var r = keep * math.max(primClearance[k], least);
+                        if (!(r > 0f) || q.PrimApart(prim, r)) continue;
+                        if (TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C) < r * r) return true;
                     }
                     continue;
                 }

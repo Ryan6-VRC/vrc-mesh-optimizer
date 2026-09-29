@@ -47,6 +47,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                         throw new System.ArgumentException($"clearance share {c.Share} is outside [0, 0.5): at one half or more, two layers each giving up their share can meet");
                     if (!(c.Reach > 0f))
                         throw new System.ArgumentException($"clearance reach {c.Reach} m must be above 0; turn the rule off with Clearance.Enabled instead");
+                    if (c.Reach != clearance.Surface.Reach)
+                        throw new System.ArgumentException($"clearance reach {c.Reach} m differs from the {clearance.Surface.Reach} m the surface was built with; build it with the reach decimation runs with");
                     var live = new NativeArray<bool>(topology.Triangles.Length, Allocator.Persistent);
                     try
                     {
@@ -87,9 +89,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             using var prims = new OptionalArray<Core.Gate.TreePrim>(active ? clearance.Surface.Prims : default);
             using var primLayer = new OptionalArray<int>(active ? clearance.Surface.PrimLayer : default);
             using var nodeLayer = new OptionalArray<int>(active ? clearance.Surface.NodeLayer : default);
+            using var primClearance = new OptionalArray<float>(active ? clearance.Surface.PrimClearance : default);
+            using var nodeClearance = new OptionalArray<float>(active ? clearance.Surface.NodeClearance : default);
             using var triangleLayer = new OptionalArray<int>(active ? clearance.TriangleLayer : default);
             using var vertexClearance = new OptionalArray<float>(field.Vertex);
             using var triangleClearance = new OptionalArray<float>(field.Triangle);
+            using var starClearance = new OptionalArray<float>(field.Star);
             using var uv0 = new OptionalArray<float2>(mesh.Uv0);
             using var weightStart = new OptionalArray<int>(mesh.WeightStart);
             using var weights = new OptionalArray<BoneInfluence>(mesh.Weights);
@@ -136,9 +141,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 ClearPrims = prims.Array,
                 ClearPrimLayer = primLayer.Array,
                 ClearNodeLayer = nodeLayer.Array,
+                ClearPrimClearance = primClearance.Array,
+                ClearNodeClearance = nodeClearance.Array,
                 TriangleLayer = triangleLayer.Array,
                 VertexClearance = vertexClearance.Array,
                 TriangleClearance = triangleClearance.Array,
+                StarClearance = starClearance.Array,
                 Settings = settings,
                 Steps = steps,
                 Records = records,

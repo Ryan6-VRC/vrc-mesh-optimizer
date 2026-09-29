@@ -58,9 +58,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             TestContext.WriteLine($"triangles at 1 mm: {trisOff} without, {trisOn} with");
 
             Assert.That(off[(0.002f, 0.002f)], Is.GreaterThan(0.01f), "without the rule the layers cross");
-            // The price, bounded so it cannot creep: each triangle the rule makes carries the least clearance of what
-            // it replaced, no more, and at the gap's own error level that costs about a fifth more triangles here.
-            Assert.That(trisOn, Is.LessThanOrEqualTo(trisOff * 1.25f), "the rule's price at 1 mm");
+            // The price, bounded so it cannot creep: at the gap's own error level the rule costs about a third more
+            // triangles here, and a rule that asked more of a triangle than the gap where it approaches would cost more.
+            Assert.That(trisOn, Is.LessThanOrEqualTo(trisOff * 1.4f), "the rule's price at 1 mm");
             foreach (var kv in on)
                 Assert.That(kv.Value, Is.Zero, $"with the rule, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
         }
@@ -78,6 +78,23 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             TestContext.WriteLine($"with the rule: {Describe(on)}");
             Assert.That(off.Values.Max(), Is.GreaterThan(0.01f), "without the rule the decimated layer passes through the other");
             foreach (var kv in on) Assert.That(kv.Value, Is.Zero, $"with the rule, at {kv.Key.Item1 * 1000}/{kv.Key.Item2 * 1000} mm");
+        }
+
+        // A real layer's gap is a millimetre on average and not everywhere. Where it varies, a decimated triangle spans
+        // more gap than it approaches the other layer through, so the gap it must keep is read where it approaches, on
+        // the other layer's own source triangles, not as the least gap anywhere under it.
+        [Test]
+        public void ALayerWhoseGapVaries_IsKeptClearAtEveryCut()
+        {
+            using var scene = new Scene();
+            scene.Add(SkinTube());
+            scene.Add(LayerTube((a, y) => Skin(a, y) + Gap * (1f + 0.6f * math.sin(5f * a) * math.sin(2f * math.PI * y / 0.06f))));
+            scene.BuildSurface();
+            Assert.That(Crossing(scene.Builders[0], scene.Builders[1]), Is.Zero, "the source layers do not cross");
+            var on = CrossingAtLevels(scene, true, true, true, out _);
+            TestContext.WriteLine($"with the rule: {Describe(on)}");
+            foreach (var kv in on)
+                Assert.That(kv.Value, Is.Zero, $"with the rule, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
         }
 
         /// <summary>
@@ -222,6 +239,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         [TestCase(0.5f, 0.02f)]
         [TestCase(-0.1f, 0.02f)]
         [TestCase(0.4f, 0f)]
+        [TestCase(0.4f, 0.01f)]
         public void ASettingThatBreaksTheGuarantee_IsRefused(float share, float reach)
         {
             using var scene = SkinAndLayer(Gap);
@@ -260,6 +278,77 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(exact, Is.LessThanOrEqualTo(sampled + 1e-5f), $"pair {i}: exact {exact} above a sampled {sampled}");
                 Assert.That(exact, Is.GreaterThan(sampled - 0.06f), $"pair {i}: exact {exact} far below sampled {sampled}");
             }
+        }
+
+        // The rule counts crossing length to decide whether a collapse lengthens a crossing; the gate judges the rule's
+        // output with its own measure. They must agree on what crosses: a triangle meeting another along a shared edge,
+        // resting an edge or a corner on it, or lying in its plane touches and does not cross.
+        [Test]
+        public void CrossingLength_AgreesWithTheGate_OnTouchingAndCrossing()
+        {
+            var o = new float3(0.3f, 1.2f, -0.4f); // avatar-sized coordinates
+            var cases = new (string name, float3[] a, float3[] b)[]
+            {
+                ("crossing", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
+                    new[] { o + new float3(0.002f, 0.002f, -0.005f), o + new float3(0.002f, 0.002f, 0.005f), o + new float3(0.006f, 0.003f, 0) }),
+                ("shared edge", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
+                    new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0.004f, 0.003f, 0.006f) }),
+                ("edge resting on the face", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
+                    new[] { o + new float3(0.001f, 0.002f, 0), o + new float3(0.006f, 0.002f, 0), o + new float3(0.003f, 0.004f, 0.005f) }),
+                ("corner on the face", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
+                    new[] { o + new float3(0.002f, 0.002f, 0), o + new float3(0.004f, 0.002f, 0.005f), o + new float3(0.002f, 0.005f, 0.005f) }),
+                ("coplanar overlap", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
+                    new[] { o + new float3(0.002f, 0.002f, 0), o + new float3(0.012f, 0.002f, 0), o + new float3(0.002f, 0.012f, 0) }),
+                ("grazing, a micrometre through", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
+                    new[] { o + new float3(0.001f, 0.002f, -1e-6f), o + new float3(0.006f, 0.002f, -1e-6f), o + new float3(0.003f, 0.004f, 0.005f) }),
+            };
+            foreach (var (name, a, b) in cases)
+            {
+                var mine = TriangleDistance.IntersectionLength(a[0], a[1], a[2], b[0], b[1], b[2]);
+                var gate = Core.Gate.TriangleCrossing.Cross(a[0], a[1], a[2], b[0], b[1], b[2], Core.Gate.CrossingSettings.Default.Touch, out var s) ? s.Length : 0f;
+                TestContext.WriteLine($"{name}: {mine * 1000:0.####} mm by the rule, {gate * 1000:0.####} mm by the gate");
+                Assert.That(mine, Is.EqualTo(gate).Within(1e-6f), name);
+            }
+        }
+
+        // The pruning that settles most pairs without the exact distance must never settle one wrongly: slivers and
+        // near-degenerate query triangles at avatar-sized coordinates, against a brute-force search.
+        [Test]
+        public void TriangleClearance_AgreesWithBruteForce_ForSlivers()
+        {
+            var rng = new Random(11);
+            var o = new float3(0.2f, 1.1f, 0.3f);
+            var b = new MeshBuilder();
+            for (var i = 0; i < 400; i++)
+            {
+                var c = o + rng.NextFloat3(-0.02f, 0.02f);
+                var v0 = b.Add(c);
+                var v1 = b.Add(c + rng.NextFloat3(-0.004f, 0.004f));
+                var v2 = b.Add(c + rng.NextFloat3(-0.004f, 0.004f));
+                b.Tri(v0, v1, v2);
+            }
+            using var scene = new Scene();
+            scene.Add(b);
+            scene.BuildSurface();
+            var p = b.Positions.ToArray();
+            var t = b.Triangles.ToArray();
+            var layers = scene.Layers[0];
+            for (var i = 0; i < 300; i++)
+            {
+                var a0 = o + rng.NextFloat3(-0.02f, 0.02f);
+                var a1 = a0 + rng.NextFloat3(-0.01f, 0.01f);
+                // Three queries in four are slivers: the third corner on the first edge, or a hair off it.
+                var off = (i % 4) switch { 0 => 0f, 1 => 1e-9f, 2 => 1e-7f, _ => -1f };
+                var a2 = off >= 0f ? math.lerp(a0, a1, rng.NextFloat()) + rng.NextFloat3(-off, off) : a0 + rng.NextFloat3(-0.01f, 0.01f);
+                var brute = float.PositiveInfinity;
+                for (var k = 0; k < t.Length; k++)
+                    brute = math.min(brute, TriangleDistance.TriangleSq(a0, a1, a2, p[t[k].x], p[t[k].y], p[t[k].z]));
+                brute = math.min(math.sqrt(brute), 0.02f);
+                var s = scene.Surface;
+                var tree = ClearanceSurface.TriangleClearance(s.Nodes, s.Prims, s.PrimLayer, s.NodeLayer, a0, a1, a2, int.MaxValue, 0.02f);
+                Assert.That(tree, Is.EqualTo(brute).Within(1e-6f), $"query {i}");
+            }
+            Assert.That(layers.Length, Is.EqualTo(t.Length));
         }
     }
 }
