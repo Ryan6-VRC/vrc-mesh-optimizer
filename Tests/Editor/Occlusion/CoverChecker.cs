@@ -61,10 +61,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             public int Mesh, Tri;
         }
 
+        /// <summary>
+        /// With <paramref name="setback"/>, per mesh in metres, the rule a re-judge asks: a face of mesh b also blocks a ray
+        /// behind a sample of mesh a, back along the ray's line to setback[b] below the sample's plane measured along its
+        /// normal (and at most the reach), when <paramref name="behind"/>[a] names b by bit min(b, 63); null names every mesh.
+        /// </summary>
         public static Report Check(IReadOnlyList<OcclusionMesh> meshes, int[] parents, bool[] vanishes,
-                                   OcclusionSettings s, OcclusionResult[] results, int maxViolations = 8)
+                                   OcclusionSettings s, OcclusionResult[] results, int maxViolations = 8,
+                                   float[] setback = null, ulong[] behind = null)
         {
-            var c = new Checker(meshes, parents, vanishes, s, results, maxViolations);
+            var c = new Checker(meshes, parents, vanishes, s, results, maxViolations) { Setback = setback, Behind = behind };
             c.Run();
             return c.R;
         }
@@ -79,6 +85,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             readonly OcclusionResult[] results;
             readonly int maxViolations;
             readonly double3[] cone;
+            public float[] Setback;
+            public ulong[] Behind;
             public readonly Report R = new Report();
 
             public Checker(IReadOnlyList<OcclusionMesh> meshes, int[] parents, bool[] vanishes, OcclusionSettings s,
@@ -487,19 +495,29 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 var u = math.normalize(math.cross(n, up));
                 var w = math.cross(n, u);
                 var o = p + n * s.OriginOffset;
+                // Behind the sample, per mesh: how far back along a ray of unit slant its faces count.
+                var depth = new double[M.Length];
+                var deepest = 0.0;
+                for (var b = 0; b < M.Length && Setback != null; b++)
+                {
+                    if (Behind != null && (Behind[m] & (1UL << Math.Min(b, 63))) == 0) continue;
+                    depth[b] = Setback[b];
+                    deepest = Math.Max(deepest, depth[b]);
+                }
                 foreach (var c in cone)
                 {
                     var dir = math.normalize(u * c.x + w * c.y + n * c.z);
                     R.RaysCast++;
-                    if (!Blocked(cfg, m, o, dir, allowed))
+                    var back = deepest > 0 && c.z > 0 ? Math.Min(deepest / c.z, s.Reach) : 0.0;
+                    if (!Blocked(cfg, m, o - dir * back, dir, allowed, back, depth, c.z))
                         return $"the ray {dir} from {o} meets no kept co-moving opaque face";
                 }
                 return null;
             }
 
-            bool Blocked(Config cfg, int own, double3 o, double3 dir, HashSet<int> allowed)
+            bool Blocked(Config cfg, int own, double3 o, double3 dir, HashSet<int> allowed, double back, double[] depth, double slant)
             {
-                var reach = s.Reach * (1 + 1e-6) + 1e-9;
+                var reach = (s.Reach + back) * (1 + 1e-6) + 1e-9;
                 var h = cfg.Cell;
                 cfg.Ray++;
                 // Amanatides-Woo: every cell the ray passes through, nearest first, out to reach.
@@ -520,7 +538,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                         {
                             if (cfg.Stamp[i] == cfg.Ray) continue;
                             cfg.Stamp[i] = cfg.Ray;
-                            if (BlocksRay(cfg.Faces[i], own, o, dir, reach, allowed)) return true;
+                            var f = cfg.Faces[i];
+                            var from = back > 0 ? back - Math.Min(depth[f.Mesh] / slant, back) : 0.0;
+                            if (BlocksRay(f, own, o, dir, from, reach, allowed)) return true;
                         }
                     var axis = tMax.x <= tMax.y && tMax.x <= tMax.z ? 0 : tMax.y <= tMax.z ? 1 : 2;
                     if (tMax[axis] > reach) return false;
@@ -529,11 +549,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 }
             }
 
-            bool BlocksRay(in Face f, int own, double3 o, double3 dir, double reach, HashSet<int> allowed)
+            bool BlocksRay(in Face f, int own, double3 o, double3 dir, double from, double reach, HashSet<int> allowed)
             {
                 if (f.Mesh == own) return false;
                 var m = f.Mesh;
-                if (!Hit(f, o, dir, reach, out var bu, out var bv)) return false;
+                if (!Hit(f, o, dir, from, reach, out var bu, out var bv)) return false;
                 if (Share(M[m], M[m].Tris[f.Tri], allowed) < s.Share - 1e-6) return false;
                 var sub = Sub(M[m], f.Tri);
                 var facing = math.dot(dir, math.cross(f.B - f.A, f.C - f.A));
@@ -544,7 +564,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 return true;
             }
 
-            static bool Hit(in Face f, double3 o, double3 d, double reach, out double u, out double v)
+            static bool Hit(in Face f, double3 o, double3 d, double from, double reach, out double u, out double v)
             {
                 u = v = 0;
                 var e1 = f.B - f.A;
@@ -560,7 +580,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 v = math.dot(d, qv) * inv;
                 if (v < -EdgeSlack || u + v > 1 + EdgeSlack) return false;
                 var t = math.dot(e2, qv) * inv;
-                return t > 0 && t <= reach;
+                return t > from && t <= reach;
             }
 
             float Share(MeshData d, int3 tri, HashSet<int> allowed)

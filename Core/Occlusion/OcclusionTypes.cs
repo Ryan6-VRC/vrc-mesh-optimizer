@@ -119,6 +119,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// never covers itself, since both sets are one mesh.
         /// </summary>
         public bool[] Blocks;
+        /// <summary>
+        /// How far, in metres, this mesh's faces may have moved inward past where they stood when they covered: a ray
+        /// also meets them up to this far behind a sample, measured along its normal, when the sample's
+        /// <see cref="CoveredBy"/> names this mesh, so a cover that sank past a sample still covers it. Zero, the
+        /// default, reaches nothing behind any sample. The rule's own limits on an occluder still hold.
+        /// </summary>
+        public float Setback;
+        /// <summary>
+        /// Optional, per vertex: the meshes that covered it before, bit min(index, 63) for the mesh at that index of this
+        /// solve's list, as <see cref="OcclusionResult.CoveredBy"/> reports them. Behind a
+        /// sample, only the faces of a mesh named here cover it (<see cref="Setback"/>). Null names every mesh.
+        /// </summary>
+        public ulong[] CoveredBy;
+        /// <summary>Optional, per triangle: as <see cref="CoveredBy"/>, for the samples inside it. Null names every mesh.</summary>
+        public ulong[] InteriorCoveredBy;
     }
 
     /// <summary>The avatar's bone tree, indexed by the avatar-wide bone id <see cref="BoneInfluence.Bone"/> names. Read, never disposed, by the solver.</summary>
@@ -242,6 +257,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// against <see cref="HiddenTriangles"/> it tells what having to cover a triangle's back as well kept.
         /// </summary>
         public NativeArray<bool> FrontCovered;
+        /// <summary>
+        /// Per vertex: every mesh whose faces blocked a ray of its samples, on either side, at rest or in a configuration,
+        /// one bit per mesh index (meshes from 63 on share bit 63). A mesh that covered a ray another mesh also covered
+        /// may be missing, since each ray names the first blocker met. Informational; what a later solve takes as
+        /// <see cref="OcclusionMesh.CoveredBy"/>.
+        /// </summary>
+        public NativeArray<ulong> CoveredBy;
+        /// <summary>Per triangle: as <see cref="CoveredBy"/>, over the samples inside it; zero for one sampled at its corners only.</summary>
+        public NativeArray<ulong> InteriorCoveredBy;
         public DeclineCounts Declined;
 
         public int HiddenCount
@@ -259,6 +283,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             if (HiddenTriangles.IsCreated) HiddenTriangles.Dispose();
             if (CoveredVertices.IsCreated) CoveredVertices.Dispose();
             if (FrontCovered.IsCreated) FrontCovered.Dispose();
+            if (CoveredBy.IsCreated) CoveredBy.Dispose();
+            if (InteriorCoveredBy.IsCreated) InteriorCoveredBy.Dispose();
         }
     }
 

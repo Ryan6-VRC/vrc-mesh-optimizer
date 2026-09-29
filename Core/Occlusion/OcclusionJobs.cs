@@ -352,7 +352,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public float Reach;
         public float OriginOffset;
         public float ConeRadians;
+        /// <summary>The smallest cosine between a ray of the cone and its axis, of those leaning less than a right angle.</summary>
+        public float MinSlant;
         public BvhSplit Split;
+        /// <summary>Per sample, how far behind it its rays start (<see cref="CoverageKernel.Evaluate"/>).</summary>
+        [ReadOnly] public NativeArray<float> SampleStretch;
         [ReadOnly] public NativeArray<ShapeDelta> Deltas;
         [ReadOnly] public NativeArray<float3> Pos;
         [ReadOnly] public NativeArray<float3> GeoN;
@@ -550,7 +554,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     for (var k = 0; k < FrameTrees.Length; k++)
                     {
                         var tree = FrameTrees[k];
-                        if (tree.Mesh == own || (witness & CoverageKernel.Bit(tree.Mesh)) == 0 || !Reaches(p, SampleNrm[s], tree)) continue;
+                        if (tree.Mesh == own || (witness & CoverageKernel.Bit(tree.Mesh)) == 0 || !Reaches(p, SampleNrm[s], SampleStretch[s], tree)) continue;
                         Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = SampleNrm[s], OnlyRisky = true });
                         break;
                     }
@@ -580,7 +584,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
 
         /// <summary>Whether the sample's cone, from its ray origins out to reach, can meet the tree's rest bounds.</summary>
-        bool Reaches(float3 p, float3 n, in FrameTree tree)
+        bool Reaches(float3 p, float3 n, float stretch, in FrameTree tree)
         {
             var centre = (tree.RiskMin + tree.RiskMax) * 0.5f;
             var radius = math.length(tree.RiskMax - tree.RiskMin) * 0.5f;
@@ -589,6 +593,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             // A ray starts OriginOffset along the normal, so it reaches that much past Reach from the sample.
             if (dist - radius > Reach + OriginOffset) return false;
             if (dist <= radius) return true;
+            // A stretched ray starts behind the sample, at most Reach back, outside the cone the angle test below sees.
+            if (stretch > 0f && dist - radius <= math.min(stretch / MinSlant, Reach) + OriginOffset) return true;
             var off = math.acos(math.clamp(math.dot(to / dist, n), -1f, 1f));
             return off - math.asin(math.saturate(radius / dist)) <= ConeRadians + 1e-3f;
         }
