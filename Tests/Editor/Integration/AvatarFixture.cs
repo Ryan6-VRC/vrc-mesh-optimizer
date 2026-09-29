@@ -200,7 +200,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 ScaleCurves = scaleCurves,
             };
             tweak?.Invoke(input);
-            var report = OptimizerPipeline.Run(input);
+            OptimizationReport report;
+            using (var prepared = OptimizerPipeline.Prepare(input)) report = OptimizerPipeline.Cut(prepared);
             foreach (var r in report.Renderers) if (r.OutputMesh != null) Made(r.OutputMesh);
             if (apply) OptimizerPipeline.Apply(report);
             return report;

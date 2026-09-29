@@ -39,6 +39,22 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public double LivenessMs;
         /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
         public Action<Renderer, PipelineStage> BeforeStage;
+        /// <summary>
+        /// Called before each step taken for the whole avatar at once. A test seam: throwing here escapes
+        /// <see cref="OptimizerPipeline.Prepare"/> or <see cref="OptimizerPipeline.Cut"/>, as a failure no one renderer
+        /// can be blamed for would.
+        /// </summary>
+        public Action<AvatarStep> BeforeStep;
+    }
+
+    /// <summary>The steps taken for the whole avatar at once, as <see cref="PipelineInput.BeforeStep"/> names them.</summary>
+    internal enum AvatarStep
+    {
+        Occlusion,
+        Clearance,
+        Recording,
+        Allocation,
+        Writing,
     }
 
     /// <summary>
@@ -88,44 +104,74 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// decimates what remains to the avatar-wide target and writes new meshes, in that order, so the budget is spent
     /// only on what can be seen. It reads the hierarchy and returns new meshes in a report; it assigns nothing and
     /// never touches a source mesh. <see cref="Apply"/> puts the meshes on the renderers.
+    ///
+    /// It runs as two calls. <see cref="Prepare"/> does everything up to a recorded collapse sequence per renderer, which
+    /// is the costly part; <see cref="Cut"/> spends the target over those sequences and writes, and can be called again on
+    /// the same <see cref="PreparedAvatar"/>.
     /// </summary>
     internal static class OptimizerPipeline
     {
         /// <summary>A renderer's protection maps to an allocation weight no lower than this, which the allocator needs above 0.</summary>
         const float MinWeight = 1e-3f;
 
-        sealed class Job : IDisposable
-        {
-            public Renderer Renderer;
-            public Mesh Source;
-            public RendererReport Report;
-            /// <summary>This renderer's frames in the avatar's linked configurations.</summary>
-            public readonly List<LiveFrame> Linked = new List<LiveFrame>();
-            public EvalMesh Eval;
-            public bool Extracted;
-            public bool Occludes;
-            public bool[] Hidden;
-            public CollapseSequence Sequence;
-            public bool Decimated;
-            /// <summary>Per extracted triangle, its layer in the clearance surface, -1 for one occlusion removed; not created when the rule is off.</summary>
-            public NativeArray<int> Layers;
-            public int Cut;
-
-            public void Dispose()
-            {
-                if (Extracted) Eval.Dispose();
-                Extracted = false;
-                if (Decimated) Sequence.Dispose();
-                Decimated = false;
-                if (Layers.IsCreated) Layers.Dispose();
-                Layers = default;
-            }
-        }
-
-        public static OptimizationReport Run(PipelineInput input)
+        /// <summary>
+        /// Surveys, extracts, removes hidden triangles and records every decimated renderer's collapse sequence. The
+        /// caller owns the result and disposes it; if this throws, everything it made is already disposed.
+        /// </summary>
+        public static PreparedAvatar Prepare(PipelineInput input)
         {
             if (input?.Root == null) throw new ArgumentException("the pipeline needs an avatar root");
             if (input.Settings == null) throw new ArgumentException("the pipeline needs the component's settings");
+            var settings = input.Settings;
+            var total = Stopwatch.StartNew();
+            var prepared = new PreparedAvatar(input);
+            prepared.Times.Liveness = input.LivenessMs;
+            try
+            {
+                var jobs = prepared.Renderers;
+                var bones = new AvatarBones(input.Root);
+                var stage = Stopwatch.StartNew();
+                foreach (var renderer in input.Root.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (!(renderer is SkinnedMeshRenderer) && !(renderer is MeshRenderer)) continue;
+                    jobs.Add(Survey(renderer, input, prepared));
+                }
+                Configure(jobs, input, prepared);
+                foreach (var job in jobs)
+                    if (job.Skip == SkipReason.None) Extract(job, input, bones, prepared);
+                prepared.Times.Extraction = stage.Elapsed.TotalMilliseconds;
+                prepared.UnmatchedMaterialOverrides.AddRange(new OccluderMaterials(settings.materials).Unmatched(jobs.Select(j => j.Renderer)));
+                // A never-occludes override that matched nothing left a surface the user said can vanish free to hide others.
+                foreach (var o in settings.materials)
+                    if (o != null && o.material != null && o.mode == OcclusionMode.NeverOccludes && prepared.UnmatchedMaterialOverrides.Contains(o.material))
+                        prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.NeverOccludesUnmatched, true, o.material));
+
+                var live = prepared.Extracted;
+                live.AddRange(jobs.Where(j => j.Extracted));
+                stage.Restart();
+                input.BeforeStep?.Invoke(AvatarStep.Occlusion);
+                if (settings.removeHiddenTriangles) RemoveHidden(live, input, bones, prepared);
+                prepared.Times.Occlusion = stage.Elapsed.TotalMilliseconds;
+
+                if (settings.decimate) Record(live, jobs, input, bones, prepared);
+            }
+            catch
+            {
+                prepared.Dispose();
+                throw;
+            }
+            prepared.PrepareMs = total.Elapsed.TotalMilliseconds;
+            return prepared;
+        }
+
+        /// <summary>
+        /// Spends the component's target over the prepared sequences, cuts each and writes the meshes, and reports it all.
+        /// Reads <paramref name="prepared"/> and changes nothing in it. A renderer whose writing fails is left as it was.
+        /// </summary>
+        public static OptimizationReport Cut(PreparedAvatar prepared)
+        {
+            if (prepared == null) throw new ArgumentNullException(nameof(prepared));
+            var input = prepared.Input;
             var settings = input.Settings;
             var total = Stopwatch.StartNew();
             var report = new OptimizationReport
@@ -135,54 +181,116 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 TriangleBudget = settings.triangleBudget,
                 Tolerance = settings.tolerance,
                 TargetMet = true,
+                OcclusionRan = prepared.OcclusionRan,
+                Declined = prepared.Declined,
+                OcclusionStats = prepared.OcclusionStats,
+                Times = prepared.Times,
             };
-            report.Times.Liveness = input.LivenessMs;
+            report.Links.AddRange(prepared.Links);
+            report.Configurations.AddRange(prepared.Configurations);
+            report.UnmatchedMaterialOverrides.AddRange(prepared.UnmatchedMaterialOverrides);
+            report.UnstableBones.AddRange(prepared.UnstableBones);
+            report.Diagnostics.AddRange(prepared.Diagnostics);
 
-            var jobs = new List<Job>();
-            try
+            var jobs = prepared.Renderers;
+            var steps = new int[jobs.Count];
+            var stage = Stopwatch.StartNew();
+            if (settings.decimate)
             {
-                var bones = new AvatarBones(input.Root);
-                var stage = Stopwatch.StartNew();
-                foreach (var renderer in input.Root.GetComponentsInChildren<Renderer>(true))
+                input.BeforeStep?.Invoke(AvatarStep.Allocation);
+                report.ErrorLevel = Allocate(jobs, settings, steps);
+                report.Times.Allocation = stage.Elapsed.TotalMilliseconds;
+            }
+
+            stage.Restart();
+            input.BeforeStep?.Invoke(AvatarStep.Writing);
+            var outcomes = new Outcome[jobs.Count];
+            var kept = new KeptTriangles[jobs.Count];
+            for (var i = 0; i < jobs.Count; i++)
+            {
+                var job = jobs[i];
+                if (!job.Extracted) continue;
+                outcomes[i] = new Outcome();
+                if (job.HiddenCount == 0 && (!job.Decimated || steps[i] == 0))
                 {
-                    if (!(renderer is SkinnedMeshRenderer) && !(renderer is MeshRenderer)) continue;
-                    var job = Survey(renderer, input, report);
-                    jobs.Add(job);
-                    report.Renderers.Add(job.Report);
+                    outcomes[i].Skip = SkipReason.Unchanged;
+                    continue;
                 }
-                Configure(jobs, input, report);
-                foreach (var job in jobs)
-                    if (job.Report.Skip == SkipReason.None) Extract(job, input, bones, report);
-                report.Times.Extraction = stage.Elapsed.TotalMilliseconds;
-                report.UnmatchedMaterialOverrides.AddRange(new OccluderMaterials(settings.materials).Unmatched(jobs.Select(j => j.Renderer)));
-                // A never-occludes override that matched nothing left a surface the user said can vanish free to hide others.
-                foreach (var o in settings.materials)
-                    if (o != null && o.material != null && o.mode == OcclusionMode.NeverOccludes && report.UnmatchedMaterialOverrides.Contains(o.material))
-                        report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.NeverOccludesUnmatched, true, o.material));
-
-                var live = jobs.Where(j => j.Extracted).ToList();
-                stage.Restart();
-                if (settings.removeHiddenTriangles) RemoveHidden(live, input, bones, report);
-                report.Times.Occlusion = stage.Elapsed.TotalMilliseconds;
-
-                if (settings.decimate) Decimate(live, jobs, input, bones, report);
-
-                stage.Restart();
-                foreach (var job in live) Write(job, input, report);
-                report.Times.Writing = stage.Elapsed.TotalMilliseconds;
-
-                if (settings.target == TargetKind.TriangleBudget) report.TargetMet = report.TrianglesAfter <= settings.triangleBudget;
-                if (settings.decimate && !report.TargetMet)
-                    report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.BudgetNotMet, false,
-                        report.TrianglesAfter.ToString(), settings.triangleBudget.ToString()));
+                kept[i] = Keep(job, steps[i], outcomes[i], report);
             }
-            finally
-            {
-                foreach (var job in jobs) job.Dispose();
-            }
-            report.Times.Total = total.Elapsed.TotalMilliseconds + input.LivenessMs;
-            OptimizationReports.Add(report);
+            // Every renderer's evaluation mesh and removed triangles are alive here beside the triangles each keeps, which
+            // is what a step judging the removals again against the kept meshes, before any is written, would read.
+            for (var i = 0; i < jobs.Count; i++)
+                if (kept[i] != null) Write(jobs[i], kept[i], outcomes[i], input, report);
+            report.Times.Writing = stage.Elapsed.TotalMilliseconds;
+
+            for (var i = 0; i < jobs.Count; i++) report.Renderers.Add(ReportOf(jobs[i], steps[i], outcomes[i]));
+            if (settings.target == TargetKind.TriangleBudget) report.TargetMet = report.TrianglesAfter <= settings.triangleBudget;
+            if (settings.decimate && !report.TargetMet)
+                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.BudgetNotMet, false,
+                    report.TrianglesAfter.ToString(), settings.triangleBudget.ToString()));
+            report.Times.Total = prepared.PrepareMs + total.Elapsed.TotalMilliseconds + input.LivenessMs;
             return report;
+        }
+
+        /// <summary>What one cut did to one extracted renderer.</summary>
+        sealed class Outcome
+        {
+            public Mesh Mesh;
+            public int[] KeptVertices;
+            public int Triangles;
+            public int Hidden;
+            public SkipReason Skip;
+            public string SkipDetail;
+        }
+
+        /// <summary>
+        /// The triangles one renderer keeps at one cut, over its evaluation mesh's vertices, each with the evaluation
+        /// triangle it came from, whose submesh it is drawn in.
+        /// </summary>
+        sealed class KeptTriangles
+        {
+            public int3[] Triangles;
+            public int[] Source;
+        }
+
+        /// <summary>The renderer's report, written once from what preparing found and what the cut did.</summary>
+        static RendererReport ReportOf(PreparedRenderer job, int step, Outcome outcome)
+        {
+            var written = outcome?.Mesh != null;
+            return new RendererReport
+            {
+                Renderer = job.Renderer,
+                Path = job.Path,
+                SourceMesh = job.Source,
+                OutputMesh = written ? outcome.Mesh : null,
+                TrianglesBefore = job.TrianglesBefore,
+                HiddenRemoved = written ? outcome.Hidden : 0,
+                TrianglesAfter = written ? outcome.Triangles : job.TrianglesBefore,
+                Skip = job.Skip != SkipReason.None ? job.Skip : outcome?.Skip ?? SkipReason.None,
+                SkipDetail = job.Skip != SkipReason.None ? job.SkipDetail : outcome?.SkipDetail,
+                Occludes = job.Occludes,
+                Mirrored = job.Mirrored,
+                ExcludedFromDecimation = job.ExcludedFromDecimation,
+                SequenceLength = job.SequenceLength,
+                AllocationCut = step,
+                Error = job.Decimated ? job.Sequence.ErrorAt(step) : 0f,
+                FloorTriangles = job.FloorTriangles,
+                Weight = job.Weight,
+                LockedVertices = job.LockedVertices,
+                LockedFromZeroScale = job.LockedFromZeroScale,
+                LockedForFur = job.LockedForFur,
+                CostRaisedForGrowth = job.CostRaisedForGrowth,
+                NearVertices = job.NearVertices,
+                ClearanceRefused = job.ClearanceRefused,
+                KeptOnUnstableBones = job.KeptOnUnstableBones,
+                KeptForFur = job.KeptForFur,
+                KeptForOutline = job.KeptForOutline,
+                Declined = job.Declined,
+                HiddenSourceTriangles = job.Hidden,
+                KeptVertices = written ? outcome.KeptVertices : null,
+                Liveness = job.Liveness,
+            };
         }
 
         /// <summary>
@@ -207,38 +315,31 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        static Job Survey(Renderer renderer, PipelineInput input, OptimizationReport report)
+        static PreparedRenderer Survey(Renderer renderer, PipelineInput input, PreparedAvatar prepared)
         {
             var root = input.Root;
             var mesh = RendererExtraction.MeshOf(renderer);
-            var job = new Job
+            var r = new PreparedRenderer
             {
                 Renderer = renderer,
                 Source = mesh,
-                Report = new RendererReport
-                {
-                    Renderer = renderer,
-                    Path = RuntimeUtil.RelativePath(root.gameObject, renderer.gameObject) ?? renderer.name,
-                    SourceMesh = mesh,
-                    Weight = 1f,
-                },
+                Path = RuntimeUtil.RelativePath(root.gameObject, renderer.gameObject) ?? renderer.name,
             };
-            var r = job.Report;
             if (mesh == null)
             {
                 r.Skip = SkipReason.NoMesh;
-                return job;
+                return r;
             }
-            r.TrianglesBefore = r.TrianglesAfter = MeshTriangles.Count(mesh);
+            r.TrianglesBefore = MeshTriangles.Count(mesh);
             if (renderer.GetComponent<Cloth>() != null)
             {
                 r.Skip = SkipReason.Cloth;
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.Cloth, true, renderer));
+                prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.Cloth, true, renderer));
             }
             else if (!CanRead(mesh, Application.isPlaying))
             {
                 r.Skip = SkipReason.NotReadable;
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.NotReadable, true, renderer, mesh.name));
+                prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.NotReadable, true, renderer, mesh.name));
             }
             else if (r.TrianglesBefore == 0)
             {
@@ -247,13 +348,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             else if (DuplicateShapeKey(mesh) is string duplicate)
             {
                 r.Skip = SkipReason.DuplicateShapeKey;
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.DuplicateShapeKey, true, renderer, duplicate));
+                prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.DuplicateShapeKey, true, renderer, duplicate));
             }
             else if (renderer is SkinnedMeshRenderer skinned)
             {
                 r.Liveness = LivenessOf(skinned, input);
             }
-            return job;
+            return r;
         }
 
         /// <summary>The liveness the caller gave a renderer, or, when it gave none, every key live from where it is held to full weight.</summary>
@@ -282,16 +383,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// </summary>
         internal static bool CanRead(Mesh mesh, bool playing) => mesh.isReadable || !playing;
 
-        static void Fail(Job job, OptimizationReport report, PipelineStage stage, Exception e)
+        /// <summary>Records a renderer's failure at a stage: it is left as it was, and named.</summary>
+        static void Fail(Renderer renderer, List<Diagnostic> diagnostics, PipelineStage stage, Exception e, out SkipReason skip, out string detail)
         {
-            job.Dispose();
-            job.Report.Skip = SkipReason.Failed;
-            job.Report.SkipDetail = $"{stage}: {e.Message}";
-            job.Report.OutputMesh = null;
-            job.Report.KeptVertices = null;
-            job.Report.TrianglesAfter = job.Report.TrianglesBefore;
-            job.Report.HiddenRemoved = 0;
-            report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, stage.ToString(), e.Message));
+            skip = SkipReason.Failed;
+            detail = $"{stage}: {e.Message}";
+            diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, renderer, stage.ToString(), e.Message));
             Debug.LogException(e);
         }
 
@@ -304,71 +401,72 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// A member the pass does not evaluate as live, or on a renderer it does not extract, is left out; a link left with
         /// fewer than two members, or whose members no longer stand at one normalised weight, moves its keys alone.
         /// </summary>
-        static void Configure(List<Job> jobs, PipelineInput input, OptimizationReport report)
+        static void Configure(List<PreparedRenderer> jobs, PipelineInput input, PreparedAvatar prepared)
         {
             if (input.Links == null) return;
-            var byRenderer = new Dictionary<Renderer, Job>();
+            var byRenderer = new Dictionary<Renderer, PreparedRenderer>();
             foreach (var job in jobs)
-                if (job.Report.Skip == SkipReason.None && job.Report.Liveness != null) byRenderer[job.Renderer] = job;
+                if (job.Skip == SkipReason.None && job.Liveness != null) byRenderer[job.Renderer] = job;
 
             var next = 1;
             foreach (var link in input.Links)
             {
-                var members = new List<(Job job, int key, float full)>();
+                var members = new List<(PreparedRenderer job, int key, float full)>();
                 foreach (var m in link ?? Array.Empty<LinkedKey>())
                 {
                     if (m.Renderer == null || !byRenderer.TryGetValue(m.Renderer, out var job)) continue;
-                    var liveness = job.Report.Liveness;
+                    var liveness = job.Liveness;
                     if (m.Key < 0 || m.Key >= liveness.Length || m.Key >= job.Source.blendShapeCount || liveness[m.Key].State != ShapeKeyState.Live) continue;
                     if (members.Any(x => x.job == job && x.key == m.Key)) continue;
                     var frameWeights = ShapeKeyFrames.WeightsOf(job.Source, m.Key);
                     members.Add((job, m.Key, ShapeKeyClassifier.FullScale(frameWeights[frameWeights.Length - 1])));
                 }
                 if (members.Count < 2) continue;
-                float Held((Job job, int key, float full) m) => m.job.Report.Liveness[m.key].HeldWeight / m.full;
+                float Held((PreparedRenderer job, int key, float full) m) => m.job.Liveness[m.key].HeldWeight / m.full;
                 if (members.Any(m => Math.Abs(Held(m) - Held(members[0])) > ShapeKeyLinks.Tolerance)) continue;
 
                 var weights = new SortedSet<float>();
                 foreach (var (job, key, full) in members)
                 {
-                    var liveness = job.Report.Liveness[key];
+                    var liveness = job.Liveness[key];
                     foreach (var w in MeshExtractor.Configurations(ShapeKeyFrames.WeightsOf(job.Source, key), liveness, liveness.HeldWeight))
                         weights.Add(w / full);
                 }
                 if (weights.Count == 0) continue;
 
-                var linkReport = new LinkReport(members.Select(m => new ShapeKeyRef(m.job.Renderer, m.job.Report.Path, m.key, m.job.Source.GetBlendShapeName(m.key))).ToArray());
-                report.Links.Add(linkReport);
+                var linkReport = new LinkReport(members.Select(m => new ShapeKeyRef(m.job.Renderer, m.job.Path, m.key, m.job.Source.GetBlendShapeName(m.key))).ToArray());
+                prepared.Links.Add(linkReport);
                 foreach (var u in weights)
                 {
                     var id = next++;
                     foreach (var group in members.GroupBy(m => m.job))
                         group.Key.Linked.Add(new LiveFrame(id, group.Select(m => m.key).ToArray(), group.Select(m => u * m.full).ToArray()));
-                    report.Configurations.Add(new ConfigurationReport(id, linkReport, u, members.Select(m => u * m.full).ToArray()));
+                    prepared.Configurations.Add(new ConfigurationReport(id, linkReport, u, members.Select(m => u * m.full).ToArray()));
                 }
             }
         }
 
-        static void Extract(Job job, PipelineInput input, AvatarBones bones, OptimizationReport report)
+        static void Extract(PreparedRenderer job, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             try
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Extraction);
-                job.Eval = RendererExtraction.Extract(job.Renderer, bones, job.Report.Liveness, job.Linked, Allocator.Persistent, out _);
+                job.Eval = RendererExtraction.Extract(job.Renderer, bones, job.Liveness, job.Linked, Allocator.Persistent, out _);
                 job.Extracted = true;
-                job.Report.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
+                job.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
             }
             catch (NonFiniteMeshException e)
             {
                 // Not a failure but the mesh as authored, so it is named for what it is; nothing was extracted.
-                job.Report.Skip = SkipReason.NonFinite;
-                report.Diagnostics.Add(e.ShapeKey != null
+                job.Skip = SkipReason.NonFinite;
+                prepared.Diagnostics.Add(e.ShapeKey != null
                     ? new Diagnostic(DiagnosticKeys.NonFiniteShapeKey, true, job.Renderer, e.ShapeKey, e.Vertex)
                     : new Diagnostic(DiagnosticKeys.NonFiniteVertex, true, job.Renderer, e.Vertex));
             }
             catch (Exception e)
             {
-                Fail(job, report, PipelineStage.Extraction, e);
+                job.Dispose();
+                Fail(job.Renderer, prepared.Diagnostics, PipelineStage.Extraction, e, out job.Skip, out job.SkipDetail);
             }
         }
 
@@ -436,7 +534,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// have been exposed by a live frame, a deletion or a lattice sample inside a large triangle. Counted only when
         /// outlines join the sides drawn; otherwise they kept nothing.
         /// </summary>
-        static int KeptForOutline(Job job, in OcclusionResult result)
+        static int KeptForOutline(PreparedRenderer job, in OcclusionResult result)
         {
             var count = job.Source.subMeshCount;
             var blind = SidesDrawn(job.Renderer, count, null, outlines: false);
@@ -453,7 +551,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return kept;
         }
 
-        static void RemoveHidden(List<Job> jobs, PipelineInput input, AvatarBones bones, OptimizationReport report)
+        static void RemoveHidden(List<PreparedRenderer> jobs, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
             var materials = new OccluderMaterials(input.Settings.materials);
@@ -464,10 +562,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 // Listed as always on but off as the avatar loads: it covers nothing until something turns it on.
                 if (!job.Renderer.enabled || !job.Renderer.gameObject.activeInHierarchy)
                 {
-                    report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.AlwaysOnIsOff, false, job.Renderer));
+                    prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.AlwaysOnIsOff, false, job.Renderer));
                     continue;
                 }
-                job.Occludes = job.Report.Occludes = true;
+                job.Occludes = true;
             }
             if (!jobs.Any(j => j.Occludes)) return;
 
@@ -479,7 +577,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 foreach (var job in jobs)
                 {
                     var eval = job.Eval;
-                    if (job.Report.Mirrored)
+                    if (job.Mirrored)
                     {
                         // Occlusion reads a face's front by Unity's winding in avatar-root space; Unity draws a
                         // mirrored renderer with its winding reversed, so occlusion sees it reversed too.
@@ -498,7 +596,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
                 var unstable = UnstableBones.Compute(bones, input.ScaleCurves);
                 for (var b = 0; b < unstable.Length; b++)
-                    if (unstable[b]) report.UnstableBones.Add(RuntimeUtil.RelativePath(input.Root.gameObject, bones.Transforms[b].gameObject) ?? bones.Transforms[b].name);
+                    if (unstable[b]) prepared.UnstableBones.Add(RuntimeUtil.RelativePath(input.Root.gameObject, bones.Transforms[b].gameObject) ?? bones.Transforms[b].name);
                 // The occluder side: a face on an unstable bone never covers.
                 var boneTable = new OcclusionBones
                 {
@@ -509,19 +607,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 owned.Add(boneTable.Vanishes);
 
                 results = OcclusionSolver.Solve(meshes, boneTable, input.Occlusion, Allocator.Persistent, out var stats);
-                report.OcclusionRan = true;
-                report.OcclusionStats = stats;
+                prepared.OcclusionRan = true;
+                prepared.OcclusionStats = stats;
                 var declined = new DeclineCounts();
                 for (var i = 0; i < jobs.Count; i++)
                 {
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
-                    job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable);
-                    job.Report.KeptForFur = KeepFur(job);
-                    job.Report.KeptForOutline = outlines ? KeptForOutline(job, results[i]) : 0;
-                    job.Report.HiddenSourceTriangles = job.Hidden;
+                    job.KeptOnUnstableBones = KeepUnstable(job, unstable);
+                    job.KeptForFur = KeepFur(job);
+                    job.KeptForOutline = outlines ? KeptForOutline(job, results[i]) : 0;
                     var d = results[i].Declined;
-                    job.Report.Declined = d;
+                    job.Declined = d;
                     declined.Unweighted += d.Unweighted;
                     declined.Swings += d.Swings;
                     declined.SeeThrough += d.SeeThrough;
@@ -529,18 +626,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     declined.ExposedByFrame += d.ExposedByFrame;
                     declined.ExposedByDeletion += d.ExposedByDeletion;
                 }
-                report.Declined = declined;
+                prepared.Declined = declined;
             }
             catch (Exception e)
             {
                 // Occlusion decides over every renderer at once, so a failure leaves all of them whole.
-                foreach (var job in jobs)
-                {
-                    job.Hidden = null;
-                    job.Report.HiddenSourceTriangles = null;
-                }
-                report.OcclusionRan = false;
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.OcclusionFailed, true, e.Message));
+                foreach (var job in jobs) job.Hidden = null;
+                prepared.OcclusionRan = false;
+                prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.OcclusionFailed, true, e.Message));
                 Debug.LogException(e);
             }
             finally
@@ -554,7 +647,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// A triangle drawn with fur grows it past its cover (<see cref="MaterialFur"/>), so it is never deleted. Like
         /// <see cref="KeepUnstable"/>, this only clears flags after the solve. Returns how many triangles it kept.
         /// </summary>
-        static int KeepFur(Job job)
+        static int KeepFur(PreparedRenderer job)
         {
             var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
             var kept = 0;
@@ -574,7 +667,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// triangles takes no face away from anyone's cover. Any weight counts, as on the occluder side: however small, it
         /// moves the corner when the bone scales, and to NaN when the bone does. Returns how many triangles it kept.
         /// </summary>
-        static int KeepUnstable(Job job, bool[] unstable)
+        static int KeepUnstable(PreparedRenderer job, bool[] unstable)
         {
             var eval = job.Eval;
             var kept = 0;
@@ -595,7 +688,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return kept;
         }
 
-        static void Decimate(List<Job> live, List<Job> all, PipelineInput input, AvatarBones bones, OptimizationReport report)
+        /// <summary>Records every extracted renderer's collapse sequence, over the triangles occlusion kept.</summary>
+        static void Record(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             var settings = input.Settings;
             var protection = new Protection(input.Root, bones, input.ScaleCurves);
@@ -604,24 +698,26 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (s != null && s.renderer != null) perRenderer[s.renderer] = s;
 
             var stage = Stopwatch.StartNew();
+            input.BeforeStep?.Invoke(AvatarStep.Clearance);
             var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : default;
-            report.Times.Clearance = stage.Elapsed.TotalMilliseconds;
+            prepared.Times.Clearance = stage.Elapsed.TotalMilliseconds;
             var rig = RigOf(bones, SkinWeightPerBone(live, bones.Count));
             try
             {
                 stage.Restart();
+                input.BeforeStep?.Invoke(AvatarStep.Recording);
                 foreach (var job in live)
                 {
                     perRenderer.TryGetValue(job.Renderer, out var own);
-                    job.Report.Weight = Mathf.Max(own?.protection ?? 1f, MinWeight);
+                    job.Weight = Mathf.Max(own?.protection ?? 1f, MinWeight);
                     if (own != null && own.excludeFromDecimation)
                     {
-                        job.Report.ExcludedFromDecimation = true;
+                        job.ExcludedFromDecimation = true;
                         continue;
                     }
-                    DecimateOne(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, rig, report);
+                    DecimateOne(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, rig, prepared);
                 }
-                report.Times.Decimation = stage.Elapsed.TotalMilliseconds;
+                prepared.Times.Decimation = stage.Elapsed.TotalMilliseconds;
             }
             finally
             {
@@ -630,48 +726,51 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 rig.Position.Dispose();
                 rig.Axis.Dispose();
                 rig.Right.Dispose();
+                // Only the clearance rule reads a renderer's layers, and only while its sequence is recorded.
+                foreach (var job in live)
+                {
+                    if (job.Layers.IsCreated) job.Layers.Dispose();
+                    job.Layers = default;
+                }
             }
+        }
 
-            stage.Restart();
-            var decimated = live.Where(j => j.Decimated).ToList();
+        /// <summary>
+        /// Spends the target over the recorded sequences at one common error level, writing each renderer's step into
+        /// <paramref name="steps"/> (0 for one not decimated), and returns the level.
+        /// </summary>
+        static float Allocate(List<PreparedRenderer> all, AvatarMeshOptimizer settings, int[] steps)
+        {
+            var decimated = all.Where(j => j.Decimated).ToList();
             // The budget is the avatar's: whatever is not decimated costs its triangles in full.
-            var fixedTriangles = all.Where(j => !j.Decimated).Sum(j => j.Report.TrianglesBefore - HiddenCount(j));
+            var fixedTriangles = all.Where(j => !j.Decimated).Sum(j => j.TrianglesBefore - j.HiddenCount);
             // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
             // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
-            fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - HiddenCount(j) - j.Sequence.InitialTriangleCount);
+            fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - j.HiddenCount - j.Sequence.InitialTriangleCount);
             var entries = decimated.Select(j => new AllocationEntry
             {
                 Steps = j.Sequence.Steps,
                 InitialTriangleCount = j.Sequence.InitialTriangleCount,
-                FloorTriangles = j.Report.FloorTriangles,
-                Weight = j.Report.Weight,
+                FloorTriangles = j.FloorTriangles,
+                Weight = j.Weight,
             }).ToList();
-            if (entries.Count > 0)
-            {
-                var result = settings.target == TargetKind.TriangleBudget
-                    ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles))
-                    : BudgetAllocator.ForTolerance(entries, settings.tolerance / 1000f);
-                report.ErrorLevel = result.Level;
-                for (var i = 0; i < decimated.Count; i++)
-                {
-                    var job = decimated[i];
-                    job.Cut = result.Cuts[i];
-                    job.Report.AllocationCut = job.Cut;
-                    job.Report.Error = job.Sequence.ErrorAt(job.Cut);
-                }
-            }
-            report.Times.Allocation = stage.Elapsed.TotalMilliseconds;
+            if (entries.Count == 0) return 0f;
+            var result = settings.target == TargetKind.TriangleBudget
+                ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles))
+                : BudgetAllocator.ForTolerance(entries, settings.tolerance / 1000f);
+            for (var i = 0; i < decimated.Count; i++) steps[all.IndexOf(decimated[i])] = result.Cuts[i];
+            return result.Level;
         }
 
         /// <summary>
         /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
-        /// each renderer's layer per triangle in <see cref="Job.Layers"/>. Kept means what occlusion left: a triangle
+        /// each renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>. Kept means what occlusion left: a triangle
         /// it deleted is not there to be passed through. A renderer off at build is in it like any other, since whatever
         /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is a renderer the
         /// pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be read: it is still
         /// drawn where it stands, whole, so its neighbours keep clear of its source.
         /// </summary>
-        static ClearanceSurface ClearanceSurfaceOf(List<Job> live, List<Job> all, PipelineInput input, AvatarBones bones, float reach)
+        static ClearanceSurface ClearanceSurfaceOf(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, float reach)
         {
             var sources = new List<ClearanceLayerSource>();
             var owned = new List<IDisposable>();
@@ -691,7 +790,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 }
                 foreach (var job in all)
                 {
-                    if (job.Extracted || job.Source == null || job.Report.TrianglesBefore == 0 || !CanRead(job.Source, Application.isPlaying)) continue;
+                    if (job.Extracted || job.Source == null || job.TrianglesBefore == 0 || !CanRead(job.Source, Application.isPlaying)) continue;
                     if (!TryExtractUnchanged(job, input, bones, out var eval)) continue;
                     owned.Add(eval);
                     var layers = Layers.Pieces(eval.Positions, eval.Triangles, Allocator.Persistent, out var pieces);
@@ -709,7 +808,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>Per bone id, the skin weight every extracted mesh's vertices put on it.</summary>
-        static float[] SkinWeightPerBone(List<Job> live, int bones)
+        static float[] SkinWeightPerBone(List<PreparedRenderer> live, int bones)
         {
             var weight = new float[bones];
             foreach (var job in live)
@@ -771,7 +870,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// A renderer the pass leaves as it was, extracted only to stand in the clearance surface. False, with nothing to
         /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing.
         /// </summary>
-        static bool TryExtractUnchanged(Job job, PipelineInput input, AvatarBones bones, out EvalMesh eval)
+        static bool TryExtractUnchanged(PreparedRenderer job, PipelineInput input, AvatarBones bones, out EvalMesh eval)
         {
             eval = default;
             try
@@ -786,18 +885,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        static int HiddenCount(Job job)
-        {
-            if (job.Hidden == null) return 0;
-            var n = 0;
-            foreach (var h in job.Hidden) if (h) n++;
-            return n;
-        }
-
         /// <summary>The triangles occlusion removed, as the mask decimation and the clearance surface leave them out by; unset when it removed none. The caller owns it.</summary>
-        static NativeArray<bool> HiddenMask(Job job) => job.Hidden == null ? default : new NativeArray<bool>(job.Hidden, Allocator.Persistent);
+        static NativeArray<bool> HiddenMask(PreparedRenderer job) => job.Hidden == null ? default : new NativeArray<bool>(job.Hidden, Allocator.Persistent);
 
-        static void DecimateOne(Job job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, OptimizationReport report)
+        static void DecimateOne(PreparedRenderer job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, PreparedAvatar prepared)
         {
             var owned = new List<IDisposable>();
             try
@@ -837,23 +928,23 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     vertexProtection.CostMultiplier = new NativeArray<float>(multipliers, Allocator.Persistent);
                     owned.Add(vertexProtection.CostMultiplier);
                 }
-                job.Report.LockedVertices = lockedCount;
-                job.Report.LockedFromZeroScale = fromZeroScale;
-                job.Report.LockedForFur = lockedForFur;
-                job.Report.CostRaisedForGrowth = grownCount;
-                job.Report.FloorTriangles = protection.FloorFor(job.Renderer, eval.TriangleCount - HiddenCount(job));
+                job.LockedVertices = lockedCount;
+                job.LockedFromZeroScale = fromZeroScale;
+                job.LockedForFur = lockedForFur;
+                job.CostRaisedForGrowth = grownCount;
+                job.FloorTriangles = protection.FloorFor(job.Renderer, eval.TriangleCount - job.HiddenCount);
 
                 job.Sequence = Decimator.Run(eval, hidden, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);
                 job.Decimated = true;
-                job.Report.SequenceLength = job.Sequence.Length;
-                job.Report.NearVertices = clearanceStats.NearVertices;
-                job.Report.ClearanceRefused = clearanceStats.Refused;
+                job.SequenceLength = job.Sequence.Length;
+                job.NearVertices = clearanceStats.NearVertices;
+                job.ClearanceRefused = clearanceStats.Refused;
             }
             catch (Exception e)
             {
                 // Decimation failing on one renderer leaves it at what occlusion kept.
-                job.Report.SequenceLength = 0;
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, PipelineStage.Decimation.ToString(), e.Message));
+                job.SequenceLength = 0;
+                prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, PipelineStage.Decimation.ToString(), e.Message));
                 Debug.LogException(e);
             }
             finally
@@ -862,18 +953,46 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        static void Write(Job job, PipelineInput input, OptimizationReport report)
+        /// <summary>
+        /// The triangles a renderer keeps at <paramref name="step"/>: its cut when it was cut, otherwise every triangle
+        /// occlusion left. Null, with the failure recorded, when the cut fails.
+        /// </summary>
+        static KeptTriangles Keep(PreparedRenderer job, int step, Outcome outcome, OptimizationReport report)
         {
-            if (!job.Extracted) return;
-            var hidden = HiddenCount(job);
-            if (hidden == 0 && (!job.Decimated || job.Cut == 0))
-            {
-                job.Report.Skip = SkipReason.Unchanged;
-                return;
-            }
-
             CutResult cut = default;
             var cutMade = false;
+            try
+            {
+                var eval = job.Eval;
+                if (job.Decimated && step > 0)
+                {
+                    cut = job.Sequence.Cut(step, Allocator.Persistent);
+                    cutMade = true;
+                    return new KeptTriangles { Triangles = cut.Triangles.AsArray().ToArray(), Source = cut.SourceTriangle.AsArray().ToArray() };
+                }
+                var triangles = new List<int3>();
+                var source = new List<int>();
+                for (var t = 0; t < eval.TriangleCount; t++)
+                {
+                    if (job.Hidden != null && job.Hidden[t]) continue;
+                    triangles.Add(eval.Triangles[t]);
+                    source.Add(t);
+                }
+                return new KeptTriangles { Triangles = triangles.ToArray(), Source = source.ToArray() };
+            }
+            catch (Exception e)
+            {
+                Fail(job.Renderer, report.Diagnostics, PipelineStage.Writing, e, out outcome.Skip, out outcome.SkipDetail);
+                return null;
+            }
+            finally
+            {
+                if (cutMade) cut.Dispose();
+            }
+        }
+
+        static void Write(PreparedRenderer job, KeptTriangles kept, Outcome outcome, PipelineInput input, OptimizationReport report)
+        {
             try
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Writing);
@@ -881,19 +1000,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 var mesh = job.Source;
                 var perSubmesh = new List<int>[mesh.subMeshCount];
                 for (var s = 0; s < perSubmesh.Length; s++) perSubmesh[s] = new List<int>();
-
-                if (job.Decimated && job.Cut > 0)
-                {
-                    cut = job.Sequence.Cut(job.Cut, Allocator.Persistent);
-                    cutMade = true;
-                    for (var i = 0; i < cut.Triangles.Length; i++)
-                        Add(perSubmesh[eval.TriangleSubmesh[cut.SourceTriangle[i]]], cut.Triangles[i]);
-                }
-                else
-                {
-                    for (var t = 0; t < eval.TriangleCount; t++)
-                        if (job.Hidden == null || !job.Hidden[t]) Add(perSubmesh[eval.TriangleSubmesh[t]], eval.Triangles[t]);
-                }
+                for (var i = 0; i < kept.Triangles.Length; i++)
+                    Add(perSubmesh[eval.TriangleSubmesh[kept.Source[i]]], kept.Triangles[i]);
 
                 var indices = new int[mesh.subMeshCount][];
                 var used = new bool[mesh.vertexCount];
@@ -909,18 +1017,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 var keptList = new List<int>();
                 for (var v = 0; v < used.Length; v++) if (used[v]) keptList.Add(v);
                 var keptArray = keptList.ToArray();
-                job.Report.OutputMesh = MeshWriter.Write(mesh, indices, keptArray);
-                job.Report.KeptVertices = keptArray;
-                job.Report.HiddenRemoved = hidden;
-                job.Report.TrianglesAfter = triangles;
+                outcome.Mesh = MeshWriter.Write(mesh, indices, keptArray);
+                outcome.KeptVertices = keptArray;
+                outcome.Hidden = job.HiddenCount;
+                outcome.Triangles = triangles;
             }
             catch (Exception e)
             {
-                Fail(job, report, PipelineStage.Writing, e);
-            }
-            finally
-            {
-                if (cutMade) cut.Dispose();
+                Fail(job.Renderer, report.Diagnostics, PipelineStage.Writing, e, out outcome.Skip, out outcome.SkipDetail);
             }
         }
 

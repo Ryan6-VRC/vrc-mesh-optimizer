@@ -71,7 +71,7 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                     .Concat(UnstableBones.FromLegacyAnimations(root)).ToList();
                 var livenessMs = watch.Elapsed.TotalMilliseconds;
 
-                var report = OptimizerPipeline.Run(new PipelineInput
+                var input = new PipelineInput
                 {
                     Root = root,
                     Settings = settings,
@@ -79,7 +79,11 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                     Links = links,
                     ScaleCurves = scaleCurves,
                     LivenessMs = livenessMs,
-                });
+                };
+                OptimizationReport report;
+                using (var prepared = OptimizerPipeline.Prepare(input)) report = OptimizerPipeline.Cut(prepared);
+                // Only a build records its report, so the latest one is always what an avatar was built with.
+                OptimizationReports.Add(report);
                 OptimizerPipeline.Apply(report);
                 foreach (var d in report.Diagnostics) Report(d);
                 Debug.Log(report.Summary());

@@ -178,8 +178,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>
-    /// What one optimization did to one avatar. The latest few stay in memory, from the pass or from any direct
-    /// run of the pipeline, in <see cref="OptimizationReports"/>; nothing is written to disk.
+    /// What one optimization did to one avatar. The latest few builds' stay in memory, in
+    /// <see cref="OptimizationReports"/>; nothing is written to disk.
     /// </summary>
     public sealed class OptimizationReport
     {
