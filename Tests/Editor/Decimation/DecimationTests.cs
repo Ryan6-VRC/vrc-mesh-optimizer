@@ -373,17 +373,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 using var cut = seq.Cut(k, Allocator.Persistent);
                 Assert.That(cut.Triangles.Length, Is.EqualTo(seq.TriangleCountAt(k)), $"cut {k}: triangle count");
                 var seen = new HashSet<(int, int, int)>();
-                var used = new HashSet<int>();
                 foreach (var t in Fixtures.ToArray(cut.Triangles))
                 {
                     Assert.That(t.x != t.y && t.y != t.z && t.x != t.z, $"cut {k}: triangle {t} repeats a corner");
                     var s = new[] { t.x, t.y, t.z }.OrderBy(x => x).ToArray();
                     Assert.That(seen.Add((s[0], s[1], s[2])), $"cut {k}: triangle {t} appears twice");
-                    used.Add(t.x);
-                    used.Add(t.y);
-                    used.Add(t.z);
                 }
-                Assert.That(cut.KeptVertices.AsArray().ToArray(), Is.EqualTo(used.OrderBy(x => x).ToArray()), $"cut {k}: keep-list");
             }
         }
 

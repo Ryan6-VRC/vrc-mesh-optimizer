@@ -67,7 +67,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         public NativeArray<int> DeltaFrame;
         public NativeArray<float3> DeltaValue;
 
-        public int SourceVertexCount;
         public int LiveTriangleCount;
         public int WorkingVertexCount => Origin.Length;
 
@@ -101,7 +100,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         {
             if (excluded.IsCreated && excluded.Length != mesh.TriangleCount)
                 throw new ArgumentException($"{excluded.Length} exclusion flags for a mesh with {mesh.TriangleCount} triangles; give one per triangle", nameof(excluded));
-            var topo = new MeshTopology { SourceVertexCount = mesh.VertexCount };
+            var topo = new MeshTopology();
             try
             {
                 Fill(ref topo, mesh, excluded, settings, allocator);
@@ -308,7 +307,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
 
             public void Execute()
             {
-                if (!Frames.IsCreated || !Deltas.IsCreated) return;
                 var eps2 = Epsilon * Epsilon;
                 for (var f = 0; f < Frames.Length; f++)
                 {

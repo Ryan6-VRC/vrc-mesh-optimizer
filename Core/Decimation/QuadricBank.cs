@@ -219,12 +219,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                         Bends.AddApart(ow, o, ref frames);
                     }
                 }
-                if (frames.Length < 2) return;
-                frames.Sort();
-                var n = 1;
-                for (var i = 1; i < frames.Length; i++)
-                    if (frames[i] != frames[n - 1]) frames[n++] = frames[i];
-                frames.Length = n;
+                CollapseEngine.SortUnique(ref frames);
             }
 
             /// <summary>A working vertex as it stands in a frame (-1: rest); in a bend, read in <paramref name="owner"/>'s home.</summary>

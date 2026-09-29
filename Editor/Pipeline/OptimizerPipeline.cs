@@ -577,12 +577,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             input.BeforeStep?.Invoke(AvatarStep.Clearance);
             var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : default;
             BendRig rig = default;
+            var recordings = new List<Recording>();
             try
             {
                 prepared.Times.Clearance = stage.Elapsed.TotalMilliseconds;
                 input.BeforeStep?.Invoke(AvatarStep.Recording);
                 rig = BendRigs.Of(bones, BendRigs.SkinWeightPerBone(live.Select(j => j.Eval), bones.Count));
                 stage.Restart();
+                // Each renderer starts recording as it is reached, beside those already started, and each is then waited for in turn.
                 foreach (var job in live)
                 {
                     perRenderer.TryGetValue(job.Renderer, out var own);
@@ -592,12 +594,16 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                         job.ExcludedFromDecimation = true;
                         continue;
                     }
-                    DecimateOne(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, rig, prepared);
+                    var recording = StartRecording(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, rig, prepared);
+                    if (recording != null) recordings.Add(recording);
                 }
+                foreach (var recording in recordings) FinishRecording(recording, prepared);
                 prepared.Times.Decimation = stage.Elapsed.TotalMilliseconds;
             }
             finally
             {
+                // A recording reads the surface and its renderer's layers until it is done, so each is waited for before they go.
+                foreach (var recording in recordings) recording.Dispose();
                 surface.Dispose();
                 if (rig.Parent.IsCreated) rig.Parent.Dispose();
                 if (rig.Position.IsCreated) rig.Position.Dispose();
@@ -700,18 +706,43 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>The triangles occlusion removed, as the mask decimation and the clearance surface leave them out by; unset when it removed none. The caller owns it.</summary>
         static NativeArray<bool> HiddenMask(PreparedRenderer job) => job.Hidden == null ? default : new NativeArray<bool>(job.Hidden, Allocator.Persistent);
 
-        static void DecimateOne(PreparedRenderer job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, PreparedAvatar prepared)
+        /// <summary>
+        /// One renderer's sequence while a worker thread records it, with the arrays the recording reads that the renderer
+        /// does not own. Disposing waits for the recording and frees all of it, however far it got.
+        /// </summary>
+        sealed class Recording : IDisposable
         {
-            var owned = new List<IDisposable>();
+            public readonly PreparedRenderer Job;
+            public readonly List<IDisposable> Owned = new List<IDisposable>();
+            public PendingSequence Pending;
+
+            public Recording(PreparedRenderer job) => Job = job;
+
+            public void Dispose()
+            {
+                Pending?.Dispose();
+                Pending = null;
+                foreach (var o in Owned) o.Dispose();
+                Owned.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Starts recording one renderer's sequence, beside any already started; <see cref="FinishRecording"/> waits for it.
+        /// Null, with the failure recorded, when it cannot start.
+        /// </summary>
+        static Recording StartRecording(PreparedRenderer job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, PreparedAvatar prepared)
+        {
+            var recording = new Recording(job);
             try
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Decimation);
                 var eval = job.Eval;
                 // The decimator sees only what occlusion kept.
                 var hidden = HiddenMask(job);
-                if (hidden.IsCreated) owned.Add(hidden);
+                if (hidden.IsCreated) recording.Owned.Add(hidden);
 
-                var vertexProtection = protection.For(job.Renderer, job.Source.subMeshCount, eval, job.Hidden, owned,
+                var vertexProtection = protection.For(job.Renderer, job.Source.subMeshCount, eval, job.Hidden, recording.Owned,
                     out var lockedCount, out var fromZeroScale, out var lockedForFur, out var grownCount);
                 job.LockedVertices = lockedCount;
                 job.LockedFromZeroScale = fromZeroScale;
@@ -719,7 +750,24 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 job.CostRaisedForGrowth = grownCount;
                 job.FloorTriangles = protection.FloorFor(job.Renderer, eval.TriangleCount - job.HiddenCount);
 
-                job.Sequence = Decimator.Run(eval, hidden, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);
+                recording.Pending = Decimator.Schedule(eval, hidden, input.Decimation, vertexProtection, clearance, rig);
+                return recording;
+            }
+            catch (Exception e)
+            {
+                recording.Dispose();
+                RecordingFailed(job, e, prepared);
+                return null;
+            }
+        }
+
+        /// <summary>Waits for one renderer's recording and keeps its sequence. A failure here is that renderer's alone.</summary>
+        static void FinishRecording(Recording recording, PreparedAvatar prepared)
+        {
+            var job = recording.Job;
+            try
+            {
+                job.Sequence = recording.Pending.Complete(Allocator.Persistent, out var clearanceStats);
                 job.Decimated = true;
                 job.SequenceLength = job.Sequence.Length;
                 job.NearVertices = clearanceStats.NearVertices;
@@ -727,15 +775,20 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
             catch (Exception e)
             {
-                // Decimation failing on one renderer leaves it at what occlusion kept.
-                job.SequenceLength = 0;
-                prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, PipelineStage.Decimation.ToString(), e.Message));
-                Debug.LogException(e);
+                RecordingFailed(job, e, prepared);
             }
             finally
             {
-                foreach (var o in owned) o.Dispose();
+                recording.Dispose();
             }
+        }
+
+        static void RecordingFailed(PreparedRenderer job, Exception e, PreparedAvatar prepared)
+        {
+            // Decimation failing on one renderer leaves it at what occlusion kept.
+            job.SequenceLength = 0;
+            prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, PipelineStage.Decimation.ToString(), e.Message));
+            Debug.LogException(e);
         }
 
         /// <summary>

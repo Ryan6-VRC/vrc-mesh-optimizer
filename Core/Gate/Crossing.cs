@@ -1,4 +1,5 @@
 using System;
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -23,12 +24,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public float Nearness;
 
         /// <summary>
-        /// 10 micrometres to cross: far above float rounding on an avatar-sized mesh, far below anything a pixel shows.
-        /// 5 mm to be the same crossing: a 1 mm error moves a crossing between surfaces meeting at 12 degrees or more by
-        /// less than that. At shallower meetings a moved crossing reads partly as new, which is a false alarm, never a
-        /// false pass; the cost is that a new crossing within 5 mm of one the avatar shipped with reads as old.
+        /// 10 micrometres to cross, the clearance rule's own line (<see cref="TriangleDistance.Touch"/>): far above float
+        /// rounding on an avatar-sized mesh, far below anything a pixel shows. 5 mm to be the same crossing: a 1 mm error
+        /// moves a crossing between surfaces meeting at 12 degrees or more by less than that. At shallower meetings a moved
+        /// crossing reads partly as new, which is a false alarm, never a false pass; the cost is that a new crossing within
+        /// 5 mm of one the avatar shipped with reads as old.
         /// </summary>
-        public static CrossingSettings Default => new CrossingSettings { Touch = 1e-5f, Nearness = 0.005f };
+        public static CrossingSettings Default => new CrossingSettings { Touch = TriangleDistance.Touch, Nearness = 0.005f };
     }
 
     /// <summary>One piece of the line where a triangle of A crosses a triangle of B, in the surfaces' space.</summary>
@@ -110,8 +112,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 throw new ArgumentException($"Touch and Nearness must be positive distances in metres; they are {settings.Touch} and {settings.Nearness}", nameof(settings));
             segments.Clear();
 
-            var excludedA = Mask(a);
-            var excludedB = Mask(b);
+            var excludedA = SurfaceDistance.Mask(a);
+            var excludedB = SurfaceDistance.Mask(b);
             var prims = new NativeArray<TreePrim>(b.Triangles.Length, Allocator.Persistent);
             var nodes = new NativeList<TreeNode>(math.max(b.Triangles.Length / 2, 1), Allocator.Persistent);
             var found = new NativeQueue<CrossingSegment>(Allocator.Persistent);
@@ -164,13 +166,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             using var change = new NativeReference<CrossingChange>(Allocator.Persistent);
             new CrossingChangeJob { Before = before, After = after, Nearness = settings.Nearness, Out = change }.Run();
             return change.Value;
-        }
-
-        static NativeArray<bool> Mask(in Surface s)
-        {
-            var mask = new NativeArray<bool>(s.Triangles.Length, Allocator.Persistent);
-            if (s.Excluded.IsCreated) mask.CopyFrom(s.Excluded);
-            return mask;
         }
     }
 }

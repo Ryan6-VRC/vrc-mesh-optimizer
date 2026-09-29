@@ -1,7 +1,7 @@
 using Unity.Collections;
 using Unity.Mathematics;
 
-namespace Ryan6Vrc.MeshOptimizer.Core.Gate
+namespace Ryan6Vrc.MeshOptimizer.Core.Geometry
 {
     /// <summary>A leaf when Count > 0, over prims [Start, Start + Count); otherwise its children sit at Start and Start + 1.</summary>
     internal struct TreeNode
@@ -23,15 +23,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     }
 
     /// <summary>
-    /// A bounding volume hierarchy for closest-point queries against one surface in one configuration. Built by
-    /// median split on the longest axis of the centroids, so the tree is balanced and its depth is about
+    /// A bounding volume hierarchy for closest-point and overlap queries against one surface in one configuration. Built
+    /// by median split on the longest axis of the centroids, so the tree is balanced and its depth is about
     /// log2(triangles / leaf size), and the build is a pure function of its input.
     /// </summary>
     internal static class TriangleTree
     {
         const int MaxLeaf = 4;
         /// <summary>A balanced tree over fewer than 2^31 prims is under 32 deep; traversal holds one entry per level plus one.</summary>
-        const int StackSize = 64;
+        public const int StackSize = 64;
 
         struct ByCentroid : System.Collections.Generic.IComparer<TreePrim>
         {
@@ -106,11 +106,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             return new TreeNode { Min = lo, Max = hi };
         }
 
-        static float BoxDistanceSq(float3 p, in TreeNode node)
-        {
-            var d = math.max(math.max(node.Min - p, p - node.Max), 0f);
-            return math.lengthsq(d);
-        }
+        /// <summary>The squared distance from <paramref name="p"/> to a node's box; 0 inside it.</summary>
+        public static float BoxPointSq(float3 p, in TreeNode node) => math.lengthsq(math.max(math.max(node.Min - p, p - node.Max), 0f));
 
         /// <summary>
         /// The squared distance from <paramref name="p"/> to the nearest prim, and that prim's triangle, or infinity
@@ -130,14 +127,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             while (top > 0)
             {
                 var node = nodes[stack[--top]];
-                if (BoxDistanceSq(p, node) >= best) continue;
+                if (BoxPointSq(p, node) >= best) continue;
                 if (node.Count > 0)
                 {
                     for (var i = node.Start; i < node.Start + node.Count; i++)
                     {
                         var prim = prims[i];
                         if (matchFacing && math.dot(prim.N, facing) <= 0f) continue;
-                        var d = math.lengthsq(p - ClosestPoint(p, prim.A, prim.B, prim.C));
+                        var d = TriangleDistance.PointSq(p, prim.A, prim.B, prim.C);
                         if (d < best)
                         {
                             best = d;
@@ -147,8 +144,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                     continue;
                 }
                 var l = node.Start;
-                var dl = BoxDistanceSq(p, nodes[l]);
-                var dr = BoxDistanceSq(p, nodes[l + 1]);
+                var dl = BoxPointSq(p, nodes[l]);
+                var dr = BoxPointSq(p, nodes[l + 1]);
                 // The nearer child is pushed last so it is searched first and tightens the bound for the other.
                 if (dl <= dr)
                 {
@@ -162,33 +159,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 }
             }
             return best;
-        }
-
-        /// <summary>The closest point on triangle abc to p (Ericson, Real-Time Collision Detection, 5.1.5).</summary>
-        public static float3 ClosestPoint(float3 p, float3 a, float3 b, float3 c)
-        {
-            var ab = b - a;
-            var ac = c - a;
-            var ap = p - a;
-            var d1 = math.dot(ab, ap);
-            var d2 = math.dot(ac, ap);
-            if (d1 <= 0f && d2 <= 0f) return a;
-            var bp = p - b;
-            var d3 = math.dot(ab, bp);
-            var d4 = math.dot(ac, bp);
-            if (d3 >= 0f && d4 <= d3) return b;
-            var vc = d1 * d4 - d3 * d2;
-            if (vc <= 0f && d1 >= 0f && d3 <= 0f) return a + d1 / (d1 - d3) * ab;
-            var cp = p - c;
-            var d5 = math.dot(ab, cp);
-            var d6 = math.dot(ac, cp);
-            if (d6 >= 0f && d5 <= d6) return c;
-            var vb = d5 * d2 - d1 * d6;
-            if (vb <= 0f && d2 >= 0f && d6 <= 0f) return a + d2 / (d2 - d6) * ac;
-            var va = d3 * d6 - d5 * d4;
-            if (va <= 0f && d4 - d3 >= 0f && d5 - d6 >= 0f) return b + (d4 - d3) / (d4 - d3 + (d5 - d6)) * (c - b);
-            var denom = 1f / (va + vb + vc);
-            return a + ab * (vb * denom) + ac * (vc * denom);
         }
     }
 }

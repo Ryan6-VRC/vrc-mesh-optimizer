@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Topology;
@@ -55,12 +57,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public static CollapseSequence Run(in EvalMesh mesh, NativeArray<bool> excluded, in DecimationSettings settings, in VertexProtection protection,
             in ClearanceInput clearance, in BendRig rig, Allocator allocator, out ClearanceStats stats)
         {
-            using var topology = MeshTopology.Build(mesh, excluded, settings.Topology, Allocator.Persistent);
-            using var bends = Bends.Build(mesh, rig, settings.Bend, Allocator.Persistent);
-            var field = default(ClearanceField);
-            var bank = default(QuadricBank);
+            using var pending = Schedule(mesh, excluded, settings, protection, clearance, rig);
+            return pending.Complete(allocator, out stats);
+        }
+
+        /// <summary>
+        /// Starts recording what <see cref="Run(in EvalMesh, NativeArray{bool}, in DecimationSettings, in VertexProtection, in ClearanceInput, in BendRig, Allocator, out ClearanceStats)"/>
+        /// records, on a worker thread, and returns once it is under way: meshes scheduled before any is completed are
+        /// recorded side by side, each exactly as alone. <paramref name="mesh"/>, <paramref name="protection"/> and
+        /// <paramref name="clearance"/> are read until <see cref="PendingSequence.Complete"/>, so they must outlive it;
+        /// <paramref name="excluded"/> and <paramref name="rig"/> are read before this returns.
+        /// </summary>
+        internal static PendingSequence Schedule(in EvalMesh mesh, NativeArray<bool> excluded, in DecimationSettings settings, in VertexProtection protection,
+            in ClearanceInput clearance, in BendRig rig)
+        {
+            var pending = new PendingSequence();
             try
             {
+                var topology = pending.Own(MeshTopology.Build(mesh, excluded, settings.Topology, Allocator.Persistent));
+                var bends = pending.Own(Bends.Build(mesh, rig, settings.Bend, Allocator.Persistent));
+                var field = default(ClearanceField);
                 if (settings.Clearance.Enabled && clearance.IsActive)
                 {
                     var c = settings.Clearance;
@@ -74,75 +90,103 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     try
                     {
                         for (var t = 0; t < live.Length; t++) live[t] = topology.Triangles[t].x >= 0;
-                        field = ClearanceField.Measure(mesh.Positions, mesh.Triangles, live, clearance, settings.Clearance.Reach, Allocator.Persistent);
+                        field = pending.Own(ClearanceField.Measure(mesh.Positions, mesh.Triangles, live, clearance, settings.Clearance.Reach, Allocator.Persistent));
                     }
                     finally
                     {
                         live.Dispose();
                     }
                 }
-                bank = QuadricBank.Build(mesh, topology, settings, bends, Allocator.Persistent);
-                var sequence = Collapse(mesh, topology, ref bank, settings, protection, clearance, field, bends, allocator, out var collapseStats);
-                stats = new ClearanceStats { NearVertices = field.NearVertices, Refused = collapseStats.ClearanceRefused };
-                return sequence;
+                pending.NearVertices = field.NearVertices;
+                var bank = QuadricBank.Build(mesh, topology, settings, bends, Allocator.Persistent);
+                try
+                {
+                    pending.Start(mesh, topology, ref bank, settings, protection, clearance, field, bends);
+                }
+                finally
+                {
+                    // Owned as it stands after the start, whose pool has moved out of it.
+                    pending.Own(bank);
+                }
+                return pending;
             }
-            finally
+            catch
             {
-                bank.Dispose();
-                field.Dispose();
+                pending.Dispose();
+                throw;
             }
         }
 
         /// <summary>The collapse stage alone. Consumes the bank: its quadrics are accumulated in place, and its
-        /// frame quadrics are moved into a growable pool and released.</summary>
-        internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
-            in DecimationSettings settings, in VertexProtection protection, Allocator allocator, out CollapseStats stats) =>
-            Collapse(mesh, topology, ref bank, settings, protection, default, default, allocator, out stats);
-
-        internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
-            in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
-            Allocator allocator, out CollapseStats stats)
-        {
-            using var none = Bends.None(Allocator.Persistent);
-            return Collapse(mesh, topology, ref bank, settings, protection, clearance, field, none, allocator, out stats);
-        }
-
-        /// <summary>The collapse stage, keeping clear of the layers in <paramref name="clearance"/> where <paramref name="field"/>
-        /// has been measured; its triangle clearances are updated in place as collapses replace triangles. <paramref name="bends"/>
-        /// must be the ones the bank was built with.</summary>
+        /// frame quadrics are moved into a growable pool and released. Keeps clear of the layers in <paramref name="clearance"/>
+        /// where <paramref name="field"/> has been measured; its triangle clearances are updated in place as collapses replace
+        /// triangles. <paramref name="bends"/> must be the ones the bank was built with.</summary>
         internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
             in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
             in Bends bends, Allocator allocator, out CollapseStats stats)
         {
-            var active = field.Triangle.IsCreated;
-            using var nodes = new OptionalArray<Core.Gate.TreeNode>(active ? clearance.Surface.Nodes : default);
-            using var prims = new OptionalArray<Core.Gate.TreePrim>(active ? clearance.Surface.Prims : default);
-            using var primLayer = new OptionalArray<int>(active ? clearance.Surface.PrimLayer : default);
-            using var nodeLayer = new OptionalArray<int>(active ? clearance.Surface.NodeLayer : default);
-            using var primClearance = new OptionalArray<float>(active ? clearance.Surface.PrimClearance : default);
-            using var nodeClearance = new OptionalArray<float>(active ? clearance.Surface.NodeClearance : default);
-            using var triangleLayer = new OptionalArray<int>(active ? clearance.TriangleLayer : default);
-            using var vertexClearance = new OptionalArray<float>(field.Vertex);
-            using var triangleClearance = new OptionalArray<float>(field.Triangle);
-            using var starClearance = new OptionalArray<float>(field.Star);
-            using var uv0 = new OptionalArray<float2>(mesh.Uv0);
-            using var vertexNormals = new OptionalArray<float3>(bank.NormalField.Length > 0 ? mesh.Normals : default);
-            using var weightStart = new OptionalArray<int>(mesh.WeightStart);
-            using var weights = new OptionalArray<BoneInfluence>(mesh.Weights);
-            using var locked = new OptionalArray<byte>(protection.Locked);
-            using var multiplier = new OptionalArray<float>(protection.CostMultiplier);
+            using var pending = new PendingSequence();
+            pending.Start(mesh, topology, ref bank, settings, protection, clearance, field, bends);
+            return pending.Finish(allocator, out stats);
+        }
+    }
 
-            using var sparse = new NativeList<FrameQuadric>(bank.Sparse.Length + bank.Sparse.Length / 2 + 16, Allocator.Persistent);
+    /// <summary>
+    /// One mesh's collapse sequence while a worker thread records it (<see cref="Decimator.Schedule"/>). It owns what the
+    /// recording reads and writes, apart from the caller's inputs, until <see cref="Complete"/> hands the sequence over.
+    /// Dispose waits for the recording and frees all of it, so one abandoned after a failure leaks nothing.
+    /// </summary>
+    internal sealed class PendingSequence : IDisposable
+    {
+        readonly List<IDisposable> _owned = new List<IDisposable>();
+        JobHandle _handle;
+        NativeArray<int> _origin;
+        NativeArray<int3> _workingTriangles;
+        int _liveTriangles;
+        NativeList<CollapseStep> _steps;
+        NativeList<int2> _records;
+        NativeArray<long> _stats;
+
+        /// <summary>Vertices with another layer within the clearance reach, as measured before recording.</summary>
+        internal int NearVertices;
+
+        internal T Own<T>(T disposable) where T : IDisposable
+        {
+            _owned.Add(disposable);
+            return disposable;
+        }
+
+        /// <summary>Schedules the collapse job over what <see cref="Decimator.Collapse"/> is given, consuming the bank's pool.</summary>
+        internal void Start(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
+            in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field, in Bends bends)
+        {
+            var active = field.Triangle.IsCreated;
+            var none = Own(active ? default : ClearanceSurface.None(Allocator.Persistent));
+            var triangleLayer = Own(new OptionalArray<int>(active ? clearance.TriangleLayer : default));
+            var vertexClearance = Own(new OptionalArray<float>(field.Vertex));
+            var triangleClearance = Own(new OptionalArray<float>(field.Triangle));
+            var starClearance = Own(new OptionalArray<float>(field.Star));
+            var uv0 = Own(new OptionalArray<float2>(mesh.Uv0));
+            var vertexNormals = Own(new OptionalArray<float3>(bank.NormalField.Length > 0 ? mesh.Normals : default));
+            var weightStart = Own(new OptionalArray<int>(mesh.WeightStart));
+            var weights = Own(new OptionalArray<BoneInfluence>(mesh.Weights));
+            var locked = Own(new OptionalArray<byte>(protection.Locked));
+            var multiplier = Own(new OptionalArray<float>(protection.CostMultiplier));
+
+            var sparse = Own(new NativeList<FrameQuadric>(bank.Sparse.Length + bank.Sparse.Length / 2 + 16, Allocator.Persistent));
             sparse.AddRange(bank.Sparse);
             bank.Sparse.Dispose();
             bank.Sparse = default;
 
-            using var triangles = new NativeArray<int3>(topology.Triangles, Allocator.Persistent);
-            using var steps = new NativeList<CollapseStep>(topology.LiveTriangleCount / 2 + 1, Allocator.Persistent);
-            using var records = new NativeList<int2>(topology.LiveTriangleCount / 2 + 1, Allocator.Persistent);
-            using var statsOut = new NativeArray<long>(3, Allocator.Persistent);
+            var triangles = Own(new NativeArray<int3>(topology.Triangles, Allocator.Persistent));
+            _steps = Own(new NativeList<CollapseStep>(topology.LiveTriangleCount / 2 + 1, Allocator.Persistent));
+            _records = Own(new NativeList<int2>(topology.LiveTriangleCount / 2 + 1, Allocator.Persistent));
+            _stats = Own(new NativeArray<long>(3, Allocator.Persistent));
+            _origin = topology.Origin;
+            _workingTriangles = topology.Triangles;
+            _liveTriangles = topology.LiveTriangleCount;
 
-            new CollapseJob
+            _handle = new CollapseJob
             {
                 Positions = mesh.Positions,
                 Uv0 = uv0.Array,
@@ -170,40 +214,43 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 SparseCount = bank.SparseCount,
                 Sparse = sparse,
                 LiveTriangles = topology.LiveTriangleCount,
-                ClearNodes = nodes.Array,
-                ClearPrims = prims.Array,
-                ClearPrimLayer = primLayer.Array,
-                ClearNodeLayer = nodeLayer.Array,
-                ClearPrimClearance = primClearance.Array,
-                ClearNodeClearance = nodeClearance.Array,
+                Surface = active ? clearance.Surface : none,
                 TriangleLayer = triangleLayer.Array,
                 VertexClearance = vertexClearance.Array,
                 TriangleClearance = triangleClearance.Array,
                 StarClearance = starClearance.Array,
                 Bends = bends,
                 Settings = settings,
-                Steps = steps,
-                Records = records,
-                Stats = statsOut,
-            }.Run();
+                Steps = _steps,
+                Records = _records,
+                Stats = _stats,
+            }.Schedule();
+        }
 
+        /// <summary>Waits for the recording and returns the sequence, allocated with <paramref name="allocator"/>; the caller owns it.</summary>
+        public CollapseSequence Complete(Allocator allocator, out ClearanceStats stats)
+        {
+            var sequence = Finish(allocator, out var collapseStats);
+            stats = new ClearanceStats { NearVertices = NearVertices, Refused = collapseStats.ClearanceRefused };
+            return sequence;
+        }
+
+        internal CollapseSequence Finish(Allocator allocator, out CollapseStats stats)
+        {
+            _handle.Complete();
             stats = new CollapseStats
             {
-                PeakPoolBytes = statsOut[0] * Unity.Collections.LowLevel.Unsafe.UnsafeUtility.SizeOf<FrameQuadric>(),
-                Blocked = statsOut[1],
-                ClearanceRefused = statsOut[2],
+                PeakPoolBytes = _stats[0] * Unity.Collections.LowLevel.Unsafe.UnsafeUtility.SizeOf<FrameQuadric>(),
+                Blocked = _stats[1],
+                ClearanceRefused = _stats[2],
             };
-            var sequence = new CollapseSequence
-            {
-                InitialTriangleCount = topology.LiveTriangleCount,
-                SourceVertexCount = topology.SourceVertexCount,
-            };
+            var sequence = new CollapseSequence { InitialTriangleCount = _liveTriangles };
             try
             {
-                sequence.Steps = steps.ToArray(allocator);
-                sequence.Records = records.ToArray(allocator);
-                sequence.WorkingOrigin = new NativeArray<int>(topology.Origin, allocator);
-                sequence.WorkingTriangles = new NativeArray<int3>(topology.Triangles, allocator);
+                sequence.Steps = _steps.ToArray(allocator);
+                sequence.Records = _records.ToArray(allocator);
+                sequence.WorkingOrigin = new NativeArray<int>(_origin, allocator);
+                sequence.WorkingTriangles = new NativeArray<int3>(_workingTriangles, allocator);
                 return sequence;
             }
             catch
@@ -211,6 +258,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 sequence.Dispose();
                 throw;
             }
+        }
+
+        public void Dispose()
+        {
+            _handle.Complete();
+            for (var i = _owned.Count - 1; i >= 0; i--) _owned[i].Dispose();
+            _owned.Clear();
         }
     }
 }
