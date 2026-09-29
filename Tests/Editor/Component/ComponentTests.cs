@@ -21,5 +21,38 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
 
             Assert.That(ObjectNames.GetInspectorTitle(component), Is.EqualTo("Mesh Optimizer"));
         }
+
+        // A component added fresh targets a tolerance of 1 mm, with a budget of 70,000 ready if the user picks one. A
+        // saved component holds its target as the enum's number and keeps it, so the numbers must not move.
+        [Test]
+        public void AFreshComponent_TargetsATolerance_AndASavedOneKeepsItsTarget()
+        {
+            var fresh = new GameObject("Fresh");
+            var saved = new GameObject("Saved");
+            try
+            {
+                var c = fresh.AddComponent<AvatarMeshOptimizer>();
+                Assert.That(c.target, Is.EqualTo(TargetKind.Tolerance));
+                Assert.That(c.tolerance, Is.EqualTo(1f));
+                Assert.That(c.triangleBudget, Is.EqualTo(70000));
+
+                Assert.That((int)TargetKind.TriangleBudget, Is.EqualTo(0));
+                Assert.That((int)TargetKind.Tolerance, Is.EqualTo(1));
+                // A component saved under the old defaults, loaded into one that starts from the new.
+                c.target = TargetKind.TriangleBudget;
+                c.tolerance = 0.5f;
+                var json = EditorJsonUtility.ToJson(c);
+                Assert.That(json, Does.Contain("\"target\":0"));
+                var old = saved.AddComponent<AvatarMeshOptimizer>();
+                EditorJsonUtility.FromJsonOverwrite(json, old);
+                Assert.That(old.target, Is.EqualTo(TargetKind.TriangleBudget));
+                Assert.That(old.tolerance, Is.EqualTo(0.5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+                Object.DestroyImmediate(saved);
+            }
+        }
     }
 }

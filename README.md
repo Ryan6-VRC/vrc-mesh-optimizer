@@ -4,6 +4,10 @@ A non-destructive mesh optimizer for VRChat avatars, built as an [NDMF](https://
 
 Status: in development, not yet released.
 
+## Target
+
+A component added fresh targets a tolerance of 1 mm: each mesh is reduced as far as it can go while its surface stays within a millimetre of the original, and the triangle count is whatever that leaves. On the real avatars it was measured on, 1 mm removed about 45% of their triangles with no hole to see through and little new clipping between layers, while holding a heavily dressed avatar to a fixed 70,000 triangles forced errors over 6 mm. A triangle count remains available as the target, starting at 70,000, the PC line between the Poor and Very Poor performance ranks. A component saved with either target keeps it.
+
 ## Ancestors
 
 Projects this work studies and builds on, credited by name:
