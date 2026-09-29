@@ -474,5 +474,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             TestContext.WriteLine($"region keeps {keptWeighted} vertices with the multiplier, {keptPlain} without");
             Assert.That(keptWeighted, Is.GreaterThan(keptPlain * 2));
         }
+
+        // A multiplier prices the removal of the vertex it is set on, and a collapse moves nothing onto its target but
+        // quadrics: a vertex that absorbs a free collapse of a vertex priced ten times over is removed later at its own
+        // price. On a sheet with every vertex locked but two, the grown one's collapse onto its ungrown neighbour costs 0
+        // (it lies on every plane of the flat fan it leaves), so the sequence is the one recorded with nothing grown.
+        [Test]
+        public void AVertexThatAbsorbsAGrownOne_IsRemovedAtItsOwnMultiplier()
+        {
+            var b = Fixtures.Grid(4, 4, 0.04f, 0.04f, out var index);
+            b.Positions[index[1, 2]] += new float3(0f, 0f, 0.003f);
+            var v = index[2, 2];
+            var u = index[3, 2];
+            // Nearer v than any other neighbour, so the free collapse is onto v.
+            b.Positions[u] = new float3(0.006f, 0f, 0f);
+            var locked = new byte[b.VertexCount];
+            for (var w = 0; w < locked.Length; w++) locked[w] = (byte)(w == u || w == v ? 0 : 1);
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            CollapseSequence Record(float grown)
+            {
+                var mult = Enumerable.Repeat(1f, b.VertexCount).ToArray();
+                mult[u] = grown;
+                using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
+                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
+            }
+            using var ungrown = Record(1f);
+            using var grown = Record(10f);
+
+            Assert.That(grown.Length, Is.EqualTo(2), "u, then v");
+            Assert.That(grown.WorkingOrigin[grown.Records[grown.Steps[0].RecordStart].x], Is.EqualTo(u), "u goes first");
+            Assert.That(grown.WorkingOrigin[grown.Records[grown.Steps[0].RecordStart].y], Is.EqualTo(v), "onto v");
+            Assert.That(grown.Steps[0].Error, Is.EqualTo(0f), "u's collapse is free");
+            Assert.That(grown.Steps[1].Error, Is.GreaterThan(0f), "v's removal costs something to price");
+            AssertSameSequence(ungrown, grown, "u grown tenfold against u ungrown");
+        }
     }
 }

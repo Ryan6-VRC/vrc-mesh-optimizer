@@ -388,5 +388,66 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(off.Records.ToArray(), Is.EqualTo(without.Records.ToArray()));
             for (var i = 0; i < off.Length; i++) Assert.That(off.Steps[i].Error, Is.EqualTo(without.Steps[i].Error), $"step {i}");
         }
+
+        static CollapseSequence DecimateWithRig(MeshBuilder b, float scale, in VertexProtection protection)
+        {
+            using var mesh = new Disposable<Core.Model.EvalMesh>(b.Build());
+            var settings = DecimationSettings.Default;
+            // The UV term is read in UV units, which do not grow with the mesh; without it every term is a length.
+            settings.UvWeight = 0f;
+            var r = BendFixtures.Rig();
+            for (var i = 0; i < r.Position.Length; i++) r.Position[i] *= scale;
+            try
+            {
+                return Decimator.Run(mesh.Value, settings, protection, default, r, Allocator.Persistent, out _);
+            }
+            finally
+            {
+                r.Parent.Dispose();
+                r.Position.Dispose();
+                r.Axis.Dispose();
+                r.Right.Dispose();
+            }
+        }
+
+        // A cost multiplier stands for geometry shown that many times its size, so it prices a bend's error as it prices
+        // the rest error: a tube over a joint with every vertex priced four times over decimates, bends and all, like its
+        // twin built four times the size, and unlike the tube priced at its own size.
+        [Test]
+        public void ATubePricedFourTimesOver_DecimatesThroughItsBendsLikeItsTwinFourTimesTheSize()
+        {
+            const float k = 4f;
+            var b = BendFixtures.SkinnedTube(56, 54, 0.05f, 0f, 0.03f);
+            var twin = BendFixtures.SkinnedTube(56, 54, 0.05f, 0f, 0.03f);
+            for (var v = 0; v < twin.VertexCount; v++) twin.Positions[v] *= k;
+            using var mult = new NativeArray<float>(Enumerable.Repeat(k, b.VertexCount).ToArray(), Allocator.Persistent);
+            using var priced = DecimateWithRig(b, 1f, new VertexProtection { CostMultiplier = mult });
+            using var large = DecimateWithRig(twin, k, default);
+            using var plain = DecimateWithRig(b, 1f, default);
+            const float tolerance = 0.001f;
+            var p = priced.TriangleCountAt(Fixtures.CutAtError(priced, tolerance));
+            var l = large.TriangleCountAt(Fixtures.CutAtError(large, tolerance));
+            var n = plain.TriangleCountAt(Fixtures.CutAtError(plain, tolerance));
+            TestContext.WriteLine($"triangles within 1 mm: {p} priced fourfold, {l} built four times the size, {n} at its own size");
+            Assert.That(n, Is.LessThan(l * 0.8f), "the size matters to this tube, so the comparison can tell");
+            Assert.That(p, Is.EqualTo(l).Within(l * 0.02f));
+        }
+
+        // A locked vertex is never removed, whatever the bends make of its neighbourhood.
+        [Test]
+        public void LockedVertices_SurviveEveryCut_WithBends()
+        {
+            var b = BendFixtures.SkinnedTube(56, 54, 0.05f, 0f, 0.03f);
+            var locked = new byte[b.VertexCount];
+            for (var v = 0; v < b.VertexCount; v++)
+                if (math.abs(b.Positions[v].y - BendFixtures.JointY) < 0.02f || b.Positions[v].x > 0.03f) locked[v] = 1;
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            using var seq = DecimateWithRig(b, 1f, new VertexProtection { Locked = lockArray });
+            using var cut = seq.Cut(seq.Length, Allocator.Persistent);
+            var kept = Fixtures.Kept(cut);
+            Assert.That(seq.Length, Is.GreaterThan(0));
+            for (var v = 0; v < b.VertexCount; v++)
+                if (locked[v] != 0) Assert.That(kept.Contains(v), $"locked vertex {v}");
+        }
     }
 }

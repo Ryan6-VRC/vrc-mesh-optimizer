@@ -50,5 +50,70 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             Assert.That(jobs, Is.Not.Empty);
             Assert.That(jobs.Where(x => !x.burst.CompileSynchronously).Select(x => x.type.FullName), Is.Empty);
         }
+
+        // The Editor's Burst compiler can serve native code built from an earlier version of the core, which then runs
+        // against the current job's fields and records a different sequence, collapses near free, with nothing reported.
+        // So the collapse loop, with bends, a multiplier and locks, must record under Burst what it records as managed code.
+        [Test]
+        public void TheCollapseLoop_RecordsUnderBurstWhatItRecordsAsManagedCode()
+        {
+            var b = Decimation.BendFixtures.SkinnedTube(40, 36, 0.05f, 0f, 0.03f);
+            var mult = new float[b.VertexCount];
+            var locked = new byte[b.VertexCount];
+            for (var v = 0; v < b.VertexCount; v++)
+            {
+                mult[v] = b.Positions[v].x > 0f ? 4f : 1f;
+                locked[v] = (byte)(b.Positions[v].z > 0.045f ? 1 : 0);
+            }
+            using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            var protection = new Ryan6Vrc.MeshOptimizer.Core.Decimation.VertexProtection { CostMultiplier = multArray, Locked = lockArray };
+            var held = BurstCompiler.Options.EnableBurstCompilation;
+            Assume.That(held, "Burst is off in this Editor, so there is no compiled code to compare");
+            Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst = default, managed = default;
+            try
+            {
+                burst = Record(b, protection);
+                BurstCompiler.Options.EnableBurstCompilation = false;
+                managed = Record(b, protection);
+            }
+            finally
+            {
+                BurstCompiler.Options.EnableBurstCompilation = held;
+            }
+            try
+            {
+                Assert.That(burst.Length, Is.EqualTo(managed.Length).Within(managed.Length / 100));
+                foreach (var s in new[] { managed.Length / 4, managed.Length / 2, managed.Length * 3 / 4, managed.Length - 1 })
+                {
+                    var m = managed.Steps[s].Error;
+                    Assert.That(m, Is.GreaterThan(0f), $"step {s} costs something to compare");
+                    Assert.That(burst.Steps[s].Error, Is.EqualTo(m).Within(m * 1e-3f), $"step {s}'s error");
+                }
+            }
+            finally
+            {
+                burst.Dispose();
+                managed.Dispose();
+            }
+        }
+
+        static Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence Record(Decimation.MeshBuilder b, in Ryan6Vrc.MeshOptimizer.Core.Decimation.VertexProtection protection)
+        {
+            var mesh = b.Build();
+            var rig = Decimation.BendFixtures.Rig();
+            try
+            {
+                return Ryan6Vrc.MeshOptimizer.Core.Decimation.Decimator.Run(mesh, Ryan6Vrc.MeshOptimizer.Core.Decimation.DecimationSettings.Default, protection, default, rig, Allocator.Persistent, out _);
+            }
+            finally
+            {
+                mesh.Dispose();
+                rig.Parent.Dispose();
+                rig.Position.Dispose();
+                rig.Axis.Dispose();
+                rig.Right.Dispose();
+            }
+        }
     }
 }
