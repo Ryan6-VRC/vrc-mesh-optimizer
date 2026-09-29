@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using Unity.Burst;
@@ -97,6 +98,59 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             {
                 burst.Dispose();
                 managed.Dispose();
+            }
+        }
+
+        // Recordings scheduled together run side by side on worker threads, reading one clearance surface. Each must record,
+        // step for step and bit for bit, what it records alone: against layers and bends, and against a crossing.
+        [Test]
+        public void RecordingsScheduledTogether_EachRecordWhatTheyRecordAlone()
+        {
+            using var bent = new Decimation.LayerFixtures.Scene();
+            bent.Add(Decimation.BendFixtures.SkinnedTube(40, 36, 0.05f, 0f, 0.03f));
+            bent.Add(Decimation.BendFixtures.SkinnedTube(36, 32, 0.0508f, 0.5f, 0.03f));
+            bent.Add(Decimation.BendFixtures.SkinnedTube(30, 30, 0.0495f, 0.25f, 0.02f));
+            bent.BuildSurface();
+            bent.Rig = Decimation.BendFixtures.Rig();
+            using var crossing = new Decimation.LayerFixtures.Scene();
+            crossing.Add(Decimation.LayerFixtures.SkinTube());
+            crossing.Add(Decimation.LayerFixtures.LayerTube((a, y) => Decimation.LayerFixtures.Skin(a, y) + math.lerp(-0.0015f, 0.0015f, y / Decimation.LayerFixtures.Length)));
+            crossing.BuildSurface();
+
+            foreach (var scene in new[] { bent, crossing })
+            {
+                var settings = Ryan6Vrc.MeshOptimizer.Core.Decimation.DecimationSettings.Default;
+                settings.Clearance.Enabled = true;
+                var alone = new List<Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence>();
+                var together = new List<Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence>();
+                var pending = new List<Ryan6Vrc.MeshOptimizer.Core.Decimation.PendingSequence>();
+                try
+                {
+                    for (var m = 0; m < scene.Meshes.Count; m++) alone.Add(scene.Decimate(m, true, out _));
+                    for (var m = 0; m < scene.Meshes.Count; m++)
+                        pending.Add(Ryan6Vrc.MeshOptimizer.Core.Decimation.Decimator.Schedule(scene.Meshes[m], default, settings, default,
+                            new Ryan6Vrc.MeshOptimizer.Core.Clearance.ClearanceInput { Surface = scene.Surface, TriangleLayer = scene.Layers[m] }, scene.Rig));
+                    foreach (var p in pending) together.Add(p.Complete(Allocator.Persistent, out _));
+                    for (var m = 0; m < alone.Count; m++)
+                    {
+                        var x = alone[m];
+                        var y = together[m];
+                        Assert.That(x.Length, Is.GreaterThan(100), $"mesh {m} decimates");
+                        Assert.That(y.Length, Is.EqualTo(x.Length), $"mesh {m}: steps");
+                        for (var s = 0; s < x.Length; s++)
+                        {
+                            Assert.That(math.asuint(y.Steps[s].Error), Is.EqualTo(math.asuint(x.Steps[s].Error)), $"mesh {m} step {s}: error");
+                            Assert.That(y.Steps[s].TriangleCount, Is.EqualTo(x.Steps[s].TriangleCount), $"mesh {m} step {s}: triangles");
+                        }
+                        Assert.That(y.Records.ToArray(), Is.EqualTo(x.Records.ToArray()), $"mesh {m}: records");
+                    }
+                }
+                finally
+                {
+                    foreach (var p in pending) p.Dispose();
+                    foreach (var q in alone) q.Dispose();
+                    foreach (var q in together) q.Dispose();
+                }
             }
         }
 
