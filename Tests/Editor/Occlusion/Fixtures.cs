@@ -172,6 +172,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         readonly List<IDisposable> owned = new List<IDisposable>();
         readonly List<OcclusionMesh> meshes = new List<OcclusionMesh>();
         public OcclusionStats Stats;
+        public IReadOnlyList<OcclusionMesh> Meshes => meshes;
 
         public OcclusionMesh Add(MeshBuilder b, bool occludes, params OccluderSubmesh[] submeshes)
         {

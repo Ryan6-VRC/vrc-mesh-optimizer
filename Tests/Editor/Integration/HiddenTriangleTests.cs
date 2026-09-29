@@ -236,6 +236,78 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(hides));
         }
 
+        // A cup inside the bowl, open to the top like a skirt, not always on. Its outside is covered; its inside faces the
+        // open top. Drawn back-culled only the covered outside shows and it goes; drawn with its back too, the inside
+        // shows through the open top and it stays.
+        [TestCase(2, true)]
+        [TestCase(1, false)]
+        [TestCase(0, false)]
+        public void CandidateThatDrawsItsBack_IsKept_WhenOnlyItsFrontIsCovered(int cull, bool hides)
+        {
+            var material = a.Made(new Material(CullShader()));
+            material.SetFloat(OccluderMaterials.CullProperty, cull);
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: material);
+            Garment(chest);
+
+            var report = a.Run();
+
+            var r = Of(report, cup);
+            Assert.That(r.HiddenRemoved > 0, Is.EqualTo(hides));
+            if (!hides) Assert.That(cup.sharedMesh.triangles.Length, Is.EqualTo(r.HiddenSourceTriangles.Length * 3), "every triangle of the cup is drawn");
+        }
+
+        // A shader that states no cull property but draws both sides, and the MToon and UTS convention _CullMode.
+        [TestCase("Shader \"Hidden/MeshOptimizerTests/HardCullOff\" { SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull Off } } }", -1, false)]
+        [TestCase("Shader \"Hidden/MeshOptimizerTests/CullMode\" { Properties { _CullMode (\"Cull\", Float) = 2 } SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_CullMode] } } }", 0, false)]
+        [TestCase("Shader \"Hidden/MeshOptimizerTests/CullMode\" { Properties { _CullMode (\"Cull\", Float) = 2 } SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_CullMode] } } }", 2, true)]
+        public void CandidateWhoseShaderCullingIsNotRead_IsTakenAsDrawingItsBack(string source, int cullMode, bool hides)
+        {
+            var material = a.Made(new Material(a.Made(ShaderUtil.CreateShaderAsset(source, true))));
+            if (cullMode >= 0) material.SetFloat("_CullMode", cullMode);
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: material);
+            Garment(chest);
+
+            var report = a.Run();
+
+            Assert.That(Of(report, cup).HiddenRemoved > 0, Is.EqualTo(hides));
+        }
+
+        // The same unread culling on an always-on cup: as a cover it blocks as back-culled, but as something that might be
+        // hidden it is taken to draw both sides.
+        [Test]
+        public void AlwaysOnCandidateWhoseShaderCullingIsNotRead_IsTakenAsDrawingItsBack()
+        {
+            var shader = a.Made(ShaderUtil.CreateShaderAsset(
+                "Shader \"Hidden/MeshOptimizerTests/HardCullOff\" { SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull Off } } }", true));
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: a.Made(new Material(shader)));
+            Garment(chest);
+            a.Optimizer().alwaysOn.Add(cup);
+
+            var report = a.Run();
+
+            Assert.That(Of(report, cup).HiddenRemoved, Is.Zero);
+        }
+
+        // Unity draws a material slot past the last submesh over the last submesh again: here a second, double-sided
+        // material over the cup's one submesh.
+        [Test]
+        public void CandidateWithASurplusMaterialSlotDrawingItsBack_IsKept()
+        {
+            Material Cull(int cull)
+            {
+                var m = a.Made(new Material(CullShader()));
+                m.SetFloat(OccluderMaterials.CullProperty, cull);
+                return m;
+            }
+            var cup = a.Skinned("Cup", a.Sphere(BodyRadius, 16, 32, 100f, 180f, name: "cup"), new[] { chest }, material: Cull(2));
+            cup.sharedMaterials = new[] { Cull(2), Cull(0) };
+            Garment(chest);
+
+            var report = a.Run();
+
+            Assert.That(Of(report, cup).HiddenRemoved, Is.Zero, "the surplus slot draws the cup's inside, open to the top");
+        }
+
         Shader CullShader() => a.Made(ShaderUtil.CreateShaderAsset(
             "Shader \"Hidden/MeshOptimizerTests/Cull\" { Properties { [Enum(UnityEngine.Rendering.CullMode)] _Cull (\"Cull\", Float) = 2 } " +
             "SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_Cull] } } }", true));
