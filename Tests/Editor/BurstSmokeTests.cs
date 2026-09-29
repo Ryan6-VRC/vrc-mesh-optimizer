@@ -83,12 +83,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             }
             try
             {
+                // Burst and managed code round some sums differently, which can swap two collapses of near-equal cost, so the
+                // records may part; every step's error level, a running maximum, stays within a hundredth of the managed one or a micrometre.
+                Assert.That(managed.Steps[managed.Length - 1].Error, Is.GreaterThan(1e-4f), "the sequence costs something to compare");
                 Assert.That(burst.Length, Is.EqualTo(managed.Length).Within(managed.Length / 100));
-                foreach (var s in new[] { managed.Length / 4, managed.Length / 2, managed.Length * 3 / 4, managed.Length - 1 })
+                for (var s = 0; s < math.min(burst.Length, managed.Length); s++)
                 {
                     var m = managed.Steps[s].Error;
-                    Assert.That(m, Is.GreaterThan(0f), $"step {s} costs something to compare");
-                    Assert.That(burst.Steps[s].Error, Is.EqualTo(m).Within(m * 1e-3f), $"step {s}'s error");
+                    Assert.That(burst.Steps[s].Error, Is.EqualTo(m).Within(m * 0.01f + 1e-6f), $"step {s}'s error");
                 }
             }
             finally

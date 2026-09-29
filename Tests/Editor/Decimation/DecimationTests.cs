@@ -475,12 +475,13 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(keptWeighted, Is.GreaterThan(keptPlain * 2));
         }
 
-        // A multiplier prices the removal of the vertex it is set on, and a collapse moves nothing onto its target but
-        // quadrics: a vertex that absorbs a free collapse of a vertex priced ten times over is removed later at its own
-        // price. On a sheet with every vertex locked but two, the grown one's collapse onto its ungrown neighbour costs 0
-        // (it lies on every plane of the flat fan it leaves), so the sequence is the one recorded with nothing grown.
+        // A multiplier says how large the geometry a quadric stands for can be shown, and a collapse hands the removed
+        // vertex's quadrics to its target: the target takes the larger multiplier with them, so the surface a grown vertex
+        // covered is priced at its growth for as long as anything carries it. On a sheet with every vertex locked but two,
+        // the grown one's collapse onto its ungrown neighbour costs 0 (it lies on every plane of the flat fan it leaves),
+        // and the neighbour's removal after it is priced ten times what it is with nothing grown.
         [Test]
-        public void AVertexThatAbsorbsAGrownOne_IsRemovedAtItsOwnMultiplier()
+        public void AVertexThatAbsorbsAGrownOne_IsRemovedAtTheGrownOnesMultiplier()
         {
             var b = Fixtures.Grid(4, 4, 0.04f, 0.04f, out var index);
             b.Positions[index[1, 2]] += new float3(0f, 0f, 0.003f);
@@ -505,8 +506,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(grown.WorkingOrigin[grown.Records[grown.Steps[0].RecordStart].x], Is.EqualTo(u), "u goes first");
             Assert.That(grown.WorkingOrigin[grown.Records[grown.Steps[0].RecordStart].y], Is.EqualTo(v), "onto v");
             Assert.That(grown.Steps[0].Error, Is.EqualTo(0f), "u's collapse is free");
-            Assert.That(grown.Steps[1].Error, Is.GreaterThan(0f), "v's removal costs something to price");
-            AssertSameSequence(ungrown, grown, "u grown tenfold against u ungrown");
+            Assert.That(ungrown.Length, Is.EqualTo(2));
+            Assert.That(ungrown.Steps[1].Error, Is.GreaterThan(0f), "v's removal costs something to price");
+            Assert.That(grown.Records.ToArray(), Is.EqualTo(ungrown.Records.ToArray()), "the same collapses");
+            Assert.That(grown.Steps[1].Error, Is.EqualTo(ungrown.Steps[1].Error * 10f).Within(ungrown.Steps[1].Error * 1e-4f), "v's removal at u's price");
+        }
+
+        // A collapse moves the removed vertex's triangles onto its target, so what they show afterwards rides the target's
+        // bones: a collapse onto a vertex a clip grows is priced at that growth, whatever the removed vertex rides. A
+        // border vertex off the plane of its sheet, the only one free, can only go along its open edges, both onto grown
+        // vertices, so it makes the same collapse grown or not, priced ten times over when grown.
+        [Test]
+        public void ACollapseOntoAGrownVertex_IsPricedAtItsGrowth()
+        {
+            var b = Fixtures.Grid(4, 4, 0.04f, 0.04f, out var index);
+            var u = index[0, 2];
+            b.Positions[u] += new float3(0f, 0f, 0.003f);
+            var locked = new byte[b.VertexCount];
+            for (var w = 0; w < locked.Length; w++) locked[w] = (byte)(w == u ? 0 : 1);
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            CollapseSequence Record(float grown)
+            {
+                var mult = Enumerable.Repeat(1f, b.VertexCount).ToArray();
+                mult[index[0, 1]] = mult[index[0, 3]] = grown;
+                using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
+                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
+            }
+            using var ungrown = Record(1f);
+            using var grown = Record(10f);
+
+            Assert.That(ungrown.Length, Is.EqualTo(1));
+            Assert.That(ungrown.Steps[0].Error, Is.GreaterThan(0f), "u's collapse costs something to price");
+            Assert.That(grown.Records.ToArray(), Is.EqualTo(ungrown.Records.ToArray()), "the same collapse");
+            Assert.That(grown.Steps[0].Error, Is.EqualTo(ungrown.Steps[0].Error * 10f).Within(ungrown.Steps[0].Error * 1e-4f));
         }
     }
 }

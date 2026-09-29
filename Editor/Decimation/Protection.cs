@@ -94,7 +94,7 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         }
 
         /// <summary>
-        /// Per vertex, the factor its removal error is multiplied by: the most a clip can grow any bone it has weight on
+        /// Per vertex, the factor the error of a collapse removing it or landing on it is multiplied by: the most a clip can grow any bone it has weight on
         /// (<see cref="UnstableBones.Growth"/>). Decimation judges the avatar as it stands, and an error on geometry a clip
         /// grows by a factor is shown that factor larger, so the cost is charged at the size the geometry can be shown at.
         /// Null when nothing on the mesh grows. <paramref name="count"/> is how many vertices it raises; a vertex grown from
