@@ -61,7 +61,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     ///
     /// A key driven by anything outside the clips (the descriptor's visemes, jaw flap and eyelids, the MMD names) never
     /// links, nor does one bound by a curve of unknown clip or through a layer whose avatar mask may keep the curve from
-    /// it, one a clip binds with two different curves, or one on a renderer whose path another renderer shares. A wrong
+    /// it, one a clip binds with two different curves, or one on a renderer whose path another renderer shares when the curve does not say which transform it binds; a curve counts only on the renderer its path binds (<see cref="RendererShapeKeys.IsBoundBy"/>). A wrong
     /// link evaluates a state the avatar can leave, so every doubt keeps keys apart.
     /// </summary>
     internal static class ShapeKeyLinks
@@ -92,15 +92,16 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         public static List<KeyRef[]> Find(IReadOnlyList<RendererShapeKeys> renderers, IEnumerable<ShapeKeyBinding> bindings,
             IEnumerable<DrivenKey> driven)
         {
-            var byPath = new Dictionary<string, int>();
-            var sharedPath = new HashSet<string>();
+            var byPath = new Dictionary<string, List<int>>();
             for (var r = 0; r < renderers.Count; r++)
-                if (!byPath.ContainsKey(renderers[r].Path)) byPath[renderers[r].Path] = r;
-                else sharedPath.Add(renderers[r].Path);
+            {
+                if (!byPath.TryGetValue(renderers[r].Path, out var atPath)) byPath[renderers[r].Path] = atPath = new List<int>();
+                atPath.Add(r);
+            }
 
             var unlinkable = new HashSet<KeyRef>();
             foreach (var d in driven)
-                if (Resolve(renderers, byPath, d.Path, d.Key, out var key)) unlinkable.Add(key);
+                if (Resolve(renderers, byPath, d.Path, d.Target, d.Key, out var key, out _)) unlinkable.Add(key);
 
             var ids = new Dictionary<object, int>(ReferenceComparer.Instance);
             int Id(object o)
@@ -113,10 +114,10 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             foreach (var b in bindings)
             {
                 if (b.Values == null || b.Values.Length == 0) continue;
-                if (!Resolve(renderers, byPath, b.Path, b.Key, out var key)) continue;
+                if (!Resolve(renderers, byPath, b.Path, b.Target, b.Key, out var key, out var ambiguous)) continue;
                 var input = renderers[key.Renderer].Keys[key.Key];
                 var drives = Drives(b.Values, input.Weight);
-                if (b.Clip == null || b.Times == null || b.Masked || sharedPath.Contains(b.Path))
+                if (b.Clip == null || b.Times == null || b.Masked || ambiguous)
                 {
                     unlinkable.Add(key);
                     continue;
@@ -168,11 +169,21 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             return groups;
         }
 
-        /// <summary>The key a path and name name, unless the renderer's path is not its own or the name is not unique on it.</summary>
-        static bool Resolve(IReadOnlyList<RendererShapeKeys> renderers, Dictionary<string, int> byPath, string path, string name, out KeyRef key)
+        /// <summary>
+        /// The key a binding names: on the renderer its path binds (<see cref="RendererShapeKeys.IsBoundBy"/>), by a name
+        /// unique on it. <paramref name="ambiguous"/> when the binding's target is not known and another renderer shares the
+        /// path, so which of them it drives cannot be said.
+        /// </summary>
+        static bool Resolve(IReadOnlyList<RendererShapeKeys> renderers, Dictionary<string, List<int>> byPath, string path, Transform target, string name,
+            out KeyRef key, out bool ambiguous)
         {
             key = default;
-            if (!byPath.TryGetValue(path, out var r)) return false;
+            ambiguous = false;
+            if (!byPath.TryGetValue(path, out var atPath)) return false;
+            var bound = atPath.Where(i => renderers[i].IsBoundBy(path, target)).ToList();
+            if (bound.Count == 0) return false;
+            ambiguous = bound.Count > 1;
+            var r = bound[0];
             var keys = renderers[r].Keys;
             var found = -1;
             for (var k = 0; k < keys.Length; k++)

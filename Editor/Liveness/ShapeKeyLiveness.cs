@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Liveness
@@ -88,12 +89,23 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     {
         public readonly string Path;
         public readonly ShapeKeyInput[] Keys;
+        /// <summary>The renderer's own transform; null when not known, and then only <see cref="Path"/> says what binds it.</summary>
+        public readonly Transform Transform;
 
-        public RendererShapeKeys(string path, ShapeKeyInput[] keys)
+        public RendererShapeKeys(string path, ShapeKeyInput[] keys, Transform transform = null)
         {
             Path = path;
             Keys = keys;
+            Transform = transform;
         }
+
+        /// <summary>
+        /// Whether a curve, or a driver, bound at <paramref name="path"/> to <paramref name="target"/> reaches this renderer.
+        /// Unity binds a path to the first child of each name along it and to nothing else, so where two siblings share a
+        /// name, the path names only the first: when both transforms are known, the target must be this renderer's own.
+        /// </summary>
+        public bool IsBoundBy(string path, Transform target) =>
+            target != null && Transform != null ? target == Transform : path == Path;
     }
 
     /// <summary>
@@ -121,8 +133,13 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// <summary>An avatar mask on <see cref="Layer"/> may keep the curve from the key; such a key never links.</summary>
         public readonly bool Masked;
 
-        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null, object layer = null, long? order = null, bool masked = false)
+        /// <summary>The transform the curve's path binds, as Unity resolves it; null when not known.</summary>
+        public readonly Transform Target;
+
+        public ShapeKeyBinding(string path, string key, float[] values, float[] times = null, object clip = null, object layer = null, long? order = null, bool masked = false,
+            Transform target = null)
         {
+            Target = target;
             Masked = masked;
             Layer = layer;
             Order = order;
@@ -142,11 +159,14 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     {
         public readonly string Path;
         public readonly string Key;
+        /// <summary>The renderer's transform the driver names; null when not known.</summary>
+        public readonly Transform Target;
 
-        public DrivenKey(string path, string key)
+        public DrivenKey(string path, string key, Transform target = null)
         {
             Path = path;
             Key = key;
+            Target = target;
         }
     }
 
@@ -170,15 +190,19 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             IEnumerable<ShapeKeyBinding> bindings,
             IEnumerable<DrivenKey> driven)
         {
-            var byKey = new Dictionary<(string, string), List<float[]>>();
+            var byKey = new Dictionary<(string, string), List<ShapeKeyBinding>>();
             foreach (var b in bindings)
             {
                 if (b.Values == null || b.Values.Length == 0) continue;
-                if (!byKey.TryGetValue((b.Path, b.Key), out var list)) byKey[(b.Path, b.Key)] = list = new List<float[]>();
-                list.Add(b.Values);
+                if (!byKey.TryGetValue((b.Path, b.Key), out var list)) byKey[(b.Path, b.Key)] = list = new List<ShapeKeyBinding>();
+                list.Add(b);
             }
-            var drivenSet = new HashSet<(string, string)>();
-            foreach (var d in driven) drivenSet.Add((d.Path, d.Key));
+            var drivenByKey = new Dictionary<(string, string), List<DrivenKey>>();
+            foreach (var d in driven)
+            {
+                if (!drivenByKey.TryGetValue((d.Path, d.Key), out var list)) drivenByKey[(d.Path, d.Key)] = list = new List<DrivenKey>();
+                list.Add(d);
+            }
 
             var result = new ShapeKeyLiveness[renderers.Count][];
             for (var r = 0; r < renderers.Count; r++)
@@ -188,8 +212,11 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 var row = result[r] = new ShapeKeyLiveness[keys.Length];
                 for (var k = 0; k < keys.Length; k++)
                 {
-                    byKey.TryGetValue((renderer.Path, keys[k].Name), out var curves);
-                    row[k] = ClassifyKey(keys[k], curves, drivenSet.Contains((renderer.Path, keys[k].Name)));
+                    // A curve counts only on the renderer its path binds (RendererShapeKeys.IsBoundBy).
+                    byKey.TryGetValue((renderer.Path, keys[k].Name), out var found);
+                    var curves = found?.Where(b => renderer.IsBoundBy(b.Path, b.Target)).Select(b => b.Values).ToList();
+                    var drives = drivenByKey.TryGetValue((renderer.Path, keys[k].Name), out var drivers) && drivers.Any(d => renderer.IsBoundBy(d.Path, d.Target));
+                    row[k] = ClassifyKey(keys[k], curves, drives);
                 }
             }
             return result;

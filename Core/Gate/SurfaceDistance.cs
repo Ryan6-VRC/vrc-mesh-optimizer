@@ -63,7 +63,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         Max,
     }
 
-    /// <summary>Distances in metres, weighted by the surface area each sample stands for.</summary>
+    /// <summary>
+    /// Distances in metres, weighted by the surface area each sample stands for. Every distance is NaN when nothing was
+    /// sampled (<see cref="Sampled"/>): every triangle on the sampled side had no area or was excluded, as on a mesh
+    /// whose bones stand at zero scale.
+    /// </summary>
     public struct DistanceStats
     {
         public float Mean;
@@ -86,6 +90,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// enough to make every statistic here infinity, whatever share of the area it stands for.
         /// </summary>
         public int Unmatched;
+
+        /// <summary>Whether any area was sampled, so the distances above were measured at all.</summary>
+        public bool Sampled => Area > 0;
 
         public float Get(Statistic statistic) => statistic switch
         {

@@ -230,5 +230,86 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
             Assert.That(Optimized(Of(report, inactive)) && Optimized(Of(report, disabled)), Is.True);
         }
+
+        // A position that is not a number reads as no cost to every rule that measures one, so the renderer is left as it
+        // was and named, by the vertex, or by the shape key whose delta it is; the rest of the avatar is still optimized.
+        [TestCase(false, TestName = "{m}(position)")]
+        [TestCase(true, TestName = "{m}(shape key delta)")]
+        public void AMeshWithANonFiniteVertex_IsLeftAsItWas_AndNamed(bool inDelta)
+        {
+            var mesh = a.Sphere(0.1f, 16, 32, name: "broken");
+            const int vertex = 40;
+            if (inDelta)
+            {
+                var deltas = new Vector3[mesh.vertexCount];
+                // Infinity: a frame added through the API reads a NaN delta back as zero, so NaN would test nothing here.
+                deltas[vertex] = new Vector3(float.PositiveInfinity, 0f, 0f);
+                mesh.AddBlendShapeFrame("Swell", 100f, deltas, null, null);
+                var held = new Vector3[mesh.vertexCount];
+                mesh.GetBlendShapeFrameVertices(0, 0, held, null, null);
+                Assert.That(float.IsInfinity(held[vertex].x), "the fixture's key holds the infinite delta");
+            }
+            else
+            {
+                var vertices = mesh.vertices;
+                vertices[vertex] = new Vector3(float.NaN, 0f, 0f);
+                mesh.vertices = vertices;
+            }
+            var broken = Body("Broken", mesh);
+            var healthy = Body("Healthy");
+            a.Optimizer(decimate: true);
+
+            var report = a.Run();
+
+            var r = Of(report, broken);
+            Assert.That(broken.sharedMesh, Is.SameAs(mesh));
+            Assert.That(r.OutputMesh, Is.Null);
+            var named = report.Diagnostics.Where(d => d.Args.Contains(broken)).ToList();
+            Assert.That(named, Has.Count.EqualTo(1));
+            Assert.That(named[0].Key, Is.EqualTo(inDelta ? DiagnosticKeys.NonFiniteShapeKey : DiagnosticKeys.NonFiniteVertex), "named for what it is, not as a failure");
+            Assert.That(named[0].Args, inDelta ? Has.Member("Swell") : Has.Member(vertex));
+            Assert.That(r.Skip, Is.EqualTo(SkipReason.NonFinite));
+            Assert.That(Optimized(Of(report, healthy)), Is.True);
+        }
+
+        // Unity addresses a shape key by name, so a mesh with two keys of one name cannot be written back with both. The
+        // renderer is left as it was and named with the key.
+        [Test]
+        public void AMeshWithTwoShapeKeysOfOneName_IsLeftAsItWas_AndNamedWithTheKey()
+        {
+            var mesh = a.Sphere(0.1f, 16, 32, name: "twins");
+            var deltas = Enumerable.Repeat(new Vector3(0f, 0.001f, 0f), mesh.vertexCount).ToArray();
+            mesh.AddBlendShapeFrame("Smile", 100f, deltas, null, null);
+            mesh.AddBlendShapeFrame("Smile.1", 100f, deltas, null, null);
+            RenameShapeKey(mesh, 1, "Smile");
+            Assert.That(mesh.GetBlendShapeName(1), Is.EqualTo(mesh.GetBlendShapeName(0)), "the fixture holds two keys of one name");
+            var twins = Body("Twins", mesh);
+            var healthy = Body("Healthy");
+            a.Optimizer(decimate: true);
+
+            var report = a.Run();
+
+            Assert.That(twins.sharedMesh, Is.SameAs(mesh));
+            Assert.That(Of(report, twins).OutputMesh, Is.Null);
+            var named = report.Diagnostics.Where(d => d.Args.Contains(twins)).ToList();
+            Assert.That(named, Has.Count.EqualTo(1));
+            Assert.That(named[0].Key, Is.EqualTo(DiagnosticKeys.DuplicateShapeKey));
+            Assert.That(named[0].Args, Has.Member("Smile"));
+            Assert.That(Of(report, twins).Skip, Is.EqualTo(SkipReason.DuplicateShapeKey));
+            Assert.That(Optimized(Of(report, healthy)), Is.True);
+        }
+
+        /// <summary>
+        /// Renames a shape key through the mesh's serialized form, which the API cannot do: how a mesh imported with two
+        /// keys of one name is made in code.
+        /// </summary>
+        static void RenameShapeKey(Mesh mesh, int key, string name)
+        {
+            var so = new UnityEditor.SerializedObject(mesh);
+            var channel = so.FindProperty("m_Shapes.channels").GetArrayElementAtIndex(key);
+            channel.FindPropertyRelative("name").stringValue = name;
+            channel.FindPropertyRelative("nameHash").longValue = so.FindProperty("m_Shapes.channels").GetArrayElementAtIndex(0).FindPropertyRelative("nameHash").longValue;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
     }
 }

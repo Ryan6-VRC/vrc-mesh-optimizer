@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
@@ -419,6 +420,34 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 if (locked[v] != 0) Assert.That(kept.Contains(v), $"locked vertex {v}");
         }
 
+        static void AssertSameSequence(CollapseSequence expected, CollapseSequence actual, string what)
+        {
+            Assert.That(actual.Length, Is.EqualTo(expected.Length), what);
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.That(BitConverter.SingleToInt32Bits(actual.Steps[i].Error), Is.EqualTo(BitConverter.SingleToInt32Bits(expected.Steps[i].Error)), $"{what}: step {i}'s error");
+                Assert.That(actual.Steps[i].TriangleCount, Is.EqualTo(expected.Steps[i].TriangleCount), $"{what}: step {i}'s triangles");
+            }
+            Assert.That(actual.Records.ToArray(), Is.EqualTo(expected.Records.ToArray()), what);
+        }
+
+        // A multiplier only keeps a vertex longer. Every multiplier at 1, and any under 1 or NaN, which read as 1, records
+        // the same sequence bit for bit as no multiplier at all: on a mesh nothing grows, the growth rule changes nothing.
+        [TestCase(1f)]
+        [TestCase(0.5f)]
+        [TestCase(0f)]
+        [TestCase(float.NaN)]
+        public void AMultiplierOfOneOrLess_RecordsTheSequenceOfNone(float multiplier)
+        {
+            foreach (var (name, b) in new[] { ("icosphere", Fixtures.Icosphere(3, 0.1f)), ("seamed cylinder", Fixtures.Cylinder(24, 20, 0.05f, 0.4f, true, out _)) })
+            {
+                using var mult = new NativeArray<float>(Enumerable.Repeat(multiplier, b.VertexCount).ToArray(), Allocator.Persistent);
+                using var none = Fixtures.Decimate(b);
+                using var some = Fixtures.Decimate(b, protection: new VertexProtection { CostMultiplier = mult });
+                AssertSameSequence(none, some, name);
+            }
+        }
+
         [Test]
         public void ACostMultiplier_KeepsItsRegionDenserAtTheSameCount()
         {
@@ -444,6 +473,72 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             var keptWeighted = region.Count(Fixtures.Kept(c).Contains);
             TestContext.WriteLine($"region keeps {keptWeighted} vertices with the multiplier, {keptPlain} without");
             Assert.That(keptWeighted, Is.GreaterThan(keptPlain * 2));
+        }
+
+        // A multiplier says how large the geometry a quadric stands for can be shown, and a collapse hands the removed
+        // vertex's quadrics to its target: the target takes the larger multiplier with them, so the surface a grown vertex
+        // covered is priced at its growth for as long as anything carries it. On a sheet with every vertex locked but two,
+        // the grown one's collapse onto its ungrown neighbour costs 0 (it lies on every plane of the flat fan it leaves),
+        // and the neighbour's removal after it is priced ten times what it is with nothing grown.
+        [Test]
+        public void AVertexThatAbsorbsAGrownOne_IsRemovedAtTheGrownOnesMultiplier()
+        {
+            var b = Fixtures.Grid(4, 4, 0.04f, 0.04f, out var index);
+            b.Positions[index[1, 2]] += new float3(0f, 0f, 0.003f);
+            var v = index[2, 2];
+            var u = index[3, 2];
+            // Nearer v than any other neighbour, so the free collapse is onto v.
+            b.Positions[u] = new float3(0.006f, 0f, 0f);
+            var locked = new byte[b.VertexCount];
+            for (var w = 0; w < locked.Length; w++) locked[w] = (byte)(w == u || w == v ? 0 : 1);
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            CollapseSequence Record(float grown)
+            {
+                var mult = Enumerable.Repeat(1f, b.VertexCount).ToArray();
+                mult[u] = grown;
+                using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
+                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
+            }
+            using var ungrown = Record(1f);
+            using var grown = Record(10f);
+
+            Assert.That(grown.Length, Is.EqualTo(2), "u, then v");
+            Assert.That(grown.WorkingOrigin[grown.Records[grown.Steps[0].RecordStart].x], Is.EqualTo(u), "u goes first");
+            Assert.That(grown.WorkingOrigin[grown.Records[grown.Steps[0].RecordStart].y], Is.EqualTo(v), "onto v");
+            Assert.That(grown.Steps[0].Error, Is.EqualTo(0f), "u's collapse is free");
+            Assert.That(ungrown.Length, Is.EqualTo(2));
+            Assert.That(ungrown.Steps[1].Error, Is.GreaterThan(0f), "v's removal costs something to price");
+            Assert.That(grown.Records.ToArray(), Is.EqualTo(ungrown.Records.ToArray()), "the same collapses");
+            Assert.That(grown.Steps[1].Error, Is.EqualTo(ungrown.Steps[1].Error * 10f).Within(ungrown.Steps[1].Error * 1e-4f), "v's removal at u's price");
+        }
+
+        // A collapse moves the removed vertex's triangles onto its target, so what they show afterwards rides the target's
+        // bones: a collapse onto a vertex a clip grows is priced at that growth, whatever the removed vertex rides. A
+        // border vertex off the plane of its sheet, the only one free, can only go along its open edges, both onto grown
+        // vertices, so it makes the same collapse grown or not, priced ten times over when grown.
+        [Test]
+        public void ACollapseOntoAGrownVertex_IsPricedAtItsGrowth()
+        {
+            var b = Fixtures.Grid(4, 4, 0.04f, 0.04f, out var index);
+            var u = index[0, 2];
+            b.Positions[u] += new float3(0f, 0f, 0.003f);
+            var locked = new byte[b.VertexCount];
+            for (var w = 0; w < locked.Length; w++) locked[w] = (byte)(w == u ? 0 : 1);
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            CollapseSequence Record(float grown)
+            {
+                var mult = Enumerable.Repeat(1f, b.VertexCount).ToArray();
+                mult[index[0, 1]] = mult[index[0, 3]] = grown;
+                using var multArray = new NativeArray<float>(mult, Allocator.Persistent);
+                return Fixtures.Decimate(b, s => { s.UvWeight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray, CostMultiplier = multArray });
+            }
+            using var ungrown = Record(1f);
+            using var grown = Record(10f);
+
+            Assert.That(ungrown.Length, Is.EqualTo(1));
+            Assert.That(ungrown.Steps[0].Error, Is.GreaterThan(0f), "u's collapse costs something to price");
+            Assert.That(grown.Records.ToArray(), Is.EqualTo(ungrown.Records.ToArray()), "the same collapse");
+            Assert.That(grown.Steps[0].Error, Is.EqualTo(ungrown.Steps[0].Error * 10f).Within(ungrown.Steps[0].Error * 1e-4f));
         }
     }
 }

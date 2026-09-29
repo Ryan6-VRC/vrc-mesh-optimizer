@@ -129,7 +129,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     {
         /// <summary>Nonzero: the vertex is never removed. It may still be a collapse target.</summary>
         public NativeArray<byte> Locked;
-        /// <summary>Multiplies the error of removing the vertex. 1 is neutral; larger keeps it longer.</summary>
+        /// <summary>Multiplies the error of a collapse that removes the vertex or lands on it, and passes to the vertex that absorbs it. 1 is neutral; larger keeps it and its neighbourhood longer; under 1, or NaN, reads as 1.</summary>
         public NativeArray<float> CostMultiplier;
     }
 }

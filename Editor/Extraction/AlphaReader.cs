@@ -235,6 +235,11 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             name == "Standard" || name == "Standard (Specular setup)" || name == "Autodesk Interactive" ||
             name.StartsWith("Unlit/Transparent") || name.StartsWith("Legacy Shaders/Transparent/");
 
+        /// <summary>
+        /// A material's alpha inputs, when its shader is one whose alpha this reader can compute: false for any other
+        /// shader, and for a lilToon or Poiyomi material with any other term on that can lower its alpha
+        /// (<see cref="LilToonLowersAlphaElsewhere"/>, <see cref="PoiyomiLowersAlphaElsewhere"/>).
+        /// </summary>
         internal static bool TryReadInputs(Material m, out AlphaInputs p)
         {
             p = new AlphaInputs
@@ -248,7 +253,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 p.MaskMode = (int)m.GetFloat("_AlphaMaskMode");
                 p.MaskScale = Float(m, "_AlphaMaskScale", 1f);
                 p.MaskOffset = Float(m, "_AlphaMaskValue", 0f);
-                return true;
+                return !LilToonLowersAlphaElsewhere(m);
             }
             if (m.HasProperty("_MainAlphaMaskMode"))
             {
@@ -258,11 +263,77 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
                 p.MaskOffset = Float(m, "_AlphaMaskValue", 0f);
                 p.MaskInvert = Float(m, "_AlphaMaskInvert", 0f) != 0f;
                 p.MainAlphaFloor = Float(m, "_MainIgnoreTexAlpha", 0f);
-                return true;
+                return !PoiyomiLowersAlphaElsewhere(m);
             }
             p.Formula = AlphaFormula.Plain;
             return IsPlainShader(m.shader.name);
         }
+
+        /// <summary>
+        /// Whether a lilToon material has a term on, besides main texture, colour and alpha mask, that can lower the alpha
+        /// it draws, as lilToon's fragment code applies them (<c>Shader/Includes/lil_common_frag.hlsl</c> and
+        /// <c>lil_common_frag_alpha.hlsl</c>): the second or third main colour in an alpha mode other than add, dissolve,
+        /// distance fade toward a colour below full alpha, and dither.
+        /// </summary>
+        internal static bool LilToonLowersAlphaElsewhere(Material m) =>
+            On(m, "_UseMain2ndTex") && ModeLowers(Float(m, "_Main2ndTexAlphaMode", 0f)) ||
+            On(m, "_UseMain3rdTex") && ModeLowers(Float(m, "_Main3rdTexAlphaMode", 0f)) ||
+            Vector(m, "_DissolveParams").x != 0f ||
+            Vector(m, "_DistanceFade").z != 0f && m.HasProperty("_DistanceFadeColor") && m.GetColor("_DistanceFadeColor").a < 1f ||
+            On(m, "_UseDither");
+
+        /// <summary>lilToon's alpha modes: 1 replace, 2 multiply, 3 add, 4 subtract. Only adding never lowers.</summary>
+        static bool ModeLowers(float mode) => mode != 0f && mode != 3f;
+
+        /// <summary>
+        /// Whether a Poiyomi material has a term on, besides main texture, colour and alpha mask, that can lower the alpha
+        /// it draws, as Poiyomi Toon's fragment code applies them: the alpha options (a negative alpha mod, a global mask,
+        /// distance, Fresnel and angular alpha, AudioLink alpha, dithering); vertex colour alpha; a back face that replaces
+        /// alpha; dissolve; a decal whose alpha blend can lower it (any but add and max); a matcap that overrides alpha or
+        /// multiplies its intensity into it; the AudioLink spectrum decal, flipbook, pathing, depth, Voronoi and Truchet
+        /// alpha overrides; and a rim light that multiplies into alpha. A module's own toggle must be on for its terms to
+        /// apply. Only an unlocked material is read at all: locking bakes these properties into the shader, and a locked
+        /// material has no <c>_MainAlphaMaskMode</c> to be read by. Not modelled: Poiyomi modules that move where the main
+        /// texture is sampled rather than writing alpha, which are stochastic sampling (<c>_MainTexStochastic</c>), parallax
+        /// (<c>_PoiParallax</c>) and video effects (<c>_VideoEffectsEnable</c>); a material with one on is read as if its
+        /// main texture were sampled at the mesh's UV.
+        /// </summary>
+        internal static bool PoiyomiLowersAlphaElsewhere(Material m)
+        {
+            // A global mask on alpha counts in any blend, max and add included: the mask is built from sources this reader
+            // does not read, so what it does to alpha is not known here.
+            if (Float(m, "_AlphaMod", 0f) < 0f || Float(m, "_AlphaGlobalMask", 0f) > 0f) return true;
+            // The BeatSaber module multiplies alpha by its emission's blue channel after the cutoff.
+            if (On(m, "_BSSEnabled")) return true;
+            foreach (var option in new[] { "_AlphaDistanceFade", "_AlphaFresnel", "_AlphaAngular", "_AlphaAudioLinkEnabled", "_AlphaDithering" })
+                if (On(m, option)) return true;
+            if (On(m, "_MainVertexColoringEnabled") && Float(m, "_MainUseVertexColorAlpha", 0f) > 0f) return true;
+            if (On(m, "_BackFaceEnabled") && On(m, "_BackFaceReplaceAlpha")) return true;
+            if (On(m, "_EnableDissolve")) return true;
+            foreach (var decal in new[] { "", "1", "2", "3" })
+            {
+                // Poiyomi's decal alpha blends: 1 replace, 2 multiply, 3 add, 4 subtract, 5 min, 6 max.
+                var blend = Float(m, "_DecalOverrideAlpha" + decal, 0f);
+                if (On(m, "_DecalEnabled" + decal) && blend != 0f && blend != 3f && blend != 6f) return true;
+            }
+            foreach (var (matcap, enable) in new[] { ("_Matcap", "_MatcapEnable"), ("_Matcap2", "_Matcap2Enable"), ("_Matcap3", "_Matcap3Enable"), ("_Matcap4", "_Matcap4Enable") })
+            {
+                if (!On(m, enable)) continue;
+                // An intensity blended into alpha: 0 adds, 1 multiplies.
+                if (Float(m, matcap + "AlphaOverride", 0f) > 0f || On(m, matcap + "ApplyToAlphaEnabled") && Float(m, matcap + "ApplyToAlphaBlendType", 0f) == 1f) return true;
+            }
+            if (On(m, "_EnableALDecal") && Float(m, "_ALDecalControlsAlpha", 0f) > 0f) return true;
+            if (On(m, "_EnableFlipbook") && On(m, "_FlipbookAlphaControlsFinalAlpha")) return true;
+            if (On(m, "_EnablePathing") && On(m, "_PathingOverrideAlpha")) return true;
+            if (On(m, "_EnableTouchGlow") && On(m, "_DepthAlphaToggle")) return true;
+            if (On(m, "_VoronoiEnabled") && On(m, "_VoronoiAffectsMaterialAlpha")) return true;
+            if (On(m, "_EnableTruchet") && On(m, "_TruchetOverrideAlpha")) return true;
+            // A rim light's apply-to-alpha: 1 adds, 2 multiplies.
+            return On(m, "_EnableRimLighting") && Float(m, "_RimApplyAlpha", 0f) == 2f ||
+                   On(m, "_EnableRim2Lighting") && Float(m, "_Rim2ApplyAlpha", 0f) == 2f;
+        }
+
+        static bool On(Material m, string name) => Float(m, name, 0f) != 0f;
 
         static bool Supported(Material m, in AlphaInputs p, Vector4 mainST, Texture main, Texture mask)
         {

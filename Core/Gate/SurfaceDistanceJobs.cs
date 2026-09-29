@@ -243,7 +243,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// <summary>
         /// Statistics over the union of two runs of (distance, weight), each ascending by distance. A percentile is
         /// the least distance at which the weight at or below it reaches that fraction of the whole. Sums are in
-        /// double, in ascending order. One unmatched sample makes every statistic infinity.
+        /// double, in ascending order. One unmatched sample makes every statistic infinity; no sampled area makes every
+        /// statistic NaN, since nothing was measured and a zero would read as a perfect match.
         /// </summary>
         public static DistanceStats Stats(NativeArray<float2> a, NativeArray<float2> b)
         {
@@ -254,7 +255,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             for (var i = 0; i < na; i++) total += a[i].y;
             for (var i = 0; i < nb; i++) total += b[i].y;
             s.Area = total;
-            if (na + nb == 0 || !(total > 0)) return s;
+            if (na + nb == 0 || !(total > 0))
+            {
+                s.Area = 0;
+                s.Mean = s.Rms = s.P50 = s.P90 = s.P99 = s.P999 = s.Max = float.NaN;
+                return s;
+            }
 
             double sum = 0, sumSq = 0, running = 0;
             var q = new float4(0.5f, 0.9f, 0.99f, 0.999f);

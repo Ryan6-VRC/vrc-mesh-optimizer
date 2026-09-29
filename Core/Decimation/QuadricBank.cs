@@ -124,7 +124,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         }
 
         /// <summary>Working vertex to incident live triangles, as offsets into a flat list.</summary>
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct VertexTrianglesJob : IJob
         {
             [ReadOnly] public NativeArray<int3> Triangles;
@@ -302,7 +302,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct CountJob : IJobParallelForBatch
         {
             public Common C;
@@ -319,7 +319,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct PrefixJob : IJob
         {
             [ReadOnly] public NativeArray<int> Count;
@@ -338,7 +338,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct FillJob : IJobParallelForBatch
         {
             public Common C;

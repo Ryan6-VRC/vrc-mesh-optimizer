@@ -79,6 +79,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return (report, Crossing(Drawn(report, body), Drawn(report, garment)));
         }
 
+        // A renderer the pass leaves as it was is still drawn where it stands: a body under Cloth is kept clear of by the
+        // garment decimated over it, from the body's source, though the body itself is never changed.
+        [Test]
+        public void ARendererLeftAsItWas_IsStillKeptClearOf()
+        {
+            body.gameObject.AddComponent<Cloth>();
+            var source = body.sharedMesh;
+            var garment = Garment();
+
+            var report = a.Run();
+
+            Assert.That(Of(report, body).Skip, Is.EqualTo(SkipReason.Cloth));
+            Assert.That(body.sharedMesh, Is.SameAs(source));
+            Assert.That(Of(report, garment).TrianglesAfter, Is.LessThan(Of(report, garment).TrianglesBefore), "the garment was decimated");
+            Assert.That(Of(report, garment).NearVertices, Is.GreaterThan(Of(report, garment).TrianglesBefore / 8), "the garment sees the body under Cloth");
+            Assert.That(Crossing(source, Drawn(report, garment)), Is.Zero, "and does not cut through it");
+        }
+
         [Test]
         public void WithNoOtherLayer_NothingIsNear()
         {

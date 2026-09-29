@@ -317,6 +317,35 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(masked.Stats(0, GateDirection.Combined).Max, Is.Zero);
         }
 
+        // A mesh on a bone standing at zero scale has no area as the avatar stands, so neither side has anything to
+        // sample. The gate says so, and ranks that configuration worst, since a surface it could not check cannot pass.
+        [Test]
+        public void AConfigurationThatSampledNothing_ReadsAsNothingSampled_AndAsTheWorst()
+        {
+            var (root, renderer, source, optimized) = TwoBoneTube();
+            var liveness = new[] { ShapeKeyLiveness.Dead };
+            var measured = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, new[] { Bent }, Settings);
+            root.Find("Armature/Lower").localScale = Vector3.zero;
+
+            var collapsed = GeometryGate.Measure(renderer, root, source, optimized, null, liveness, new[] { Bent }, Settings);
+
+            foreach (var direction in new[] { GateDirection.SourceToOptimized, GateDirection.OptimizedToSource, GateDirection.Combined })
+            {
+                Assert.That(collapsed.Stats(0, direction).Max, Is.NaN, direction.ToString());
+                Assert.That(collapsed.Stats(0, direction).Sampled, Is.False, direction.ToString());
+                Assert.That(measured.Stats(0, direction).Sampled, Is.True, direction.ToString());
+            }
+            foreach (var line in collapsed.Lines(GateCamera.Default))
+            {
+                StringAssert.Contains("nothing sampled", line);
+                StringAssert.DoesNotContain(" mm", line);
+            }
+            var mixed = new GeometryReport(renderer, new[] { measured.Configurations[1], collapsed.Configurations[0], measured.Configurations[0] },
+                Array.Empty<SkippedConfiguration>());
+            Assert.That(mixed.Worst(GateDirection.Combined, Statistic.Max), Is.EqualTo(1));
+            Assert.That(mixed.Worst(GateDirection.SourceToOptimized, Statistic.Mean), Is.EqualTo(1));
+        }
+
         [Test]
         public void MeshRenderer_IsMeasuredAsItStands_AndItsPosesAreNamedAsNotMeasured()
         {

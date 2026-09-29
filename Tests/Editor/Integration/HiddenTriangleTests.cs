@@ -299,6 +299,54 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             if (!hides) Assert.That(cup.sharedMesh.triangles.Length, Is.EqualTo(r.HiddenSourceTriangles.Length * 3), "every triangle of the cup is drawn");
         }
 
+        /// <summary>
+        /// A back-culled main pass, and, when <paramref name="furPass"/> is given, a second pass by that name drawn cull-off,
+        /// as a fur pass is.
+        /// </summary>
+        Material Furred(string shaderName, string furPass)
+        {
+            var source = $"Shader \"{shaderName}\" {{ Properties {{ _Cull (\"Cull\", Float) = 2 }} SubShader {{ Tags {{ \"RenderType\"=\"Opaque\" }} " +
+                         "Pass { Name \"FORWARD\" Cull [_Cull] } " + (furPass != null ? $"Pass {{ Name \"{furPass}\" Cull Off }} " : "") + "} }";
+            return a.Made(new Material(a.Made(ShaderUtil.CreateShaderAsset(source, true))));
+        }
+
+        // Fur grows past its cover, so a body drawn with fur keeps every triangle the garment covers, counted as kept for
+        // fur; the same body without a fur pass loses them. lilToon's fur passes are told by name, Poiyomi's by its shader's.
+        [TestCase("Hidden/MeshOptimizerTests/lilToonFur", "FORWARD_FUR", true)]
+        [TestCase("Hidden/MeshOptimizerTests/lilToonFurOnly", "FORWARD_ADD_FUR", true)]
+        [TestCase(".poiyomi/Poiyomi Toon + Lil Fur", "Base", true)]
+        [TestCase("Hidden/MeshOptimizerTests/TwoPass", "FORWARD_BACK_ONLY", false)]
+        [TestCase("Hidden/MeshOptimizerTests/NoFur", null, false)]
+        public void ABodyDrawnWithFur_KeepsItsCoveredTriangles(string shaderName, string furPass, bool fur)
+        {
+            body.sharedMaterials = new[] { Furred(shaderName, furPass) };
+            Garment(chest);
+
+            var report = a.Run();
+
+            var r = Of(report, body);
+            Assert.That(r.HiddenRemoved > 0, Is.EqualTo(!fur));
+            Assert.That(r.KeptForFur, fur ? Is.GreaterThanOrEqualTo(Polar(bodyMesh).Count(p => p >= 100f)) : Is.Zero, "the report counts what fur kept");
+            if (fur) StringAssert.Contains($"fur kept {r.KeptForFur} covered triangles", report.Summary());
+        }
+
+        // Fur is grown per triangle, so decimating a furred mesh thins its fur: every triangle is kept, while the same flat
+        // grid without fur loses its interior at no error.
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AMeshDrawnWithFur_IsNotDecimated(bool fur)
+        {
+            var grid = a.Grid(12, 0.01f, "pelt");
+            var pelt = a.Rigid("Pelt", grid, chest, Furred("Hidden/MeshOptimizerTests/Pelt", fur ? "FORWARD_FUR" : null));
+            a.Optimizer(decimate: true, removeHidden: false);
+
+            var report = a.Run();
+
+            var r = Of(report, pelt);
+            Assert.That(r.TrianglesAfter == r.TrianglesBefore, Is.EqualTo(fur));
+            Assert.That(r.LockedVertices, Is.EqualTo(fur ? grid.vertexCount : 0));
+        }
+
         // A shader that states no cull property but draws both sides, and the MToon and UTS convention _CullMode.
         [TestCase("Shader \"Hidden/MeshOptimizerTests/HardCullOff\" { SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull Off } } }", -1, false)]
         [TestCase("Shader \"Hidden/MeshOptimizerTests/CullMode\" { Properties { _CullMode (\"Cull\", Float) = 2 } SubShader { Tags { \"RenderType\"=\"Opaque\" } Pass { Cull [_CullMode] } } }", 0, false)]

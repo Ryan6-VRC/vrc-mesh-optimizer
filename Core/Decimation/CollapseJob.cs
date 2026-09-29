@@ -13,7 +13,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// The collapse loop: serial, because each collapse changes its neighbours' costs. Holds only the job's
     /// inputs and outputs; the working state lives in <see cref="CollapseEngine"/>, built inside Execute.
     /// </summary>
-    [BurstCompile]
+    [BurstCompile(CompileSynchronously = true)]
     internal struct CollapseJob : IJob
     {
         [ReadOnly] public NativeArray<float3> Positions;
@@ -272,7 +272,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         bool IsProtected(NativeArray<byte> locked, int w) => locked.Length > 0 && locked[_origin[w]] != 0;
 
-        float MultiplierOf(NativeArray<float> mult, int w) => mult.Length > 0 ? math.max(mult[_origin[w]], 0f) : 1f;
+        /// <summary>A vertex's cost multiplier, never under 1: a multiplier only keeps a vertex longer. NaN reads as 1.</summary>
+        float MultiplierOf(NativeArray<float> mult, int w) => mult.Length > 0 ? math.max(mult[_origin[w]], 1f) : 1f;
 
         int Rep(int w) => math.min(w, _partner[w]);
 
@@ -453,7 +454,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
             var skin = (double)_s.SkinWeightPenalty * d * len;
             length = (float)len;
-            return (float)(math.sqrt(agg2 + uv2 + skin * skin) * _multiplier[u1]);
+            // The removed vertex's triangles move onto the target and ride its bones afterwards, so the collapse is priced
+            // at the larger growth of the two, and of both pairs for a seam or border pair.
+            var mult = math.max(_multiplier[u1], _multiplier[v1]);
+            if (u2 >= 0) mult = math.max(mult, math.max(_multiplier[u2], _multiplier[v2]));
+            return (float)(math.sqrt(agg2 + uv2 + skin * skin) * mult);
         }
 
         float2 Uv(int w) => _uv0.Length > 0 ? _uv0[_origin[w]] : float2.zero;
@@ -1064,6 +1069,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             var shapes = _merged.Length;
             if (_bent) MergeBends(u, v);
             _rest[v] = Quadric.Sum(rv, ru);
+            // v's quadrics now stand for u's surface too, so v's removal is priced at the size either can be shown at.
+            _multiplier[v] = math.max(_multiplier[v], _multiplier[u]);
             var uv = _uv[v];
             uv.Add(_uv[u]);
             _uv[v] = uv;

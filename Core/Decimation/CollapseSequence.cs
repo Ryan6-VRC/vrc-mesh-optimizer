@@ -88,7 +88,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             if (WorkingTriangles.IsCreated) WorkingTriangles.Dispose();
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct CutJob : IJob
         {
             [ReadOnly] public NativeArray<CollapseStep> Steps;

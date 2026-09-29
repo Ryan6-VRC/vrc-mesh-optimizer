@@ -25,6 +25,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         Failed,
         /// <summary>Nothing hid a triangle and decimation cut none.</summary>
         Unchanged,
+        /// <summary>
+        /// A vertex position or texture coordinate, or a shape key's delta, is not a finite number, which every rule that
+        /// measures a distance would read as no distance.
+        /// </summary>
+        NonFinite,
+        /// <summary>Two shape keys share a name, and Unity addresses a key by name, so the mesh cannot be written back with both.</summary>
+        DuplicateShapeKey,
     }
 
     /// <summary>
@@ -63,13 +70,31 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float Error { get; internal set; }
         public int FloorTriangles { get; internal set; }
         public float Weight { get; internal set; }
+        /// <summary>
+        /// Vertices no collapse could remove: on a finger, on a bone a clip grows from zero scale, or of a triangle drawn
+        /// with fur.
+        /// </summary>
         public int LockedVertices { get; internal set; }
+        /// <summary>
+        /// Of <see cref="LockedVertices"/>, those with weight on a bone that stands at zero scale and a clip grows: geometry
+        /// with no size as the avatar stands, whose cost it cannot tell.
+        /// </summary>
+        public int LockedFromZeroScale { get; internal set; }
+        /// <summary>Of <see cref="LockedVertices"/>, those of a triangle drawn with fur, whose density is its triangle count.</summary>
+        public int LockedForFur { get; internal set; }
+        /// <summary>
+        /// Vertices whose removal cost was multiplied by how much a clip can grow a bone they ride, so it is charged at the
+        /// size the geometry can be shown at.
+        /// </summary>
+        public int CostRaisedForGrowth { get; internal set; }
         /// <summary>Vertices with another layer near enough for the clearance rule to act on them; 0 when it did not run.</summary>
         public int NearVertices { get; internal set; }
         /// <summary>Collapses the clearance rule refused because they came too near another layer.</summary>
         public long ClearanceRefused { get; internal set; }
         /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
         public int KeptOnUnstableBones { get; internal set; }
+        /// <summary>Triangles occlusion found covered but kept because their material grows fur past the cover.</summary>
+        public int KeptForFur { get; internal set; }
         /// <summary>
         /// Triangles occlusion kept because an outline draws their back, though their front was covered: at most what
         /// judging the outline's side cost this renderer. Zero unless the component's outlines show the inside.
@@ -219,6 +244,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 sb.Append($"\n  linked {link}: {Configurations.Count(x => x.Link == link)} configurations.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
+            var fromZero = Renderers.Sum(r => r.LockedFromZeroScale);
+            if (fromZero > 0)
+                sb.Append($"\n  {fromZero} vertices on bones a clip grows from zero scale were kept from decimation.");
+            var raised = Renderers.Sum(r => r.CostRaisedForGrowth);
+            if (raised > 0)
+                sb.Append($"\n  {raised} vertices on bones a clip grows were costed at their grown size.");
+            var furLocked = Renderers.Sum(r => r.LockedForFur);
+            if (furLocked > 0)
+                sb.Append($"\n  {furLocked} vertices drawn with fur were kept from decimation.");
+            var fur = Renderers.Sum(r => r.KeptForFur);
+            if (fur > 0)
+                sb.Append($"\n  fur kept {fur} covered triangles.");
             if (KeptForOutline > 0)
                 sb.Append($"\n  outlines kept up to {KeptForOutline} triangles whose front was covered.");
             foreach (var m in UnmatchedMaterialOverrides)
