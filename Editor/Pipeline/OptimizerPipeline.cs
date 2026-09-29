@@ -28,7 +28,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public AvatarMeshOptimizer Settings;
         /// <summary>Per skinned renderer, per shape key. A renderer missing from it has every key evaluated as live at full weight.</summary>
         public IReadOnlyDictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Liveness;
-        /// <summary>Scale curves any clip can play, for <see cref="VanishingBones"/>. Null reads as none.</summary>
+        /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
         public DecimationSettings Decimation = DecimationSettings.Default;
@@ -111,6 +111,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     if (job.Report.Skip == SkipReason.None) Extract(job, input, bones, report);
                 }
                 report.Times.Extraction = stage.Elapsed.TotalMilliseconds;
+                report.UnmatchedMaterialOverrides.AddRange(new OccluderMaterials(settings.materials).Unmatched(jobs.Select(j => j.Renderer)));
 
                 var live = jobs.Where(j => j.Extracted).ToList();
                 stage.Restart();
@@ -232,13 +233,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Extraction);
                 ShapeKeyLiveness[] liveness = null;
+                float[] held = null;
                 if (job.Renderer is SkinnedMeshRenderer skinned)
                 {
                     if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out liveness) || liveness == null)
                         liveness = Enumerable.Repeat(ShapeKeyLiveness.Live(1f), job.Source.blendShapeCount).ToArray();
                     job.Report.Liveness = liveness;
+                    held = new float[job.Source.blendShapeCount];
+                    for (var k = 0; k < held.Length; k++) held[k] = skinned.GetBlendShapeWeight(k);
+                    job.Report.HeldWeights = held;
                 }
-                job.Eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out _);
+                job.Eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out var frames, held);
+                job.Report.EvaluatedAsItStands = frames.Any(f => f.ShapeKey == LiveFrame.AsItStands);
                 job.Extracted = true;
                 job.Report.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
             }
@@ -290,13 +296,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     });
                 }
 
-                var vanishes = VanishingBones.Compute(bones, input.ScaleCurves);
-                for (var b = 0; b < vanishes.Length; b++)
-                    if (vanishes[b]) report.VanishingBones.Add(RuntimeUtil.RelativePath(input.Root.gameObject, bones.Transforms[b].gameObject) ?? bones.Transforms[b].name);
+                var unstable = UnstableBones.Compute(bones, input.ScaleCurves);
+                for (var b = 0; b < unstable.Length; b++)
+                    if (unstable[b]) report.UnstableBones.Add(RuntimeUtil.RelativePath(input.Root.gameObject, bones.Transforms[b].gameObject) ?? bones.Transforms[b].name);
+                // The occluder side: a face on an unstable bone never covers.
                 var boneTable = new OcclusionBones
                 {
                     Parents = bones.ParentArray(Allocator.Persistent),
-                    Vanishes = new NativeArray<bool>(vanishes, Allocator.Persistent),
+                    Vanishes = new NativeArray<bool>(unstable, Allocator.Persistent),
                 };
                 owned.Add(boneTable.Parents);
                 owned.Add(boneTable.Vanishes);
@@ -309,6 +316,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 {
                     var job = jobs[i];
                     job.Hidden = results[i].HiddenTriangles.ToArray();
+                    job.Report.KeptOnUnstableBones = KeepUnstable(job, unstable, input.Occlusion.MinInfluence);
                     job.Report.HiddenSourceTriangles = job.Hidden;
                     var d = results[i].Declined;
                     job.Report.Declined = d;
@@ -338,6 +346,33 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (results != null) foreach (var r in results) r.Dispose();
                 foreach (var o in owned) o.Dispose();
             }
+        }
+
+        /// <summary>
+        /// The candidate side: a triangle with a corner on an unstable bone can move out from under its cover, so it
+        /// is never deleted. This clears flags after the solve and needs no second one, which is why Core does not
+        /// know about it: every triangle the solve hides is covered by faces the solve keeps, and keeping more
+        /// triangles takes no face away from anyone's cover. Returns how many triangles it kept.
+        /// </summary>
+        static int KeepUnstable(Job job, bool[] unstable, float minInfluence)
+        {
+            var eval = job.Eval;
+            var kept = 0;
+            for (var t = 0; t < job.Hidden.Length; t++)
+            {
+                if (!job.Hidden[t]) continue;
+                var tri = eval.Triangles[t];
+                for (var c = 0; c < 3 && job.Hidden[t]; c++)
+                    for (var k = eval.WeightStart[tri[c]]; k < eval.WeightStart[tri[c] + 1]; k++)
+                    {
+                        var w = eval.Weights[k];
+                        if (w.Weight < minInfluence || w.Bone >= unstable.Length || !unstable[w.Bone]) continue;
+                        job.Hidden[t] = false;
+                        kept++;
+                        break;
+                    }
+            }
+            return kept;
         }
 
         static void Decimate(List<Job> live, List<Job> all, PipelineInput input, AvatarBones bones, OptimizationReport report)

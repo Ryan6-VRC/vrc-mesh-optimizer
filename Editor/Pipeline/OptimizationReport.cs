@@ -64,6 +64,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int FloorTriangles { get; internal set; }
         public float Weight { get; internal set; }
         public int LockedVertices { get; internal set; }
+        /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
+        public int KeptOnUnstableBones { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
 
         /// <summary>Per source triangle, true when occlusion removed it. Null when occlusion did not run on this renderer.</summary>
@@ -72,6 +74,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int[] KeptVertices { get; internal set; }
         /// <summary>Per shape key of the source mesh, what the pass evaluated it as. Null for a renderer that applies no shape keys.</summary>
         public ShapeKeyLiveness[] Liveness { get; internal set; }
+        /// <summary>
+        /// Per shape key of the source mesh, the weight the renderer held it at as the pass read it. Besides each live
+        /// key's own frames, the pass evaluates one more configuration when any live key holds a nonzero weight:
+        /// every live key at once at these weights, frozen keys at theirs.
+        /// </summary>
+        public float[] HeldWeights { get; internal set; }
+        /// <summary>True when that as-it-stands configuration was evaluated.</summary>
+        public bool EvaluatedAsItStands { get; internal set; }
     }
 
     /// <summary>Wall-clock per stage, in milliseconds.</summary>
@@ -110,8 +120,15 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public bool OcclusionRan { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
         public OcclusionStats OcclusionStats { get; internal set; }
-        /// <summary>Bones occlusion treated as able to vanish, by path.</summary>
-        public List<string> VanishingBones { get; } = new List<string>();
+        /// <summary>
+        /// Bones an animation can scale or Modular Avatar can delete from, and every bone under them, by path: faces
+        /// on them neither cover nor are deleted as hidden. Filled only when occlusion runs.
+        /// </summary>
+        public List<string> UnstableBones { get; } = new List<string>();
+        /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
+        public int KeptOnUnstableBones => Renderers.Sum(r => r.KeptOnUnstableBones);
+        /// <summary>Material overrides on the component that matched no material on any renderer, so did nothing.</summary>
+        public List<Material> UnmatchedMaterialOverrides { get; } = new List<Material>();
 
         public StageTimes Times;
 
@@ -129,6 +146,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 ? $"Budget {TriangleBudget} {(TargetMet ? "met" : "NOT met")}"
                 : $"Tolerance {Tolerance.ToString("0.###", c)} mm");
             sb.Append($", error level {(ErrorLevel * 1000f).ToString("0.###", c)} mm, {Times.Total.ToString("0", c)} ms.");
+            if (UnstableBones.Count > 0)
+                sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
+            foreach (var m in UnmatchedMaterialOverrides)
+                sb.Append($"\n  material override for {(m != null ? m.name : "<missing>")} matched no material on the avatar.");
             foreach (var r in Renderers.Where(r => r.Skipped))
                 sb.Append($"\n  skipped {r.Path}: {r.Skip}{(string.IsNullOrEmpty(r.SkipDetail) ? "" : " (" + r.SkipDetail + ")")}");
             return sb.ToString();

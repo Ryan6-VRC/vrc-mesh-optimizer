@@ -193,5 +193,42 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(topo.Kind[hem], Is.EqualTo(VertexKind.Border));
             Assert.That(topo.Partner[hem], Is.EqualTo(back[hem]));
         }
+
+        // Removing hidden triangles leaves the vertices only they used in the arrays decimation reads. One that sits
+        // exactly on a live seam vertex, with its own UV and weights, must not count as a wedge there: the mesh decimates
+        // as if it were absent, whether it is numbered after the live vertices or before them.
+        [TestCase(false)]
+        [TestCase(true)]
+        public void AnOrphanOnASeamVertex_DecimatesAsIfAbsent(bool orphanFirst)
+        {
+            var plain = Fixtures.Cylinder(16, 8, 0.05f, 0.2f, seam: true, out var index);
+            var offset = orphanFirst ? 1 : 0;
+            var withOrphan = new MeshBuilder();
+            void Orphan()
+            {
+                var o = withOrphan.Add(plain.Positions[index[0, 4]], new float2(0.3f, 0.7f));
+                withOrphan.SetWeights(o, (5, 1f));
+            }
+            if (orphanFirst) Orphan();
+            for (var v = 0; v < plain.VertexCount; v++) withOrphan.Add(plain.Positions[v], plain.Uvs[v]);
+            if (!orphanFirst) Orphan();
+            foreach (var t in plain.Triangles) withOrphan.Tri(t.x + offset, t.y + offset, t.z + offset);
+
+            using (var a = Classify(plain))
+            using (var b = Classify(withOrphan))
+            {
+                Assert.That(a.Kind[index[0, 4]], Is.EqualTo(VertexKind.Seam), "the orphan sits on a seam");
+                for (var v = 0; v < plain.VertexCount; v++)
+                    Assert.That(b.Kind[v + offset], Is.EqualTo(a.Kind[v]), $"vertex {v}");
+            }
+
+            using var expected = Fixtures.Decimate(plain);
+            using var actual = Fixtures.Decimate(withOrphan);
+            Assert.That(actual.Length, Is.EqualTo(expected.Length));
+            for (var s = 0; s < expected.Length; s++)
+                Assert.That((actual.Steps[s].Error, actual.Steps[s].TriangleCount), Is.EqualTo((expected.Steps[s].Error, expected.Steps[s].TriangleCount)), $"step {s}");
+            for (var r = 0; r < expected.Records.Length; r++)
+                Assert.That(actual.Records[r], Is.EqualTo(expected.Records[r] + offset), $"record {r}");
+        }
     }
 }

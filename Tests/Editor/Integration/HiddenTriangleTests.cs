@@ -123,23 +123,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var report = a.Run();
 
             Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(hides));
-            Assert.That(report.VanishingBones.Any(p => p.EndsWith(boneName)), Is.EqualTo(!hides));
+            Assert.That(report.UnstableBones.Any(p => p.EndsWith(boneName)), Is.EqualTo(!hides));
         }
 
-        // A clip that shrinks, zeroes, mirrors or NaNs a bone's scale can pull the garment off what it covered. A clip
-        // that only grows it moves the faces outward with everything riding the bone, so cover holds and it counts.
+        // A clip that moves a bone's scale either way takes its faces off the kin they covered, which do not scale with
+        // it; a clip that holds the rest scale changes nothing.
         [TestCase(new[] { 1f, 0f }, false)]
         [TestCase(new[] { 1f, 0.5f }, false)]
         [TestCase(new[] { 1f, float.NaN }, false)]
         [TestCase(new[] { 1f, -1f }, false)]
-        [TestCase(new[] { 1f, 1.2f }, true)]
-        public void OccluderOnABoneAClipScales_HidesOnlyWhenTheClipCannotShrinkIt(float[] values, bool hides)
+        [TestCase(new[] { 1f, 1.2f }, false)]
+        [TestCase(new[] { 1f, 1f }, true)]
+        public void OccluderOnABoneAClipScales_HidesOnlyWhenTheClipHoldsItsScale(float[] values, bool hides)
         {
             var bone = a.Bone("Armature/Hips/Chest/Skirt");
             Garment(bone);
             a.ScaleClip(bone, values);
 
-            var report = a.Run(VanishingBones.FromLegacyAnimations(a.Root.transform));
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
 
             Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(hides));
         }
@@ -152,10 +153,52 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Garment(a.Bone("Armature/Hips/Chest/Collapse/Child"));
             if (collapse) a.ScaleClip(parent, 1f, 0f);
 
-            var report = a.Run(VanishingBones.FromLegacyAnimations(a.Root.transform));
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
 
             Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(!collapse), "the child two kin steps away covers unless its parent can collapse");
-            Assert.That(report.VanishingBones.Any(p => p.EndsWith("Collapse/Child")), Is.EqualTo(collapse));
+            Assert.That(report.UnstableBones.Any(p => p.EndsWith("Collapse/Child")), Is.EqualTo(collapse));
+        }
+
+        // The candidate side. A body on a bone a slider grows, under cover riding that bone's parent, swells out through
+        // cover that stays put, so none of it is deleted; without the slider the same body is.
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ACandidateOnAScaledBone_UnderCoverOnItsParent_IsKept(bool scaled)
+        {
+            var core = a.Bone("Armature/Hips/Chest/Core");
+            var covered = a.Skinned("Covered", a.Sphere(BodyRadius, 16, 32, name: "covered"), new[] { core });
+            Garment(chest);
+            if (scaled) a.ScaleClip(core, 1f, 1.2f);
+
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
+
+            var r = Of(report, covered);
+            Assert.That(r.HiddenRemoved > 0, Is.EqualTo(!scaled));
+            Assert.That(r.KeptOnUnstableBones > 0, Is.EqualTo(scaled), "the report counts what the rule kept");
+            Assert.That(report.KeptOnUnstableBones, Is.EqualTo(r.KeptOnUnstableBones));
+            Assert.That(HiddenOnBody(report), Is.GreaterThan(0), "the body on the steady bone beside it is still judged");
+        }
+
+        // An override names the material the user sees; an NDMF plugin that cloned it and recorded the clone as its
+        // replacement still gets the override. An unrecorded clone does not, and the report names the idle override.
+        [TestCase(true)]
+        [TestCase(false)]
+        public void MaterialOverride_FollowsARecordedClone(bool recorded)
+        {
+            var original = a.Opaque();
+            var clone = a.Made(new Material(original));
+            Garment(chest, material: clone);
+            a.Optimizer().materials.Add(new Runtime.MaterialOcclusion { material = original, mode = Runtime.OcclusionMode.NeverOccludes });
+
+            OptimizationReport report;
+            using (new nadena.dev.ndmf.ObjectRegistryScope(new nadena.dev.ndmf.ObjectRegistry(a.Root.transform)))
+            {
+                if (recorded) nadena.dev.ndmf.ObjectRegistry.RegisterReplacedObject(original, clone);
+                report = a.Run();
+            }
+
+            Assert.That(HiddenOnBody(report) > 0, Is.EqualTo(!recorded), "NeverOccludes applies only when the clone traces back");
+            Assert.That(report.UnmatchedMaterialOverrides.Contains(original), Is.EqualTo(!recorded));
         }
 
         // Occlusion reads the front of a face by Unity's winding, and a back-culled material draws only its front.

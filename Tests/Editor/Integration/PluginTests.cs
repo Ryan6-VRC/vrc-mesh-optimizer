@@ -116,10 +116,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         }
 
         // The scale source reads the descriptor's merged layers through NDMF's animator services, resolving the clip's
-        // path from the avatar root: an FX clip that can collapse the garment's bone stops it covering, one that only
-        // grows it does not.
+        // path from the avatar root: an FX clip that can scale the garment's bone stops it covering, one that holds its
+        // rest scale does not.
         [TestCase(0f, false)]
-        [TestCase(1.2f, true)]
+        [TestCase(1.2f, false)]
+        [TestCase(1f, true)]
         public void AnFxClipScalingTheGarmentsBone_DecidesWhetherItCovers(float scale, bool covers)
         {
             var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
@@ -148,7 +149,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
             Assert.That(errors, Is.Empty, "the build logs no error");
             Assert.That(body.sharedMesh != source, Is.EqualTo(covers));
-            Assert.That(OptimizationReports.Latest.VanishingBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
+            Assert.That(OptimizationReports.Latest.UnstableBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
         }
 
         [Test]

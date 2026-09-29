@@ -67,8 +67,8 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                 var services = context.ActivateExtensionContextRecursive<AnimatorServicesContext>();
                 var skinned = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null).ToList();
                 var liveness = LivenessSources.Classify(context, skinned);
-                var scaleCurves = VanishingBones.FromAnimatorServices(services, root)
-                    .Concat(VanishingBones.FromLegacyAnimations(root)).ToList();
+                var scaleCurves = UnstableBones.FromAnimatorServices(services, root)
+                    .Concat(UnstableBones.FromLegacyAnimations(root)).ToList();
                 var livenessMs = watch.Elapsed.TotalMilliseconds;
 
                 var report = OptimizerPipeline.Run(new PipelineInput

@@ -26,11 +26,14 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
     }
 
     /// <summary>
-    /// Which bones an animation can collapse, so that a face riding one never counts as cover: the renderer stays
-    /// on while the face goes, and whatever it covered shows. Each source below only adds flags, so reading the
-    /// animators here can stop a face from covering but can never make one cover.
+    /// Bones whose geometry does not keep its place relative to its kin. The occlusion rule accepts cover from a face
+    /// up to a few parent-or-child steps away, on the premise that geometry on neighbouring bones moves together; an
+    /// animated scale breaks that in either direction, since kin do not scale together, and Modular Avatar's
+    /// conditional deletion removes faces outright. So a face on an unstable bone never covers, and a triangle on one
+    /// is never deleted as hidden. Each source below only adds flags, so reading the animators here can keep
+    /// triangles but never delete one.
     /// </summary>
-    internal static class VanishingBones
+    internal static class UnstableBones
     {
         /// <summary>
         /// Modular Avatar's conditional mesh deletion moves the deletable vertices onto new bones with this prefix and
@@ -38,19 +41,19 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         /// </summary>
         public const string ModularAvatarDeletionBonePrefix = "NaNimatedBone for ";
 
-        /// <summary>A curve value this far under the bone's rest scale, as a fraction of it, shrinks the bone.</summary>
-        public const float ShrinkTolerance = 1e-3f;
+        /// <summary>A curve value further than this from the bone's rest scale, as a fraction of it, moves the bone.</summary>
+        public const float ScaleTolerance = 1e-3f;
 
         /// <summary>
-        /// Per avatar bone id, true when the bone or any ancestor can vanish: by name, or because a clip can shrink,
-        /// collapse, mirror or NaN its scale. A scaled bone carries everything under it, so the flag runs down the tree.
+        /// Per avatar bone id, true when the bone or any ancestor is unstable: by name, or because a clip can move its
+        /// scale on any axis. A scaled bone carries everything under it, so the flag runs down the tree.
         /// </summary>
         public static bool[] Compute(AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves)
         {
             var scaled = new List<int>();
             if (scaleCurves != null)
                 foreach (var curve in scaleCurves)
-                    if (curve.Target != null && Collapses(curve.Target.localScale[curve.Axis], curve.Values))
+                    if (curve.Target != null && Moves(curve.Target.localScale[curve.Axis], curve.Values))
                         scaled.Add(bones.Id(curve.Target));
             // Numbering a curve's target can add a Transform outside the root, so the table is sized after.
             var flags = new bool[bones.Count];
@@ -62,19 +65,16 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         public static bool ByName(Transform bone) => bone != null && bone.name.StartsWith(ModularAvatarDeletionBonePrefix);
 
         /// <summary>
-        /// A scale curve can make faces on its bone uncover what they covered at rest when it takes the axis to a
-        /// non-finite value, to or through zero, or below its rest magnitude: each of those pulls the faces inward,
-        /// mirrors them or removes them. Growing only moves them outward, with everything that rides the bone.
+        /// A scale curve moves its bone when it can take the axis away from its rest value, either way, or to a
+        /// non-finite value. A curve that only holds the rest value, as the defaults layers Modular Avatar and VRCFury
+        /// write do, does not.
         /// </summary>
-        public static bool Collapses(float rest, float[] values)
+        public static bool Moves(float rest, float[] values)
         {
             if (values == null) return false;
+            var tolerance = Mathf.Max(Mathf.Abs(rest) * ScaleTolerance, 1e-6f);
             foreach (var v in values)
-            {
-                if (float.IsNaN(v) || float.IsInfinity(v)) return true;
-                if (rest == 0f || v == 0f || Mathf.Sign(v) != Mathf.Sign(rest)) return true;
-                if (Mathf.Abs(v) < Mathf.Abs(rest) * (1f - ShrinkTolerance)) return true;
-            }
+                if (float.IsNaN(v) || float.IsInfinity(v) || Mathf.Abs(v - rest) > tolerance) return true;
             return false;
         }
 

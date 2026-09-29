@@ -9,24 +9,24 @@ using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 {
-    public class VanishingBonesTests
+    public class UnstableBonesTests
     {
-        // Rest scale, then the curve's values. A face stops counting as cover when its bone can shrink, reach or cross
-        // zero, or go non-finite; growing only moves it outward with everything riding the bone.
+        // Rest scale, then the curve's values. A bone is unstable when a clip can take its scale away from rest in either
+        // direction, since its kin do not scale with it, or to a non-finite value; a curve that holds rest is not.
         [TestCase(1f, new[] { 1f, 0f }, true)]
-        [TestCase(1f, new[] { 1f, 1e-4f }, true)]
         [TestCase(1f, new[] { 1f, 0.9f }, true)]
         [TestCase(1f, new[] { float.NaN }, true)]
         [TestCase(1f, new[] { float.PositiveInfinity }, true)]
         [TestCase(1f, new[] { -1f }, true)]
-        [TestCase(1.2f, new[] { 1.2f, 1f }, true)]
-        [TestCase(-1f, new[] { -1f, 1f }, true)]
-        [TestCase(1f, new[] { 1f, 1.2f }, false)]
+        [TestCase(1f, new[] { 1f, 1.2f }, true)]
+        [TestCase(-1f, new[] { -1f, -1.5f }, true)]
+        [TestCase(0f, new[] { 0f, 0.5f }, true)]
         [TestCase(1f, new[] { 1f, 1f }, false)]
-        [TestCase(-1f, new[] { -1f, -1.5f }, false)]
-        public void Collapses_WhenTheCurveCanPullTheBoneIn_Mirror_OrRemoveIt(float rest, float[] values, bool collapses)
+        [TestCase(1.2f, new[] { 1.2f, 1.2002f }, false)]
+        [TestCase(0f, new[] { 0f }, false)]
+        public void Moves_WhenACurveCanTakeTheScaleAwayFromRest(float rest, float[] values, bool moves)
         {
-            Assert.That(VanishingBones.Collapses(rest, values), Is.EqualTo(collapses));
+            Assert.That(UnstableBones.Moves(rest, values), Is.EqualTo(moves));
         }
 
         [Test]
@@ -39,12 +39,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var steady = a.Bone("Armature/Hips/Steady");
             var bones = new AvatarBones(a.Root.transform);
 
-            var flags = VanishingBones.Compute(bones, new[] { new ScaleCurve(scaled, 0, new[] { 1f, 0f }), new ScaleCurve(steady, 1, new[] { 1f, 1.1f }) });
+            var flags = UnstableBones.Compute(bones, new[] { new ScaleCurve(scaled, 0, new[] { 1f, 1.2f }), new ScaleCurve(steady, 1, new[] { 1f, 1f }) });
 
             Assert.That(flags[bones.Id(named)], Is.True, "by name");
             Assert.That(flags[bones.Id(scaled)], Is.True, "by scale");
             Assert.That(flags[bones.Id(child)], Is.True, "under a scaled bone");
-            Assert.That(flags[bones.Id(steady)], Is.False, "grown only");
+            Assert.That(flags[bones.Id(steady)], Is.False, "held at rest");
             Assert.That(flags[bones.Id(a.Bone("Armature/Hips"))], Is.False, "a parent is not flagged by its child");
         }
 
@@ -56,11 +56,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var bone = a.Bone("Armature/Hips/Skirt");
             a.ScaleClip(bone, 1f, float.NaN);
 
-            var curves = VanishingBones.FromLegacyAnimations(a.Root.transform).ToList();
+            var curves = UnstableBones.FromLegacyAnimations(a.Root.transform).ToList();
 
             Assert.That(curves.Select(c => c.Target).Distinct(), Is.EqualTo(new[] { bone }));
             Assert.That(curves.Single(c => c.Axis == 0).Values, Has.Some.NaN);
-            Assert.That(curves.Where(c => c.Axis != 0).Select(c => VanishingBones.Collapses(1f, c.Values)), Has.All.False);
+            Assert.That(curves.Where(c => c.Axis != 0).Select(c => UnstableBones.Moves(1f, c.Values)), Has.All.False);
         }
 
         static string Po(string file) => File.ReadAllText(Path.GetFullPath("Packages/com.ryan6vrc.mesh-optimizer/Editor/Localization/" + file));

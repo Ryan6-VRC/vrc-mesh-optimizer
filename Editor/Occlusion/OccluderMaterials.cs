@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using nadena.dev.ndmf;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Runtime;
@@ -22,14 +24,47 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         /// </summary>
         public const string CullProperty = "_Cull";
 
-        readonly Dictionary<Material, OcclusionMode> _overrides = new Dictionary<Material, OcclusionMode>();
+        /// <summary>Overrides by the material the user named, resolved to its original.</summary>
+        readonly Dictionary<Object, (Material named, OcclusionMode mode)> _overrides = new Dictionary<Object, (Material, OcclusionMode)>();
+        readonly HashSet<Object> _matched = new HashSet<Object>();
         readonly Dictionary<(Material, OcclusionMode), OccluderSubmesh> _read = new Dictionary<(Material, OcclusionMode), OccluderSubmesh>();
 
         public OccluderMaterials(IEnumerable<MaterialOcclusion> overrides)
         {
             if (overrides == null) return;
             foreach (var o in overrides)
-                if (o != null && o.material != null) _overrides[o.material] = o.mode;
+                if (o != null && o.material != null) _overrides[Original(o.material)] = (o.material, o.mode);
+        }
+
+        /// <summary>
+        /// The material an NDMF plugin replaced this one from, following the chain back to the first, or the material
+        /// itself. A plugin that clones a material and records the clone with <c>ObjectRegistry.RegisterReplacedObject</c>
+        /// makes the clone's reference resolve to the original's, which is what the user named. VRCFury is not an NDMF
+        /// plugin and records nothing, so a material it cloned does not match an override on the original. The lookup
+        /// does not create a reference, so it changes nothing for plugins that register replacements later.
+        /// </summary>
+        internal static Object Original(Material material)
+        {
+            var reference = ObjectRegistry.ActiveRegistry?.GetReference(material, false);
+            return reference?.Object != null ? reference.Object : material;
+        }
+
+        /// <summary>The override for a material by its original, noting that it matched.</summary>
+        OcclusionMode ModeOf(Material material)
+        {
+            var original = Original(material);
+            if (!_overrides.TryGetValue(original, out var o)) return OcclusionMode.Automatic;
+            _matched.Add(original);
+            return o.mode;
+        }
+
+        /// <summary>The overrides that match no material of any of <paramref name="renderers"/>.</summary>
+        public List<Material> Unmatched(IEnumerable<Renderer> renderers)
+        {
+            foreach (var r in renderers)
+                foreach (var m in r.sharedMaterials)
+                    if (m != null) ModeOf(m);
+            return _overrides.Where(kv => !_matched.Contains(kv.Key)).Select(kv => kv.Value.named).ToList();
         }
 
         /// <summary>Per submesh of the renderer, its material's part in occlusion. Each material is read once.</summary>
@@ -46,7 +81,7 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         {
             // A slot with no material draws nothing a player sees.
             if (material == null) return new OccluderSubmesh { Mode = OccluderMode.NeverOccludes };
-            var mode = _overrides.TryGetValue(material, out var m) ? m : OcclusionMode.Automatic;
+            var mode = ModeOf(material);
             if (_read.TryGetValue((material, mode), out var known)) return known;
 
             var surface = AlphaReader.Read(material, mode);
