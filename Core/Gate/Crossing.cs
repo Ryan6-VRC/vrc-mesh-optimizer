@@ -112,8 +112,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 throw new ArgumentException($"Touch and Nearness must be positive distances in metres; they are {settings.Touch} and {settings.Nearness}", nameof(settings));
             segments.Clear();
 
-            var excludedA = Mask(a);
-            var excludedB = Mask(b);
+            var excludedA = SurfaceDistance.Mask(a);
+            var excludedB = SurfaceDistance.Mask(b);
             var prims = new NativeArray<TreePrim>(b.Triangles.Length, Allocator.Persistent);
             var nodes = new NativeList<TreeNode>(math.max(b.Triangles.Length / 2, 1), Allocator.Persistent);
             var found = new NativeQueue<CrossingSegment>(Allocator.Persistent);
@@ -166,13 +166,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             using var change = new NativeReference<CrossingChange>(Allocator.Persistent);
             new CrossingChangeJob { Before = before, After = after, Nearness = settings.Nearness, Out = change }.Run();
             return change.Value;
-        }
-
-        static NativeArray<bool> Mask(in Surface s)
-        {
-            var mask = new NativeArray<bool>(s.Triangles.Length, Allocator.Persistent);
-            if (s.Excluded.IsCreated) mask.CopyFrom(s.Excluded);
-            return mask;
         }
     }
 }

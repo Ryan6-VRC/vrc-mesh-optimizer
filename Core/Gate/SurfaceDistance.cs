@@ -201,6 +201,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                     throw new ArgumentException($"surface {side} vertex {v} is at {s.Positions[v]}, which is not a finite position", side);
         }
 
+        /// <summary>
+        /// A surface's exclusion flags as a job can hold them, one per triangle: a copy of its own, or none set when it has
+        /// none, since a job refuses a container that was never created. The caller owns it.
+        /// </summary>
+        internal static NativeArray<bool> Mask(in Surface s)
+        {
+            var mask = new NativeArray<bool>(s.Triangles.Length, Allocator.Persistent);
+            if (s.Excluded.IsCreated) mask.CopyFrom(s.Excluded);
+            return mask;
+        }
+
         static DirectedDistance Directed(in Surface sampled, in Target from, in Target to, in SurfaceDistanceSettings settings,
             out NativeArray<float2> sorted)
         {
@@ -288,37 +299,32 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 Lookup = new NativeParallelHashMap<TriangleKey, int>(math.max(n, 1), Allocator.Persistent),
                 Nodes = new NativeList<TreeNode>(math.max(n / 2, 1), Allocator.Persistent),
             };
-            // A job refuses a container that was never created, so an absent mask travels as an empty one.
-            var none = s.Excluded.IsCreated ? default : new NativeArray<bool>(0, Allocator.Persistent);
             try
             {
+                using var excluded = SurfaceDistance.Mask(s);
                 using var count = new NativeReference<int>(Allocator.Persistent);
                 using var scratch = new NativeArray<TreePrim>(n, Allocator.Persistent);
                 new TargetJob
                 {
                     Positions = s.Positions,
                     Triangles = s.Triangles,
-                    Excluded = s.Excluded.IsCreated ? s.Excluded : none,
-                    HasExcluded = s.Excluded.IsCreated,
+                    Excluded = excluded,
                     Normals = t.Normals,
                     Keys = t.Keys,
                     Lookup = t.Lookup,
                     Prims = scratch,
                     PrimCount = count,
+                    Nodes = t.Nodes,
                 }.Run();
+                // The tree was built over the first PrimCount prims, in place, so they are already in leaf order.
                 t.Prims = new NativeArray<TreePrim>(count.Value, Allocator.Persistent);
                 NativeArray<TreePrim>.Copy(scratch, t.Prims, count.Value);
-                new TreeJob { Prims = t.Prims, Nodes = t.Nodes }.Run();
                 return t;
             }
             catch
             {
                 t.Dispose();
                 throw;
-            }
-            finally
-            {
-                if (none.IsCreated) none.Dispose();
             }
         }
 
