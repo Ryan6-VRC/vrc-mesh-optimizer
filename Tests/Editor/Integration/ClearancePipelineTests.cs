@@ -106,7 +106,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         }
 
         // Neighbours are what occlusion kept. Body deleted under an always-on garment is not there to be passed through,
-        // so it holds nothing back; kept, the same body is a neighbour to the whole garment.
+        // so it holds nothing back; kept, the same body is a neighbour to the whole garment. Re-judging is off: the garment
+        // passing through the deleted body uncovers some of it, which re-judging writes back where it stands, crossed by
+        // the garment, since the rule never saw it; what is measured here is what the rule saw.
         [Test]
         public void BodyDeletedUnderTheGarment_IsNoNeighbour()
         {
@@ -117,7 +119,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             optimizer.removeHiddenTriangles = false;
             var kept = a.Run(apply: false);
             optimizer.removeHiddenTriangles = true;
-            var removed = a.Run();
+            var removed = a.Run(tweak: i => i.Rejudge = false);
 
             Assert.That(Of(removed, body).HiddenRemoved, Is.GreaterThan(0), "occlusion deleted the body under the garment");
             TestContext.WriteLine($"garment near vertices {Of(kept, garment).NearVertices} with the body whole, {Of(removed, garment).NearVertices} with it deleted underneath; refused {Of(kept, garment).ClearanceRefused} and {Of(removed, garment).ClearanceRefused}");
