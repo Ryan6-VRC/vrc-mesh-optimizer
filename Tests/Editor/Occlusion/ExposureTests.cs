@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
@@ -230,6 +231,69 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             var r = SolveAndCheck("gapped fan");
             Assert.That(r[0].HiddenTriangles[0], Is.False, "a ray between two faces that do not meet is not blocked");
             Assert.That(r[0].Declined.Escaped, Is.EqualTo(2), "the corners on x = 0 escape; the one at x = 1 mm is under a face");
+        }
+
+        // ------------------------------------------------------------------------------------------------
+        // A surface is seen from the side its geometry faces, whatever its shading normals say; toon meshes
+        // often carry authored normals tilted well off the surface. coverage.py casts about Blender's vertex
+        // normal, which is the geometry's and ignores custom normals.
+
+        // A closed double-sided box about the origin, 1 cm over and under it and 3 cm to each side, with a
+        // window in its top 1 cm across centred 1.7 cm toward -X: where the 60-degree ring of an upright cone
+        // at the origin leaves.
+        static MeshBuilder BoxWithWindow(bool window)
+        {
+            var b = new MeshBuilder();
+            Func<float, float, bool> skip = null;
+            if (window) skip = (x, z) => math.abs(x + 0.0171f) < 0.005f && math.abs(z) < 0.005f;
+            b.Grid(0.01f, -0.03f, 0.03f, -0.03f, 0.03f, 0.002f, MeshBuilder.On(1), skip);
+            b.Grid(-0.01f, -0.03f, 0.03f, -0.03f, 0.03f, 0.01f, MeshBuilder.On(1));
+            void Wall(float3 a, float3 c)
+            {
+                // A vertical quad from corner a to corner c, spanning y from -1 cm to 1 cm.
+                var i = b.AddVertex(new float3(a.x, -0.01f, a.z), Up, float2.zero, MeshBuilder.On(1));
+                b.AddVertex(new float3(a.x, 0.01f, a.z), Up, float2.zero, MeshBuilder.On(1));
+                b.AddVertex(new float3(c.x, -0.01f, c.z), Up, float2.zero, MeshBuilder.On(1));
+                b.AddVertex(new float3(c.x, 0.01f, c.z), Up, float2.zero, MeshBuilder.On(1));
+                b.AddTriangle(i, i + 1, i + 2);
+                b.AddTriangle(i + 2, i + 1, i + 3);
+            }
+            Wall(new float3(-0.03f, 0, -0.03f), new float3(-0.03f, 0, 0.03f));
+            Wall(new float3(0.03f, 0, -0.03f), new float3(0.03f, 0, 0.03f));
+            Wall(new float3(-0.03f, 0, -0.03f), new float3(0.03f, 0, -0.03f));
+            Wall(new float3(-0.03f, 0, 0.03f), new float3(0.03f, 0, 0.03f));
+            return b;
+        }
+
+        [Test]
+        public void TiltedAuthoredNormals_DoNotHideASurfaceSeenThroughAWindow([Values(0f, 30f)] float tilt)
+        {
+            // The 1 mm skin faces +Y, but its authored normals lean 30 degrees toward +X, so a cone about them
+            // reaches no further than 45 degrees toward -X: short of the window, through which a viewer 60
+            // degrees off the skin's face sees it.
+            MeshBuilder Tilted()
+            {
+                math.sincos(math.radians(tilt), out var s, out var c);
+                var n = new float3(s, c, 0);
+                var skin = new MeshBuilder();
+                skin.AddVertex(float3.zero, n, float2.zero, MeshBuilder.On(1));
+                skin.AddVertex(new float3(0.001f, 0, 0), n, float2.zero, MeshBuilder.On(1));
+                skin.AddVertex(new float3(0, 0, 0.001f), n, float2.zero, MeshBuilder.On(1));
+                skin.AddTriangle(0, 2, 1);
+                return skin;
+            }
+
+            scene.Add(Tilted(), occludes: false);
+            scene.Add(BoxWithWindow(window: true), occludes: true, new OccluderSubmesh { Culling = FaceCulling.Off });
+            var r = SolveAndCheck($"tilt {tilt}, window");
+            Assert.That(r[0].HiddenTriangles[0], Is.False, "a viewer through the window sees the skin's face");
+            scene.Dispose();
+
+            scene = new Scene();
+            scene.Add(Tilted(), occludes: false);
+            scene.Add(BoxWithWindow(window: false), occludes: true, new OccluderSubmesh { Culling = FaceCulling.Off });
+            r = SolveAndCheck($"tilt {tilt}, closed");
+            Assert.That(r[0].HiddenTriangles[0], Is.True, "control: the closed box hides the skin");
         }
 
         // ------------------------------------------------------------------------------------------------

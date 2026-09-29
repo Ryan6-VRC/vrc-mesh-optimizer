@@ -265,6 +265,42 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Assert.That(r[0].HiddenTriangles[0], Is.True, "control: P is co-moving with the skin, so it closes the hole");
         }
 
+        [Test]
+        public void FrameCarryingADeletedFaceOverASample_DoesNotCoverIt()
+        {
+            // L is one renderer with two patches: P1 on bone 1 over the skin A, kept; P2 on bone 2 far to the side,
+            // hidden under a cap M on bone 4. L's frame carries P1 away and P2 in over A, still under a second cap
+            // M2 on 4, which is kin of P2 but not of A or P1. In that frame the face over A is one the deletion
+            // took, so A is seen.
+            MeshBuilder Plate(float y, float cx, float half, float cell, int bone)
+            {
+                var b = new MeshBuilder();
+                b.Grid(y, cx - half, cx + half, -half, half, cell, MeshBuilder.On(bone));
+                return b;
+            }
+            var a = Plate(0f, 0f, 0.05f, 0.01f, 1);
+            scene.Add(a, occludes: false);
+            var l = Plate(0.01f, 0f, 0.1f, 0.01f, 1);
+            var p2First = l.VertexCount;
+            var p2 = Plate(0.01f, 0.5f, 0.1f, 0.01f, 2);
+            for (var v = 0; v < p2.VertexCount; v++) l.AddVertex(p2.Position(v), Up, float2.zero, MeshBuilder.On(2));
+            for (var t = 0; t < p2.TriangleCount; t++)
+            {
+                var tri = p2.Triangle(t) + p2First;
+                l.AddTriangle(tri.x, tri.y, tri.z);
+            }
+            var frame = l.AddFrame();
+            for (var v = 0; v < l.VertexCount; v++)
+                frame.Add(new ShapeDelta { Vertex = v, Delta = v < p2First ? new float3(0, 0, 1f) : new float3(-0.5f, -0.005f, 0) });
+            scene.Add(l, occludes: true);
+            scene.Add(Plate(0.02f, 0.5f, 0.2f, 0.02f, 4), occludes: true);
+            scene.Add(Plate(0.02f, 0f, 0.2f, 0.02f, 4), occludes: true);
+            var r = SolveAndCheck(scene, Chain, "frame carrying a deleted face");
+            Assert.That(r[1].HiddenCount, Is.GreaterThan(0), "M covers P2 at rest and M2 in the frame, so P2 goes");
+            Assert.That(r[0].HiddenCount, Is.Zero, "in L's frame only P2, deleted, is over A");
+            Assert.That(r[0].Declined.ExposedByDeletion, Is.GreaterThan(0), "P2 covered A in the frame until the deletion took it");
+        }
+
         // ------------------------------------------------------------------------------------------------
         // Randomized layered scenes. Each seed builds three to six shells about one centre on a small bone
         // tree, with random bones and blends, holes, culling, inward winding, orientation, occluder roles,
