@@ -53,10 +53,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         public static QuadricBank Build(in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, Allocator allocator)
         {
+            using var none = Bends.None(Allocator.Persistent);
+            return Build(mesh, topo, settings, none, allocator);
+        }
+
+        /// <summary>With <paramref name="bends"/>, each vertex also holds a quadric for every bend that moves its surroundings apart (see <see cref="Bends"/>).</summary>
+        public static QuadricBank Build(in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, in Bends bends, Allocator allocator)
+        {
             var bank = new QuadricBank();
             try
             {
-                Fill(ref bank, mesh, topo, settings, allocator);
+                Fill(ref bank, mesh, topo, settings, bends, allocator);
                 return bank;
             }
             catch
@@ -66,7 +73,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
         }
 
-        static void Fill(ref QuadricBank bank, in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, Allocator allocator)
+        static void Fill(ref QuadricBank bank, in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, in Bends bends, Allocator allocator)
         {
             var w = topo.WorkingVertexCount;
             using var uv0 = new OptionalArray<float2>(mesh.Uv0);
@@ -94,6 +101,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 Tris = tris,
                 BorderWeight = settings.BorderWeight,
                 SeamWeight = settings.SeamWeight,
+                Bends = bends,
             };
 
             new CountJob { C = common, SparseCount = bank.SparseCount }.ScheduleBatch(w, 64).Complete();
@@ -161,11 +169,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             [ReadOnly] public NativeArray<int> Tris;
             public float BorderWeight;
             public float SeamWeight;
+            public Bends Bends;
 
-            /// <summary>The sorted distinct frames that move any corner of w's incident triangles.</summary>
+            /// <summary>
+            /// The sorted distinct frames that move any corner of w's incident triangles: shape frames, then the bends in
+            /// which some corner does not move with w's home.
+            /// </summary>
             public void GatherFrames(int w, ref NativeList<int> frames)
             {
                 frames.Clear();
+                var ow = Origin[w];
                 for (var i = TriStart[w]; i < TriStart[w + 1]; i++)
                 {
                     var tri = Triangles[Tris[i]];
@@ -173,6 +186,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     {
                         var o = Origin[tri[k]];
                         for (var j = DeltaStart[o]; j < DeltaStart[o + 1]; j++) frames.Add(DeltaFrame[j]);
+                        if (!Bends.Active) continue;
+                        Bends.AddMixed(o, ref frames);
+                        Bends.AddApart(ow, o, ref frames);
                     }
                 }
                 if (frames.Length < 2) return;
@@ -183,15 +199,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 frames.Length = n;
             }
 
-            public double3 PositionIn(int working, int frame)
+            /// <summary>A working vertex as it stands in a frame (-1: rest); in a bend, read in <paramref name="owner"/>'s home.</summary>
+            public double3 PositionIn(int working, int frame, int owner)
             {
                 var o = Origin[working];
                 var p = (double3)Positions[o];
                 if (frame < 0) return p;
+                if (frame >= Bends.FrameBase)
+                {
+                    var k = frame - Bends.FrameBase;
+                    return Bends.InHome(o, p, k, Bends.HomeIn(Origin[owner], Bends.BoneOf(k)));
+                }
                 return p + (double3)DeltaLookup.Find(DeltaStart, DeltaFrame, DeltaValue, o, frame);
             }
 
-            /// <summary>w's quadric with every corner placed as in the given frame (-1: rest).</summary>
+            /// <summary>w's quadric with every corner placed as in the given frame (-1: rest); in a bend, in w's home.</summary>
             public Quadric ConfigurationQuadric(int w, int frame, out float3 normal)
             {
                 var q = default(Quadric);
@@ -200,9 +222,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 {
                     var t = Tris[i];
                     var tri = Triangles[t];
-                    var p0 = PositionIn(tri.x, frame);
-                    var p1 = PositionIn(tri.y, frame);
-                    var p2 = PositionIn(tri.z, frame);
+                    var p0 = PositionIn(tri.x, frame, w);
+                    var p1 = PositionIn(tri.y, frame, w);
+                    var p2 = PositionIn(tri.z, frame, w);
                     var n = math.cross(p1 - p0, p2 - p0);
                     var len = math.length(n);
                     nsum += n;
@@ -247,9 +269,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 for (var i = TriStart[w]; i < TriStart[w + 1]; i++)
                 {
                     var tri = Triangles[Tris[i]];
-                    var p0 = PositionIn(tri.x, -1);
-                    var e1 = PositionIn(tri.y, -1) - p0;
-                    var e2 = PositionIn(tri.z, -1) - p0;
+                    var p0 = PositionIn(tri.x, -1, w);
+                    var e1 = PositionIn(tri.y, -1, w) - p0;
+                    var e2 = PositionIn(tri.z, -1, w) - p0;
                     var t0 = (double2)Uv0[Origin[tri.x]];
                     var d1 = (double2)Uv0[Origin[tri.y]] - t0;
                     var d2 = (double2)Uv0[Origin[tri.z]] - t0;

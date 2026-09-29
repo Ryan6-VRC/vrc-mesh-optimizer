@@ -51,6 +51,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             r.Add(b);
             return r;
         }
+
+        /// <summary>
+        /// The same planes read in another space: the result evaluated at y equals this evaluated at m y + t. Exact for
+        /// any affine map, so a quadric carried through a rigid motion measures the same distances.
+        /// </summary>
+        public Quadric Transformed(in double3x3 m, double3 t)
+        {
+            var a = new double3x3(A00, A01, A02, A01, A11, A12, A02, A12, A22);
+            var b = new double3(B0, B1, B2);
+            var at = math.mul(a, t);
+            var ma = math.mul(math.transpose(m), math.mul(a, m));
+            var mb = math.mul(math.transpose(m), at + b);
+            return new Quadric
+            {
+                A00 = ma.c0.x, A01 = ma.c1.x, A02 = ma.c2.x, A11 = ma.c1.y, A12 = ma.c2.y, A22 = ma.c2.z,
+                B0 = mb.x, B1 = mb.y, B2 = mb.z,
+                C = math.dot(t, at) + 2.0 * math.dot(b, t) + C,
+                W = W,
+            };
+        }
     }
 
     /// <summary>
