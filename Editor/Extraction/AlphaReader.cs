@@ -293,7 +293,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// multiplies its intensity into it; the AudioLink spectrum decal, flipbook, pathing, depth, Voronoi and Truchet
         /// alpha overrides; and a rim light that multiplies into alpha. A module's own toggle must be on for its terms to
         /// apply. Only an unlocked material is read at all: locking bakes these properties into the shader, and a locked
-        /// material has no <c>_MainAlphaMaskMode</c> to be read by.
+        /// material has no <c>_MainAlphaMaskMode</c> to be read by. Not modelled: Poiyomi modules that move where the main
+        /// texture is sampled rather than writing alpha, which are stochastic sampling (<c>_MainTexStochastic</c>), parallax
+        /// (<c>_PoiParallax</c>) and video effects (<c>_VideoEffectsEnable</c>); a material with one on is read as if its
+        /// main texture were sampled at the mesh's UV.
         /// </summary>
         internal static bool PoiyomiLowersAlphaElsewhere(Material m)
         {

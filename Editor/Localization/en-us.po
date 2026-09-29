@@ -144,7 +144,7 @@ msgid "MeshOptimizer:diag:budget-not-met:description"
 msgstr "The avatar has {0} triangles against a target of {1}."
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, and vertices on fingers or on bones an animation grows are never removed. Raise the target, or allow more renderers to be decimated."
+msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, and vertices on fingers or on bones an animation grows from zero scale are never removed. Raise the target, or allow more renderers to be decimated."
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "An always-on renderer is off"

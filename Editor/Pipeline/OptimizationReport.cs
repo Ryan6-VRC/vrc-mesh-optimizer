@@ -70,13 +70,23 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float Error { get; internal set; }
         public int FloorTriangles { get; internal set; }
         public float Weight { get; internal set; }
-        /// <summary>Vertices no collapse could remove: on a finger, on a bone a clip can grow, or of a triangle drawn with fur.</summary>
+        /// <summary>
+        /// Vertices no collapse could remove: on a finger, on a bone a clip grows from zero scale, or of a triangle drawn
+        /// with fur.
+        /// </summary>
         public int LockedVertices { get; internal set; }
         /// <summary>
-        /// Of <see cref="LockedVertices"/>, those with weight on a bone a clip can grow above its rest scale, whose cost
-        /// the avatar as it stands cannot tell.
+        /// Of <see cref="LockedVertices"/>, those with weight on a bone that stands at zero scale and a clip grows: geometry
+        /// with no size as the avatar stands, whose cost it cannot tell.
         /// </summary>
-        public int LockedOnGrowingBones { get; internal set; }
+        public int LockedFromZeroScale { get; internal set; }
+        /// <summary>Of <see cref="LockedVertices"/>, those of a triangle drawn with fur, whose density is its triangle count.</summary>
+        public int LockedForFur { get; internal set; }
+        /// <summary>
+        /// Vertices whose removal cost was multiplied by how much a clip can grow a bone they ride, so it is charged at the
+        /// size the geometry can be shown at.
+        /// </summary>
+        public int CostRaisedForGrowth { get; internal set; }
         /// <summary>Vertices with another layer near enough for the clearance rule to act on them; 0 when it did not run.</summary>
         public int NearVertices { get; internal set; }
         /// <summary>Collapses the clearance rule refused because they came too near another layer.</summary>
@@ -234,9 +244,15 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 sb.Append($"\n  linked {link}: {Configurations.Count(x => x.Link == link)} configurations.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
-            var growing = Renderers.Sum(r => r.LockedOnGrowingBones);
-            if (growing > 0)
-                sb.Append($"\n  {growing} vertices on bones a clip grows were kept from decimation.");
+            var fromZero = Renderers.Sum(r => r.LockedFromZeroScale);
+            if (fromZero > 0)
+                sb.Append($"\n  {fromZero} vertices on bones a clip grows from zero scale were kept from decimation.");
+            var raised = Renderers.Sum(r => r.CostRaisedForGrowth);
+            if (raised > 0)
+                sb.Append($"\n  {raised} vertices on bones a clip grows were costed at their grown size.");
+            var furLocked = Renderers.Sum(r => r.LockedForFur);
+            if (furLocked > 0)
+                sb.Append($"\n  {furLocked} vertices drawn with fur were kept from decimation.");
             var fur = Renderers.Sum(r => r.KeptForFur);
             if (fur > 0)
                 sb.Append($"\n  fur kept {fur} covered triangles.");

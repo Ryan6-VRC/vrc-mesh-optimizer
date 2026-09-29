@@ -28,7 +28,7 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         };
 
         readonly bool[] _finger;
-        readonly bool[] _growing;
+        readonly float[] _growth;
 
         /// <summary>The renderer the descriptor names for visemes, or null.</summary>
         public Renderer Face { get; }
@@ -36,10 +36,10 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         /// <summary>How many avatar bones are fingers or ride one.</summary>
         public int FingerBoneCount { get; }
 
-        /// <param name="scaleCurves">Scale curves any clip can play, for <see cref="UnstableBones.Growing"/>; null reads as none.</param>
+        /// <param name="scaleCurves">Scale curves any clip can play, for <see cref="UnstableBones.Growth"/>; null reads as none.</param>
         public Protection(Transform root, AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves = null)
         {
-            _growing = UnstableBones.Growing(bones, scaleCurves);
+            _growth = UnstableBones.Growth(bones, scaleCurves);
             var descriptor = root.GetComponent<VRCAvatarDescriptor>();
             Face = descriptor != null ? descriptor.VisemeSkinnedMesh : null;
 
@@ -66,31 +66,69 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
 
         /// <summary>
         /// Per vertex, nonzero for a locked vertex, which no collapse removes: one with weight on a finger, or any weight on
-        /// a bone a clip can grow (<see cref="UnstableBones.Growing"/>), since however small the weight, the vertex moves when
-        /// the bone grows and the avatar as it stands cannot say what removing it costs then. Null when the mesh has none.
-        /// <paramref name="count"/> is every locked vertex, <paramref name="onGrowingBones"/> those locked for a growing bone.
+        /// a bone that stands at zero scale and a clip grows (<see cref="UnstableBones.Growth"/>). Geometry there has no size
+        /// as the avatar stands, so every collapse on it reads as free, and no factor makes that error what is shown; however
+        /// small the weight, the vertex moves with the bone. Null when the mesh has none. <paramref name="count"/> is every
+        /// locked vertex, <paramref name="fromZeroScale"/> those locked for a bone grown from zero.
         /// </summary>
-        public byte[] Locks(in EvalMesh mesh, out int count, out int onGrowingBones)
+        public byte[] Locks(in EvalMesh mesh, out int count, out int fromZeroScale)
         {
-            count = onGrowingBones = 0;
+            count = fromZeroScale = 0;
             byte[] locks = null;
             for (var v = 0; v < mesh.VertexCount; v++)
             {
                 var onFinger = 0f;
-                var grows = false;
+                var fromZero = float.IsPositiveInfinity(GrowthAt(mesh, v));
                 for (var k = mesh.WeightStart[v]; k < mesh.WeightStart[v + 1]; k++)
                 {
                     var bone = mesh.Weights[k].Bone;
                     if (bone < _finger.Length && _finger[bone]) onFinger += mesh.Weights[k].Weight;
-                    if (bone < _growing.Length && _growing[bone] && mesh.Weights[k].Weight > 0f) grows = true;
                 }
-                if (onFinger < FingerWeight && !grows) continue;
+                if (onFinger < FingerWeight && !fromZero) continue;
                 locks ??= new byte[mesh.VertexCount];
                 locks[v] = 1;
                 count++;
-                if (grows) onGrowingBones++;
+                if (fromZero) fromZeroScale++;
             }
             return locks;
+        }
+
+        /// <summary>
+        /// Per vertex, the factor its removal error is multiplied by: the most a clip can grow any bone it has weight on
+        /// (<see cref="UnstableBones.Growth"/>). Decimation judges the avatar as it stands, and an error on geometry a clip
+        /// grows by a factor is shown that factor larger, so the cost is charged at the size the geometry can be shown at.
+        /// Null when nothing on the mesh grows. <paramref name="count"/> is how many vertices it raises; a vertex grown from
+        /// zero is locked instead (<see cref="Locks"/>) and not counted here.
+        /// </summary>
+        public float[] Multipliers(in EvalMesh mesh, out int count)
+        {
+            count = 0;
+            float[] result = null;
+            for (var v = 0; v < mesh.VertexCount; v++)
+            {
+                var growth = GrowthAt(mesh, v);
+                if (!(growth > 1f) || float.IsPositiveInfinity(growth)) continue;
+                if (result == null)
+                {
+                    result = new float[mesh.VertexCount];
+                    for (var i = 0; i < result.Length; i++) result[i] = 1f;
+                }
+                result[v] = growth;
+                count++;
+            }
+            return result;
+        }
+
+        /// <summary>The most any bone the vertex has weight on can grow.</summary>
+        float GrowthAt(in EvalMesh mesh, int v)
+        {
+            var growth = 1f;
+            for (var k = mesh.WeightStart[v]; k < mesh.WeightStart[v + 1]; k++)
+            {
+                var bone = mesh.Weights[k].Bone;
+                if (mesh.Weights[k].Weight > 0f && bone < _growth.Length) growth = Mathf.Max(growth, _growth[bone]);
+            }
+            return growth;
         }
     }
 }

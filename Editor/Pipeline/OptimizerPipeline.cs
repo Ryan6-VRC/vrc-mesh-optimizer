@@ -830,9 +830,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     seen.TriangleSubmesh[i] = eval.TriangleSubmesh[reduced[i]];
                 }
 
-                var locks = protection.Locks(eval, out var lockedCount, out var growingCount);
+                var locks = protection.Locks(eval, out var lockedCount, out var fromZeroScale);
                 // Fur is grown per triangle, so its density is the triangle count: every vertex of a furred triangle is locked.
                 var fur = MaterialFur.Submeshes(job.Renderer, job.Source.subMeshCount);
+                var lockedForFur = 0;
                 foreach (var t in reduced)
                 {
                     if (!fur[eval.TriangleSubmesh[t]]) continue;
@@ -843,6 +844,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                         if (locks[tri[c]] != 0) continue;
                         locks[tri[c]] = 1;
                         lockedCount++;
+                        lockedForFur++;
                     }
                 }
                 var vertexProtection = new VertexProtection();
@@ -851,8 +853,16 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     vertexProtection.Locked = new NativeArray<byte>(locks, Allocator.Persistent);
                     owned.Add(vertexProtection.Locked);
                 }
+                var multipliers = protection.Multipliers(eval, out var grownCount);
+                if (multipliers != null)
+                {
+                    vertexProtection.CostMultiplier = new NativeArray<float>(multipliers, Allocator.Persistent);
+                    owned.Add(vertexProtection.CostMultiplier);
+                }
                 job.Report.LockedVertices = lockedCount;
-                job.Report.LockedOnGrowingBones = growingCount;
+                job.Report.LockedFromZeroScale = fromZeroScale;
+                job.Report.LockedForFur = lockedForFur;
+                job.Report.CostRaisedForGrowth = grownCount;
                 job.Report.FloorTriangles = protection.FloorFor(job.Renderer, reduced.Count);
 
                 job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);

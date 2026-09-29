@@ -144,7 +144,7 @@ msgid "MeshOptimizer:diag:budget-not-met:description"
 msgstr "アバターのポリゴン数は{0}で、目標は{1}です。"
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションで大きくなるボーンの頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
+msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションでスケール0から大きくなるボーンの頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "常時表示のレンダラーがオフになっています"

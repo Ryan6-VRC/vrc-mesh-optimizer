@@ -79,38 +79,52 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         }
 
         /// <summary>
-        /// Per avatar bone id, true when a clip can grow the bone or any ancestor above its rest scale on any axis: what
-        /// decimation must not judge as the avatar stands, since geometry on such a bone is smaller there than it can be
-        /// shown, and at a rest scale of zero has no size at all, so every collapse on it would read as free. A scaled bone
-        /// carries everything under it, so the flag runs down the tree. Unlike <see cref="Compute"/>, a bone that clips only
-        /// shrink, and Modular Avatar's deletion bones, are not flagged: they are shown at their rest scale or not at all.
+        /// Per avatar bone id, the most a clip can grow the geometry on it, as a factor over its size as the avatar stands:
+        /// the largest ratio any curve gives the bone's scale, on any axis, to its rest scale, times its parent's, since a
+        /// scaled bone carries everything under it. 1 for a bone nothing grows; infinity for one that stands at zero scale
+        /// and a clip shows. Decimation judges the avatar as it stands, where an error on grown geometry reads this many
+        /// times smaller than it is shown. Unlike <see cref="Compute"/>, a bone that clips only shrink, and Modular Avatar's
+        /// deletion bones, grow nothing: they are shown at their rest scale or not at all.
         /// </summary>
-        public static bool[] Growing(AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves)
+        public static float[] Growth(AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves)
         {
-            var grown = new List<int>();
+            var grown = new List<(int bone, float ratio)>();
             if (scaleCurves != null)
                 foreach (var curve in scaleCurves)
-                    if (curve.Target != null && Grows(curve.Target.localScale[curve.Axis], curve.Values))
-                        grown.Add(bones.Id(curve.Target));
+                {
+                    if (curve.Target == null) continue;
+                    var ratio = GrowthOf(curve.Target.localScale[curve.Axis], curve.Values);
+                    if (ratio > 1f) grown.Add((bones.Id(curve.Target), ratio));
+                }
             // Numbering a curve's target can add a Transform outside the root, so the table is sized after.
-            var flags = new bool[bones.Count];
-            foreach (var b in grown) flags[b] = true;
-            return bones.CarryDown(flags);
+            var own = new float[bones.Count];
+            for (var b = 0; b < own.Length; b++) own[b] = 1f;
+            foreach (var (bone, ratio) in grown) own[bone] = Mathf.Max(own[bone], ratio);
+            // Depth-first numbering puts every parent before its children.
+            var result = new float[own.Length];
+            for (var b = 0; b < own.Length; b++)
+            {
+                var parent = bones.Parents[b];
+                result[b] = own[b] * (parent >= 0 && parent < b ? result[parent] : 1f);
+            }
+            return result;
         }
 
         /// <summary>
-        /// A scale curve grows its bone when it can take the axis's magnitude above its rest magnitude by more than the
-        /// tolerance, which any nonzero value does from a rest of zero. A mirroring sign alone grows nothing, nor does NaN,
-        /// which hides the bone's geometry rather than showing it larger; infinity grows it.
+        /// How many times a scale curve can grow its bone's axis: its largest magnitude over the rest magnitude, or 1 when no
+        /// value exceeds rest by more than the tolerance. Any value from a rest of zero grows it without bound. A mirroring
+        /// sign alone grows nothing, nor does NaN, which hides the bone's geometry rather than showing it larger.
         /// </summary>
-        public static bool Grows(float rest, float[] values)
+        public static float GrowthOf(float rest, float[] values)
         {
-            if (values == null) return false;
+            if (values == null) return 1f;
             var magnitude = Mathf.Abs(rest);
             var limit = magnitude + Mathf.Max(magnitude * ScaleTolerance, 1e-6f);
+            var largest = 0f;
             foreach (var v in values)
-                if (Mathf.Abs(v) > limit) return true;
-            return false;
+                if (Mathf.Abs(v) > limit) largest = Mathf.Max(largest, Mathf.Abs(v));
+            if (largest == 0f) return 1f;
+            return magnitude > 1e-6f ? largest / magnitude : float.PositiveInfinity;
         }
 
         static bool IsScale(EditorCurveBinding binding) =>

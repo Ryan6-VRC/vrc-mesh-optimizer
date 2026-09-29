@@ -208,11 +208,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         }
 
         // An accessory an animation shows by growing its bone from a shrunk rest: as the avatar stands it is a millimetre
-        // across, so every collapse on it costs less than the tolerance, though it is shown at full size. Its vertices are
-        // locked. Without the clip the same accessory is only ever that small, and decimates.
+        // across, so every collapse on it costs less than the tolerance. Its cost is charged at the size the clip shows it,
+        // so it decimates as the same ball at full size does. Without the clip it is only ever that small, and decimates away.
         [TestCase(true)]
         [TestCase(false)]
-        public void AnAccessoryAClipGrowsFromAShrunkRest_KeepsEveryTriangle(bool grows)
+        public void AnAccessoryAClipGrowsFromAShrunkRest_IsCostedAtItsGrownSize(bool grows)
         {
             var bone = a.Bone("Armature/Accessory");
             var mesh = a.Sphere(0.1f, 30, 40, name: "accessory");
@@ -220,7 +220,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             // Shrunk after binding, so the rest pose draws the accessory at a hundredth of its size.
             bone.localScale = Vector3.one * 0.01f;
             if (grows) a.ScaleClip(bone, 0.01f, 1f);
-            var ball = Ball("Ball", new Vector3(1, 0, 0));
+            var twin = Ball("Ball", new Vector3(1, 0, 0));
             var c = a.Optimizer(decimate: true, removeHidden: false);
             c.target = TargetKind.Tolerance;
             c.tolerance = 1f;
@@ -228,20 +228,62 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
 
             var r = Of(report, accessory);
+            var full = Of(report, twin);
+            Assert.That(full.TrianglesAfter, Is.LessThan(full.TrianglesBefore), "the full-size twin decimates at this tolerance");
             if (grows)
             {
-                Assert.That(r.TrianglesAfter, Is.EqualTo(r.TrianglesBefore), "every triangle of the grown accessory is kept");
-                Assert.That(r.LockedVertices, Is.EqualTo(mesh.vertexCount));
-                Assert.That(r.LockedOnGrowingBones, Is.EqualTo(mesh.vertexCount), "the report counts what the rule locked");
-                StringAssert.Contains($"{mesh.vertexCount} vertices on bones a clip grows", report.Summary());
+                Assert.That(r.TrianglesAfter, Is.EqualTo(full.TrianglesAfter).Within(full.TrianglesAfter / 50), "costed as the full-size twin");
+                Assert.That(r.CostRaisedForGrowth, Is.EqualTo(mesh.vertexCount), "the report counts what the rule raised");
+                Assert.That(r.LockedVertices, Is.Zero, "a hundredfold growth is costed, not locked");
+                StringAssert.Contains($"{mesh.vertexCount} vertices on bones a clip grows were costed", report.Summary());
             }
             else
             {
-                Assert.That(r.TrianglesAfter, Is.LessThan(r.TrianglesBefore / 2), "at a millimetre across, the tolerance takes most of it");
-                Assert.That(r.LockedVertices, Is.Zero);
-                Assert.That(r.LockedOnGrowingBones, Is.Zero);
+                Assert.That(r.TrianglesAfter, Is.LessThan(full.TrianglesAfter / 2), "at a millimetre across, the tolerance takes most of it");
+                Assert.That(r.CostRaisedForGrowth, Is.Zero);
             }
-            Assert.That(Of(report, ball).LockedVertices, Is.Zero, "a renderer on another bone is judged as before");
+            Assert.That(full.CostRaisedForGrowth + full.LockedVertices, Is.Zero, "a renderer on another bone is judged as before");
+        }
+
+        // From a rest of zero the accessory has no size at all, and no factor makes a zero cost what is shown: it is locked.
+        [Test]
+        public void AnAccessoryAClipGrowsFromZeroScale_KeepsEveryTriangle()
+        {
+            var bone = a.Bone("Armature/Accessory");
+            var mesh = a.Sphere(0.1f, 30, 40, name: "accessory");
+            var accessory = a.Skinned("Accessory", mesh, new[] { bone }, parent: bone);
+            bone.localScale = Vector3.zero;
+            a.ScaleClip(bone, 0f, 1f);
+            var c = a.Optimizer(decimate: true, removeHidden: false);
+            c.target = TargetKind.Tolerance;
+
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
+
+            var r = Of(report, accessory);
+            Assert.That(r.TrianglesAfter, Is.EqualTo(r.TrianglesBefore));
+            Assert.That(r.LockedFromZeroScale, Is.EqualTo(mesh.vertexCount));
+            Assert.That(r.LockedVertices, Is.EqualTo(mesh.vertexCount));
+            StringAssert.Contains($"{mesh.vertexCount} vertices on bones a clip grows from zero scale", report.Summary());
+        }
+
+        // A size slider on Hips takes everything under it to 1.2 times: an error there is shown 1.2 times larger, so it is
+        // charged so, and nothing is locked.
+        [Test]
+        public void ASizeSliderOnHips_LocksNothing_AndCostsWhatItGrows()
+        {
+            var hips = a.Bone("Armature/Hips");
+            var bone = a.Bone("Armature/Hips/Chest");
+            var mesh = a.Sphere(0.1f, 30, 40, name: "body");
+            var body = a.Skinned("Body", mesh, new[] { bone }, parent: bone);
+            a.ScaleClip(hips, 1f, 1.2f);
+            a.Optimizer(decimate: true, removeHidden: false).target = TargetKind.Tolerance;
+
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
+
+            var r = Of(report, body);
+            Assert.That(r.LockedVertices, Is.Zero);
+            Assert.That(r.CostRaisedForGrowth, Is.EqualTo(mesh.vertexCount));
+            Assert.That(r.TrianglesAfter, Is.LessThan(r.TrianglesBefore), "still decimated");
         }
 
         // Shape keys are never dropped, renamed or reordered, so anything addressing one by index still finds it.
