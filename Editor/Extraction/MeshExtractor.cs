@@ -72,6 +72,26 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         }
     }
 
+    /// <summary>
+    /// What extraction refuses: a vertex whose position or texture coordinate, or a shape key whose delta, is not a
+    /// finite number.
+    /// </summary>
+    internal sealed class NonFiniteMeshException : Exception
+    {
+        /// <summary>The shape key whose delta is not finite, by the name Unity gives it; null when the vertex itself is not.</summary>
+        public readonly string ShapeKey;
+        public readonly int Vertex;
+
+        public NonFiniteMeshException(string shapeKey, int vertex)
+            : base(shapeKey != null
+                ? $"shape key '{shapeKey}' moves vertex {vertex} by a delta that is not a finite number"
+                : $"vertex {vertex} has a position or texture coordinate that is not a finite number")
+        {
+            ShapeKey = shapeKey;
+            Vertex = vertex;
+        }
+    }
+
     internal static class MeshExtractor
     {
         /// <summary>A delta shorter than a micrometre moves nothing anyone can see, so it is left out of the sparse set.</summary>
@@ -143,6 +163,11 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var uv = new List<Vector2>();
             mesh.GetUVs(0, uv);
             for (var v = 0; v < uv.Count && v < vertexCount; v++) result.Uv0[v] = uv[v];
+            // A position (from the mesh, its bone weights or its bind poses) or texture coordinate that is not a finite
+            // number reads as no cost to every rule that measures one, so the mesh is refused rather than evaluated.
+            for (var v = 0; v < vertexCount; v++)
+                if (!math.all(math.isfinite(result.Positions[v])) || !math.all(math.isfinite(result.Uv0[v])))
+                    throw new NonFiniteMeshException(null, v);
 
             result.Triangles = new NativeArray<int3>(triangles.ToArray(), allocator);
             result.TriangleSubmesh = new NativeArray<int>(triangleSubmesh.ToArray(), allocator);

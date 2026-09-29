@@ -193,7 +193,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             new FinishJob { Triangles = topo.Triangles, Kind = topo.Kind, Partner = topo.Partner, EdgeFlags = topo.EdgeFlags }.Run();
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct SplitSubmeshesJob : IJob
         {
             [ReadOnly] public NativeArray<int3> SourceTriangles;
@@ -247,7 +247,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct WeldJob : IJob
         {
             [ReadOnly] public NativeArray<float3> Positions;
@@ -279,7 +279,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct DeltaIndexJob : IJob
         {
             [ReadOnly] public NativeArray<ShapeFrame> Frames;
@@ -322,7 +322,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct EdgeJob : IJob
         {
             [ReadOnly] public NativeArray<int3> Triangles;
@@ -382,7 +382,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct ClassifyJob : IJobParallelFor
         {
             [ReadOnly] public NativeArray<float3> Positions;
@@ -539,7 +539,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         struct FinishJob : IJob
         {
             [ReadOnly] public NativeArray<int3> Triangles;

@@ -246,13 +246,36 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 r.Skip = SkipReason.NoTriangles;
             }
+            else if (DuplicateShapeKey(mesh) is string duplicate)
+            {
+                r.Skip = SkipReason.DuplicateShapeKey;
+                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.DuplicateShapeKey, true, renderer, duplicate));
+            }
             else if (renderer is SkinnedMeshRenderer skinned)
             {
-                if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out var liveness) || liveness == null)
-                    liveness = LivenessSources.Describe(skinned, root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
-                r.Liveness = liveness;
+                r.Liveness = LivenessOf(skinned, input);
             }
             return job;
+        }
+
+        /// <summary>The liveness the caller gave a renderer, or, when it gave none, every key live from where it is held to full weight.</summary>
+        static ShapeKeyLiveness[] LivenessOf(SkinnedMeshRenderer skinned, PipelineInput input)
+        {
+            if (input.Liveness == null || !input.Liveness.TryGetValue(skinned, out var liveness) || liveness == null)
+                liveness = LivenessSources.Describe(skinned, input.Root).Keys.Select(k => ShapeKeyClassifier.ClassifyKey(k, null, true)).ToArray();
+            return liveness;
+        }
+
+        /// <summary>
+        /// The first shape key name the mesh gives two keys, or null. Unity addresses a key by name when a mesh is written,
+        /// so the second key's frames would land on the first, and a renderer's weights, held by index, on the wrong keys.
+        /// </summary>
+        static string DuplicateShapeKey(Mesh mesh)
+        {
+            var names = new HashSet<string>();
+            for (var k = 0; k < mesh.blendShapeCount; k++)
+                if (!names.Add(mesh.GetBlendShapeName(k))) return mesh.GetBlendShapeName(k);
+            return null;
         }
 
         /// <summary>Triangles in the mesh's triangle submeshes; other topologies are not triangles.</summary>
@@ -345,6 +368,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 job.Eval = RendererExtraction.Extract(job.Renderer, bones, job.Report.Liveness, job.Linked, Allocator.Persistent, out _);
                 job.Extracted = true;
                 job.Report.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
+            }
+            catch (NonFiniteMeshException e)
+            {
+                // Not a failure but the mesh as authored, so it is named for what it is; nothing was extracted.
+                job.Report.Skip = SkipReason.NonFinite;
+                report.Diagnostics.Add(e.ShapeKey != null
+                    ? new Diagnostic(DiagnosticKeys.NonFiniteShapeKey, true, job.Renderer, e.ShapeKey, e.Vertex)
+                    : new Diagnostic(DiagnosticKeys.NonFiniteVertex, true, job.Renderer, e.Vertex));
             }
             catch (Exception e)
             {
@@ -560,13 +591,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         static void Decimate(List<Job> live, List<Job> all, PipelineInput input, AvatarBones bones, OptimizationReport report)
         {
             var settings = input.Settings;
-            var protection = new Protection(input.Root, bones);
+            var protection = new Protection(input.Root, bones, input.ScaleCurves);
             var perRenderer = new Dictionary<Renderer, RendererSettings>();
             foreach (var s in settings.renderers)
                 if (s != null && s.renderer != null) perRenderer[s.renderer] = s;
 
             var stage = Stopwatch.StartNew();
-            var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, input.Decimation.Clearance.Reach) : default;
+            var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : default;
             report.Times.Clearance = stage.Elapsed.TotalMilliseconds;
             var rig = RigOf(bones, SkinWeightPerBone(live, bones.Count));
             try
@@ -629,9 +660,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
         /// each renderer's layer per kept triangle in <see cref="Job.Layers"/>. Kept means what occlusion left: a triangle
         /// it deleted is not there to be passed through. A renderer off at build is in it like any other, since whatever
-        /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved.
+        /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is a renderer the
+        /// pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be read: it is still
+        /// drawn where it stands, whole, so its neighbours keep clear of its source.
         /// </summary>
-        static ClearanceSurface ClearanceSurfaceOf(List<Job> live, float reach)
+        static ClearanceSurface ClearanceSurfaceOf(List<Job> live, List<Job> all, PipelineInput input, AvatarBones bones, float reach)
         {
             var sources = new List<ClearanceLayerSource>();
             var owned = new List<IDisposable>();
@@ -649,6 +682,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     for (var i = 0; i < job.Layers.Length; i++) job.Layers[i] += next;
                     next += pieces;
                     sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = kept, TriangleLayer = job.Layers });
+                }
+                foreach (var job in all)
+                {
+                    if (job.Extracted || job.Source == null || job.Report.TrianglesBefore == 0 || !CanRead(job.Source, Application.isPlaying)) continue;
+                    if (!TryExtractUnchanged(job, input, bones, out var eval)) continue;
+                    owned.Add(eval);
+                    var layers = Layers.Pieces(eval.Positions, eval.Triangles, Allocator.Persistent, out var pieces);
+                    owned.Add(layers);
+                    for (var i = 0; i < layers.Length; i++) layers[i] += next;
+                    next += pieces;
+                    sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = eval.Triangles, TriangleLayer = layers });
                 }
                 return ClearanceSurface.Build(sources, reach, Allocator.Persistent);
             }
@@ -717,6 +761,25 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return rig;
         }
 
+        /// <summary>
+        /// A renderer the pass leaves as it was, extracted only to stand in the clearance surface. False, with nothing to
+        /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing.
+        /// </summary>
+        static bool TryExtractUnchanged(Job job, PipelineInput input, AvatarBones bones, out EvalMesh eval)
+        {
+            eval = default;
+            try
+            {
+                var liveness = job.Renderer is SkinnedMeshRenderer skinned ? LivenessOf(skinned, input) : null;
+                eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out _);
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         static int HiddenCount(Job job)
         {
             if (job.Hidden == null) return 0;
@@ -749,7 +812,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     seen.TriangleSubmesh[i] = eval.TriangleSubmesh[reduced[i]];
                 }
 
-                var locks = protection.Locks(eval, out var lockedCount);
+                var locks = protection.Locks(eval, out var lockedCount, out var growingCount);
                 var vertexProtection = new VertexProtection();
                 if (locks != null)
                 {
@@ -757,6 +820,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     owned.Add(vertexProtection.Locked);
                 }
                 job.Report.LockedVertices = lockedCount;
+                job.Report.LockedOnGrowingBones = growingCount;
                 job.Report.FloorTriangles = protection.FloorFor(job.Renderer, reduced.Count);
 
                 job.Sequence = Decimator.Run(seen, input.Decimation, vertexProtection, clearance, rig, Allocator.Persistent, out var clearanceStats);

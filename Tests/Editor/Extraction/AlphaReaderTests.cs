@@ -177,5 +177,114 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             Assert.That((forced.Occludes, forced.Alpha), Is.EqualTo((true, (AlphaMap)null)));
             Assert.That(AlphaReader.Read(opaque, OcclusionMode.NeverOccludes).Occludes, Is.False);
         }
+
+        // Each family's properties as its shader declares them, every term that could lower alpha off.
+        const string PoiyomiProperties =
+            "_MainTex (\"Main\", 2D) = \"white\" {} _Color (\"Color\", Color) = (1, 1, 1, 1) _AlphaMask (\"Mask\", 2D) = \"white\" {} " +
+            "_MainAlphaMaskMode (\"Mask Mode\", Int) = 0 _Mode (\"Mode\", Int) = 1 _Cutoff (\"Cutoff\", Float) = 0.5 " +
+            "_AlphaMod (\"Mod\", Range(-1, 1)) = 0 _AlphaGlobalMask (\"Global\", Int) = 0 _AlphaDistanceFade (\"x\", Float) = 0 " +
+            "_AlphaFresnel (\"x\", Float) = 0 _AlphaAngular (\"x\", Float) = 0 _AlphaAudioLinkEnabled (\"x\", Float) = 0 _AlphaDithering (\"x\", Float) = 0 " +
+            "_MainVertexColoringEnabled (\"x\", Float) = 0 _MainUseVertexColorAlpha (\"x\", Range(0, 1)) = 0 " +
+            "_BackFaceEnabled (\"x\", Float) = 0 _BackFaceReplaceAlpha (\"x\", Float) = 0 _EnableDissolve (\"x\", Float) = 0 " +
+            "_DecalEnabled (\"x\", Float) = 0 _DecalOverrideAlpha (\"x\", Float) = 0 _DecalEnabled3 (\"x\", Float) = 0 _DecalOverrideAlpha3 (\"x\", Float) = 0 " +
+            "_MatcapEnable (\"x\", Float) = 0 _MatcapAlphaOverride (\"x\", Range(0, 1)) = 0 _MatcapApplyToAlphaEnabled (\"x\", Float) = 0 _MatcapApplyToAlphaBlendType (\"x\", Int) = 0 " +
+            "_Matcap4Enable (\"x\", Float) = 0 _Matcap4AlphaOverride (\"x\", Range(0, 1)) = 0 " +
+            "_EnableALDecal (\"x\", Float) = 0 _ALDecalControlsAlpha (\"x\", Range(0, 1)) = 0 _EnableFlipbook (\"x\", Float) = 0 _FlipbookAlphaControlsFinalAlpha (\"x\", Float) = 0 " +
+            "_EnablePathing (\"x\", Float) = 0 _PathingOverrideAlpha (\"x\", Float) = 0 _EnableTouchGlow (\"x\", Float) = 0 _DepthAlphaToggle (\"x\", Float) = 0 " +
+            "_VoronoiEnabled (\"x\", Int) = 0 _VoronoiAffectsMaterialAlpha (\"x\", Int) = 0 _EnableTruchet (\"x\", Float) = 0 _TruchetOverrideAlpha (\"x\", Float) = 0 " +
+            "_EnableRimLighting (\"x\", Float) = 0 _RimApplyAlpha (\"x\", Int) = 0 _EnableRim2Lighting (\"x\", Float) = 0 _Rim2ApplyAlpha (\"x\", Int) = 0";
+
+        const string LilToonProperties =
+            "_MainTex (\"Main\", 2D) = \"white\" {} _Color (\"Color\", Color) = (1, 1, 1, 1) _AlphaMask (\"Mask\", 2D) = \"white\" {} " +
+            "_AlphaMaskMode (\"Mask Mode\", Int) = 0 _Cutoff (\"Cutoff\", Float) = 0.5 " +
+            "_UseMain2ndTex (\"x\", Int) = 0 _Main2ndTexAlphaMode (\"x\", Int) = 0 _UseMain3rdTex (\"x\", Int) = 0 _Main3rdTexAlphaMode (\"x\", Int) = 0 " +
+            "_DissolveParams (\"x\", Vector) = (0, 0, 0.5, 0.1) _DistanceFade (\"x\", Vector) = (0.1, 0.01, 0, 0) _DistanceFadeColor (\"x\", Color) = (0, 0, 0, 1) " +
+            "_UseDither (\"x\", Int) = 0";
+
+        Material Family(string shaderName, string properties)
+        {
+            var source = $"Shader \"{shaderName}\" {{ Properties {{ {properties} }} SubShader {{ Tags {{ \"RenderType\"=\"TransparentCutout\" }} Pass {{ }} }} }}";
+            var shader = UnityEditor.ShaderUtil.CreateShaderAsset(source, true);
+            _made.Add(shader);
+            var material = new Material(shader) { renderQueue = 2450 };
+            _made.Add(material);
+            return material;
+        }
+
+        // A cutout material with an opaque main texture reads solid, until a term the reader does not compute is on in a
+        // state that can lower its alpha; then it is see-through everywhere. A state that can only raise alpha, or a term
+        // whose module is off, leaves it solid. Each setting is "name=value", a vector's value "x,y,z,w".
+        [TestCase("", true, TestName = "{m}(nothing on)")]
+        [TestCase("_AlphaMod=-1", false)]
+        [TestCase("_AlphaMod=0.5", true)]
+        [TestCase("_AlphaGlobalMask=1", false)]
+        [TestCase("_AlphaDistanceFade=1", false)]
+        [TestCase("_AlphaFresnel=1", false)]
+        [TestCase("_AlphaAngular=1", false)]
+        [TestCase("_AlphaAudioLinkEnabled=1", false)]
+        [TestCase("_AlphaDithering=1", false)]
+        [TestCase("_MainVertexColoringEnabled=1;_MainUseVertexColorAlpha=1", false)]
+        [TestCase("_MainVertexColoringEnabled=0;_MainUseVertexColorAlpha=1", true)]
+        [TestCase("_BackFaceEnabled=1;_BackFaceReplaceAlpha=1", false)]
+        [TestCase("_EnableDissolve=1", false)]
+        [TestCase("_DecalEnabled=1;_DecalOverrideAlpha=2", false)]
+        [TestCase("_DecalEnabled3=1;_DecalOverrideAlpha3=1", false)]
+        [TestCase("_DecalEnabled=1;_DecalOverrideAlpha=3", true)]
+        [TestCase("_DecalEnabled=1;_DecalOverrideAlpha=6", true)]
+        [TestCase("_DecalEnabled=0;_DecalOverrideAlpha=2", true)]
+        [TestCase("_MatcapEnable=1;_MatcapAlphaOverride=1", false)]
+        [TestCase("_MatcapEnable=1;_MatcapApplyToAlphaEnabled=1;_MatcapApplyToAlphaBlendType=1", false)]
+        [TestCase("_MatcapEnable=1;_MatcapApplyToAlphaEnabled=1;_MatcapApplyToAlphaBlendType=0", true)]
+        [TestCase("_Matcap4Enable=1;_Matcap4AlphaOverride=0.5", false)]
+        [TestCase("_EnableALDecal=1;_ALDecalControlsAlpha=1", false)]
+        [TestCase("_EnableFlipbook=1;_FlipbookAlphaControlsFinalAlpha=1", false)]
+        [TestCase("_EnablePathing=1;_PathingOverrideAlpha=1", false)]
+        [TestCase("_EnableTouchGlow=1;_DepthAlphaToggle=1", false)]
+        [TestCase("_VoronoiEnabled=1;_VoronoiAffectsMaterialAlpha=1", false)]
+        [TestCase("_EnableTruchet=1;_TruchetOverrideAlpha=1", false)]
+        [TestCase("_EnableRimLighting=1;_RimApplyAlpha=2", false)]
+        [TestCase("_EnableRimLighting=1;_RimApplyAlpha=1", true)]
+        [TestCase("_EnableRim2Lighting=1;_Rim2ApplyAlpha=2", false)]
+        public void APoiyomiTermTheReaderDoesNotCompute_ReadsAsSeeThrough(string settings, bool occludes)
+        {
+            var material = Family("Test/Poiyomi Alpha", PoiyomiProperties);
+            Apply(material, settings);
+
+            var surface = AlphaReader.Read(material, OcclusionMode.Automatic);
+
+            Assert.That(surface.Occludes, Is.EqualTo(occludes));
+            if (occludes) Assert.That(surface.Alpha.IsSolid(new Vector2(0.5f, 0.5f)), Is.True, "the opaque main texture reads solid");
+        }
+
+        [TestCase("", true, TestName = "{m}(nothing on)")]
+        [TestCase("_UseMain2ndTex=1;_Main2ndTexAlphaMode=2", false)]
+        [TestCase("_UseMain2ndTex=1;_Main2ndTexAlphaMode=3", true)]
+        [TestCase("_UseMain2ndTex=0;_Main2ndTexAlphaMode=1", true)]
+        [TestCase("_UseMain3rdTex=1;_Main3rdTexAlphaMode=4", false)]
+        [TestCase("_DissolveParams=1,0,0.5,0.1", false)]
+        [TestCase("_DistanceFade=0.1,0.01,1,0;_DistanceFadeColor=0,0,0,0", false)]
+        [TestCase("_DistanceFade=0.1,0.01,1,0;_DistanceFadeColor=0,0,0,1", true)]
+        [TestCase("_UseDither=1", false)]
+        public void ALilToonTermTheReaderDoesNotCompute_ReadsAsSeeThrough(string settings, bool occludes)
+        {
+            var material = Family("Test/lilToon Alpha", LilToonProperties);
+            Apply(material, settings);
+
+            var surface = AlphaReader.Read(material, OcclusionMode.Automatic);
+
+            Assert.That(surface.Occludes, Is.EqualTo(occludes));
+        }
+
+        static void Apply(Material material, string settings)
+        {
+            foreach (var setting in settings.Split(new[] { ';' }, System.StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = setting.Split('=');
+                Assert.That(material.HasProperty(parts[0]), $"the test shader declares {parts[0]}");
+                var values = parts[1].Split(',').Select(v => float.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                if (values.Length == 1) material.SetFloat(parts[0], values[0]);
+                else material.SetVector(parts[0], new Vector4(values[0], values[1], values[2], values[3]));
+            }
+        }
     }
 }

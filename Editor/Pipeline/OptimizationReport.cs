@@ -25,6 +25,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         Failed,
         /// <summary>Nothing hid a triangle and decimation cut none.</summary>
         Unchanged,
+        /// <summary>
+        /// A vertex position or texture coordinate, or a shape key's delta, is not a finite number, which every rule that
+        /// measures a distance would read as no distance.
+        /// </summary>
+        NonFinite,
+        /// <summary>Two shape keys share a name, and Unity addresses a key by name, so the mesh cannot be written back with both.</summary>
+        DuplicateShapeKey,
     }
 
     /// <summary>
@@ -63,7 +70,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float Error { get; internal set; }
         public int FloorTriangles { get; internal set; }
         public float Weight { get; internal set; }
+        /// <summary>Vertices no collapse could remove: on a finger, or on a bone a clip can grow.</summary>
         public int LockedVertices { get; internal set; }
+        /// <summary>
+        /// Of <see cref="LockedVertices"/>, those with weight on a bone a clip can grow above its rest scale, whose cost
+        /// the avatar as it stands cannot tell.
+        /// </summary>
+        public int LockedOnGrowingBones { get; internal set; }
         /// <summary>Vertices with another layer near enough for the clearance rule to act on them; 0 when it did not run.</summary>
         public int NearVertices { get; internal set; }
         /// <summary>Collapses the clearance rule refused because they came too near another layer.</summary>
@@ -219,6 +232,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 sb.Append($"\n  linked {link}: {Configurations.Count(x => x.Link == link)} configurations.");
             if (UnstableBones.Count > 0)
                 sb.Append($"\n  {UnstableBones.Count} unstable bones kept {KeptOnUnstableBones} covered triangles.");
+            var growing = Renderers.Sum(r => r.LockedOnGrowingBones);
+            if (growing > 0)
+                sb.Append($"\n  {growing} vertices on bones a clip grows were kept from decimation.");
             if (KeptForOutline > 0)
                 sb.Append($"\n  outlines kept up to {KeptForOutline} triangles whose front was covered.");
             foreach (var m in UnmatchedMaterialOverrides)

@@ -78,6 +78,41 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
             return false;
         }
 
+        /// <summary>
+        /// Per avatar bone id, true when a clip can grow the bone or any ancestor above its rest scale on any axis: what
+        /// decimation must not judge as the avatar stands, since geometry on such a bone is smaller there than it can be
+        /// shown, and at a rest scale of zero has no size at all, so every collapse on it would read as free. A scaled bone
+        /// carries everything under it, so the flag runs down the tree. Unlike <see cref="Compute"/>, a bone that clips only
+        /// shrink, and Modular Avatar's deletion bones, are not flagged: they are shown at their rest scale or not at all.
+        /// </summary>
+        public static bool[] Growing(AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves)
+        {
+            var grown = new List<int>();
+            if (scaleCurves != null)
+                foreach (var curve in scaleCurves)
+                    if (curve.Target != null && Grows(curve.Target.localScale[curve.Axis], curve.Values))
+                        grown.Add(bones.Id(curve.Target));
+            // Numbering a curve's target can add a Transform outside the root, so the table is sized after.
+            var flags = new bool[bones.Count];
+            foreach (var b in grown) flags[b] = true;
+            return bones.CarryDown(flags);
+        }
+
+        /// <summary>
+        /// A scale curve grows its bone when it can take the axis's magnitude above its rest magnitude by more than the
+        /// tolerance, which any nonzero value does from a rest of zero. A mirroring sign alone grows nothing, nor does NaN,
+        /// which hides the bone's geometry rather than showing it larger; infinity grows it.
+        /// </summary>
+        public static bool Grows(float rest, float[] values)
+        {
+            if (values == null) return false;
+            var magnitude = Mathf.Abs(rest);
+            var limit = magnitude + Mathf.Max(magnitude * ScaleTolerance, 1e-6f);
+            foreach (var v in values)
+                if (Mathf.Abs(v) > limit) return true;
+            return false;
+        }
+
         static bool IsScale(EditorCurveBinding binding) =>
             binding.type == typeof(Transform) && binding.propertyName.StartsWith("m_LocalScale.");
 

@@ -13,7 +13,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// The collapse loop: serial, because each collapse changes its neighbours' costs. Holds only the job's
     /// inputs and outputs; the working state lives in <see cref="CollapseEngine"/>, built inside Execute.
     /// </summary>
-    [BurstCompile]
+    [BurstCompile(CompileSynchronously = true)]
     internal struct CollapseJob : IJob
     {
         [ReadOnly] public NativeArray<float3> Positions;

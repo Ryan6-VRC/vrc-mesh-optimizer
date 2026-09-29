@@ -30,6 +30,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             return weights;
         }
 
+        /// <summary>
+        /// Loads a key's frames. Throws <see cref="NonFiniteMeshException"/> naming the key when any frame moves a vertex by
+        /// a delta that is not a finite number, which every rule that measures a distance would read as no distance.
+        /// </summary>
         public void Load(Mesh mesh, int key)
         {
             FrameCount = mesh.GetBlendShapeFrameCount(key);
@@ -43,6 +47,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             {
                 _weights[f] = mesh.GetBlendShapeFrameWeight(key, f);
                 mesh.GetBlendShapeFrameVertices(key, f, _positions[f], _normals[f], null);
+                var deltas = _positions[f];
+                for (var v = 0; v < _vertexCount; v++)
+                    if (!(float.IsFinite(deltas[v].x) && float.IsFinite(deltas[v].y) && float.IsFinite(deltas[v].z)))
+                        throw new NonFiniteMeshException(mesh.GetBlendShapeName(key), v);
             }
         }
 

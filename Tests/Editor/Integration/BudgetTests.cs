@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Decimation;
 using Ryan6Vrc.MeshOptimizer.Liveness;
+using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEngine;
@@ -204,6 +205,43 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 Assert.That(r.LockedVertices, Is.Zero);
             }
             Assert.That(kept.Count, Is.LessThan(onFinger.Count + onHand), "the hand half decimates either way");
+        }
+
+        // An accessory an animation shows by growing its bone from a shrunk rest: as the avatar stands it is a millimetre
+        // across, so every collapse on it costs less than the tolerance, though it is shown at full size. Its vertices are
+        // locked. Without the clip the same accessory is only ever that small, and decimates.
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AnAccessoryAClipGrowsFromAShrunkRest_KeepsEveryTriangle(bool grows)
+        {
+            var bone = a.Bone("Armature/Accessory");
+            var mesh = a.Sphere(0.1f, 30, 40, name: "accessory");
+            var accessory = a.Skinned("Accessory", mesh, new[] { bone }, parent: bone);
+            // Shrunk after binding, so the rest pose draws the accessory at a hundredth of its size.
+            bone.localScale = Vector3.one * 0.01f;
+            if (grows) a.ScaleClip(bone, 0.01f, 1f);
+            var ball = Ball("Ball", new Vector3(1, 0, 0));
+            var c = a.Optimizer(decimate: true, removeHidden: false);
+            c.target = TargetKind.Tolerance;
+            c.tolerance = 1f;
+
+            var report = a.Run(UnstableBones.FromLegacyAnimations(a.Root.transform));
+
+            var r = Of(report, accessory);
+            if (grows)
+            {
+                Assert.That(r.TrianglesAfter, Is.EqualTo(r.TrianglesBefore), "every triangle of the grown accessory is kept");
+                Assert.That(r.LockedVertices, Is.EqualTo(mesh.vertexCount));
+                Assert.That(r.LockedOnGrowingBones, Is.EqualTo(mesh.vertexCount), "the report counts what the rule locked");
+                StringAssert.Contains($"{mesh.vertexCount} vertices on bones a clip grows", report.Summary());
+            }
+            else
+            {
+                Assert.That(r.TrianglesAfter, Is.LessThan(r.TrianglesBefore / 2), "at a millimetre across, the tolerance takes most of it");
+                Assert.That(r.LockedVertices, Is.Zero);
+                Assert.That(r.LockedOnGrowingBones, Is.Zero);
+            }
+            Assert.That(Of(report, ball).LockedVertices, Is.Zero, "a renderer on another bone is judged as before");
         }
 
         // Shape keys are never dropped, renamed or reordered, so anything addressing one by index still finds it.

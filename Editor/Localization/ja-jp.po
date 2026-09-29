@@ -144,7 +144,7 @@ msgid "MeshOptimizer:diag:budget-not-met:description"
 msgstr "アバターのポリゴン数は{0}で、目標は{1}です。"
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
+msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションで大きくなるボーンの頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "常時表示のレンダラーがオフになっています"
@@ -181,3 +181,30 @@ msgstr "{0}は「遮蔽しない」に設定されていますが、アバター
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
 msgstr "ビルド時にレンダラーが使うマテリアルに設定し直すか、マテリアルがもう無ければ設定を削除してください。"
+
+msgid "MeshOptimizer:diag:non-finite-vertex"
+msgstr "Mesh Optimizerは数値でない頂点を持つメッシュをスキップしました"
+
+msgid "MeshOptimizer:diag:non-finite-vertex:description"
+msgstr "{0}は変更していません。頂点{1}の位置かUVが有限の数値ではなく、最適化で測るどの誤差もゼロと読んでしまうためです。"
+
+msgid "MeshOptimizer:diag:non-finite-vertex:hint"
+msgstr "元データからメッシュを書き出し直してください。壊れたエクスポートやボーンウェイトがこのような頂点を残すことがあります。"
+
+msgid "MeshOptimizer:diag:non-finite-shape-key"
+msgstr "Mesh Optimizerは数値でないシェイプキーを持つメッシュをスキップしました"
+
+msgid "MeshOptimizer:diag:non-finite-shape-key:description"
+msgstr "{0}は変更していません。シェイプキー{1}が頂点{2}を有限の数値でない距離だけ動かし、最適化で測るどの誤差もゼロと読んでしまうためです。"
+
+msgid "MeshOptimizer:diag:non-finite-shape-key:hint"
+msgstr "元データでシェイプキーを直すか削除して、書き出し直してください。"
+
+msgid "MeshOptimizer:diag:duplicate-shape-key"
+msgstr "Mesh Optimizerは同じ名前のシェイプキーが2つあるメッシュをスキップしました"
+
+msgid "MeshOptimizer:diag:duplicate-shape-key:description"
+msgstr "{0}は変更していません。{1}という名前のシェイプキーが複数あり、Unityはシェイプキーを名前で探すため、新しいメッシュに両方を残せません。"
+
+msgid "MeshOptimizer:diag:duplicate-shape-key:hint"
+msgstr "元データでシェイプキーの名前が重ならないように変えて、書き出し直してください。"

@@ -121,28 +121,42 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             };
         }
 
-        /// <summary>The configuration reading the largest value of a statistic, the first on a tie; -1 when nothing was measured.</summary>
+        /// <summary>
+        /// The configuration reading the largest value of a statistic, the first on a tie; -1 when nothing was measured. A
+        /// configuration that sampled nothing in that direction reads worst of all: its surface could not be checked, so it
+        /// cannot be passed.
+        /// </summary>
         public int Worst(GateDirection direction, Statistic statistic)
         {
             var worst = -1;
             for (var c = 0; c < Configurations.Count; c++)
-                if (worst < 0 || Stats(c, direction).Get(statistic) > Stats(worst, direction).Get(statistic)) worst = c;
+                if (worst < 0 || Worse(Stats(c, direction), Stats(worst, direction), statistic)) worst = c;
             return worst;
         }
 
-        /// <summary>One line per configuration, then one per skip: each direction's mean, p99 and max in millimetres and in pixels at <paramref name="camera"/>, and where each max is.</summary>
+        static bool Worse(DistanceStats a, DistanceStats b, Statistic statistic) =>
+            !a.Sampled ? b.Sampled : b.Sampled && a.Get(statistic) > b.Get(statistic);
+
+        /// <summary>
+        /// One line per configuration, then one per skip: each direction's mean, p99 and max in millimetres and in pixels at
+        /// <paramref name="camera"/>, and where each max is, or that the direction sampled nothing.
+        /// </summary>
         public string[] Lines(GateCamera camera)
         {
             var lines = new List<string>();
             foreach (var c in Configurations)
             {
                 var d = c.Distance;
-                lines.Add($"{Renderer.name}, {c.Configuration}: source-to-optimized {Figures(d.AToB.Stats, camera)}, max {Where(d.AToB, "source")}; " +
-                          $"optimized-to-source {Figures(d.BToA.Stats, camera)}, max {Where(d.BToA, "optimized")}");
+                lines.Add($"{Renderer.name}, {c.Configuration}: source-to-optimized {Direction(d.AToB, "source", camera)}; " +
+                          $"optimized-to-source {Direction(d.BToA, "optimized", camera)}");
             }
             foreach (var s in Skipped) lines.Add($"{Renderer.name}, {s.Name}: not measured, {s.Reason}");
             return lines.ToArray();
         }
+
+        static string Direction(DirectedDistance d, string mesh, GateCamera camera) => d.Stats.Sampled
+            ? $"{Figures(d.Stats, camera)}, max {Where(d, mesh)}"
+            : $"nothing sampled, since no {mesh} triangle measured has area in this configuration";
 
         static string Where(DirectedDistance d, string mesh) => string.Format(CultureInfo.InvariantCulture,
             "at ({0:0.####}, {1:0.####}, {2:0.####}) m in avatar-root space, on {3} triangle {4}", d.MaxPosition.x, d.MaxPosition.y, d.MaxPosition.z, mesh, d.MaxTriangle);

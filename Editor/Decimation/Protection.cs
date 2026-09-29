@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
+using Ryan6Vrc.MeshOptimizer.Occlusion;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
 
@@ -27,6 +28,7 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         };
 
         readonly bool[] _finger;
+        readonly bool[] _growing;
 
         /// <summary>The renderer the descriptor names for visemes, or null.</summary>
         public Renderer Face { get; }
@@ -34,8 +36,10 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         /// <summary>How many avatar bones are fingers or ride one.</summary>
         public int FingerBoneCount { get; }
 
-        public Protection(Transform root, AvatarBones bones)
+        /// <param name="scaleCurves">Scale curves any clip can play, for <see cref="UnstableBones.Growing"/>; null reads as none.</param>
+        public Protection(Transform root, AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves = null)
         {
+            _growing = UnstableBones.Growing(bones, scaleCurves);
             var descriptor = root.GetComponent<VRCAvatarDescriptor>();
             Face = descriptor != null ? descriptor.VisemeSkinnedMesh : null;
 
@@ -61,25 +65,30 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
             renderer != null && renderer == Face ? Mathf.CeilToInt(triangles * FaceFloor) : 0;
 
         /// <summary>
-        /// Per vertex, nonzero for a vertex with weight on a finger: locked, so no collapse removes it. Null when the
-        /// mesh has none.
+        /// Per vertex, nonzero for a locked vertex, which no collapse removes: one with weight on a finger, or any weight on
+        /// a bone a clip can grow (<see cref="UnstableBones.Growing"/>), since however small the weight, the vertex moves when
+        /// the bone grows and the avatar as it stands cannot say what removing it costs then. Null when the mesh has none.
+        /// <paramref name="count"/> is every locked vertex, <paramref name="onGrowingBones"/> those locked for a growing bone.
         /// </summary>
-        public byte[] Locks(in EvalMesh mesh, out int count)
+        public byte[] Locks(in EvalMesh mesh, out int count, out int onGrowingBones)
         {
-            count = 0;
+            count = onGrowingBones = 0;
             byte[] locks = null;
             for (var v = 0; v < mesh.VertexCount; v++)
             {
                 var onFinger = 0f;
+                var grows = false;
                 for (var k = mesh.WeightStart[v]; k < mesh.WeightStart[v + 1]; k++)
                 {
                     var bone = mesh.Weights[k].Bone;
                     if (bone < _finger.Length && _finger[bone]) onFinger += mesh.Weights[k].Weight;
+                    if (bone < _growing.Length && _growing[bone] && mesh.Weights[k].Weight > 0f) grows = true;
                 }
-                if (onFinger < FingerWeight) continue;
+                if (onFinger < FingerWeight && !grows) continue;
                 locks ??= new byte[mesh.VertexCount];
                 locks[v] = 1;
                 count++;
+                if (grows) onGrowingBones++;
             }
             return locks;
         }

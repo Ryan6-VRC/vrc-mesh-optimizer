@@ -25,9 +25,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>{0} the material the override names.</summary>
         public const string NeverOccludesUnmatched = "MeshOptimizer:diag:never-occludes-unmatched";
 
+        /// <summary>{0} the renderer, {1} the vertex's index.</summary>
+        public const string NonFiniteVertex = "MeshOptimizer:diag:non-finite-vertex";
+        /// <summary>{0} the renderer, {1} the shape key's name, {2} the vertex's index.</summary>
+        public const string NonFiniteShapeKey = "MeshOptimizer:diag:non-finite-shape-key";
+        /// <summary>{0} the renderer, {1} the shape key's name.</summary>
+        public const string DuplicateShapeKey = "MeshOptimizer:diag:duplicate-shape-key";
+
         public static readonly string[] All =
         {
             NotReadable, Cloth, RendererFailed, OcclusionFailed, BudgetNotMet, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
+            NonFiniteVertex, NonFiniteShapeKey, DuplicateShapeKey,
         };
     }
 }

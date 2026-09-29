@@ -29,6 +29,43 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(UnstableBones.Moves(rest, values), Is.EqualTo(moves));
         }
 
+        // Rest scale, then the curve's values. A bone grows when a clip can take its scale's magnitude above rest, which any
+        // nonzero value does from zero; shrinking, flipping the sign, holding rest and NaN do not grow it.
+        [TestCase(0f, new[] { 0f, 1f }, true)]
+        [TestCase(0.01f, new[] { 0.01f, 1f }, true)]
+        [TestCase(1f, new[] { 1f, 1.2f }, true)]
+        [TestCase(-1f, new[] { -1f, -1.5f }, true)]
+        [TestCase(1f, new[] { float.PositiveInfinity }, true)]
+        [TestCase(1f, new[] { 1f, 0f }, false)]
+        [TestCase(1f, new[] { -1f }, false)]
+        [TestCase(1f, new[] { float.NaN }, false)]
+        [TestCase(1.2f, new[] { 1.2f, 1.2002f }, false)]
+        [TestCase(0f, new[] { 0f }, false)]
+        public void Grows_WhenACurveCanTakeTheScaleAboveRest(float rest, float[] values, bool grows)
+        {
+            Assert.That(UnstableBones.Grows(rest, values), Is.EqualTo(grows));
+        }
+
+        [Test]
+        public void Growing_RunsDownTheTree_AndIgnoresShrinkingAndDeletionBones()
+        {
+            using var a = new AvatarFixture();
+            var grown = a.Bone("Armature/Hips/Accessory");
+            var child = a.Bone("Armature/Hips/Accessory/Tip");
+            var shrunk = a.Bone("Armature/Hips/Skirt");
+            var named = a.Bone("Armature/Chest/NaNimatedBone for x");
+            grown.localScale = Vector3.zero;
+            var bones = new AvatarBones(a.Root.transform);
+
+            var flags = UnstableBones.Growing(bones, new[] { new ScaleCurve(grown, 0, new[] { 0f, 1f }), new ScaleCurve(shrunk, 1, new[] { 1f, 0f }) });
+
+            Assert.That(flags[bones.Id(grown)], Is.True);
+            Assert.That(flags[bones.Id(child)], Is.True, "under a growing bone");
+            Assert.That(flags[bones.Id(shrunk)], Is.False, "only shrinks");
+            Assert.That(flags[bones.Id(named)], Is.False, "a deletion bone is shown at its rest scale or not at all");
+            Assert.That(flags[bones.Id(a.Bone("Armature/Hips"))], Is.False, "a parent is not flagged by its child");
+        }
+
         [Test]
         public void Flags_UnionBothSources_AndRunDownTheTree()
         {

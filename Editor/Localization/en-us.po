@@ -144,7 +144,7 @@ msgid "MeshOptimizer:diag:budget-not-met:description"
 msgstr "The avatar has {0} triangles against a target of {1}."
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, and finger vertices are never removed. Raise the target, or allow more renderers to be decimated."
+msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, and vertices on fingers or on bones an animation grows are never removed. Raise the target, or allow more renderers to be decimated."
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "An always-on renderer is off"
@@ -181,3 +181,30 @@ msgstr "{0} is set to never occlude, but no renderer on the avatar uses it or a 
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
 msgstr "Set the override on the material the renderer uses at build, or remove the override if the material is gone."
+
+msgid "MeshOptimizer:diag:non-finite-vertex"
+msgstr "Mesh Optimizer skipped a mesh with a vertex that is not a number"
+
+msgid "MeshOptimizer:diag:non-finite-vertex:description"
+msgstr "{0} was left as it was: its vertex {1} has a position or texture coordinate that is not a finite number, which every error the optimizer measures would read as no error at all."
+
+msgid "MeshOptimizer:diag:non-finite-vertex:hint"
+msgstr "Re-export the mesh from its source; a broken export or bone weight usually leaves such a vertex."
+
+msgid "MeshOptimizer:diag:non-finite-shape-key"
+msgstr "Mesh Optimizer skipped a mesh with a shape key that is not a number"
+
+msgid "MeshOptimizer:diag:non-finite-shape-key:description"
+msgstr "{0} was left as it was: its shape key {1} moves vertex {2} by a distance that is not a finite number, which every error the optimizer measures would read as no error at all."
+
+msgid "MeshOptimizer:diag:non-finite-shape-key:hint"
+msgstr "Fix or remove the shape key in the mesh's source and re-export it."
+
+msgid "MeshOptimizer:diag:duplicate-shape-key"
+msgstr "Mesh Optimizer skipped a mesh with two shape keys of one name"
+
+msgid "MeshOptimizer:diag:duplicate-shape-key:description"
+msgstr "{0} was left as it was: more than one of its shape keys is named {1}, and Unity finds a shape key by its name, so a new mesh could not keep both."
+
+msgid "MeshOptimizer:diag:duplicate-shape-key:hint"
+msgstr "Rename the shape keys in the mesh's source so that each name is used once, and re-export it."

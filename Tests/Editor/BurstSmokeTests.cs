@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using Unity.Burst;
 using Unity.Collections;
@@ -33,6 +34,21 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             new SumOfSquaresJob { Points = points, Result = result }.Schedule().Complete();
 
             Assert.That(result.Value, Is.EqualTo(34f).Within(1e-6f));
+        }
+
+        // In the Editor, Burst runs a job compiled asynchronously as managed code until its compilation finishes, so a
+        // build after a cold Burst cache would run the whole collapse loop under Mono, many times slower and rounded
+        // differently from every later build. Every job in the core must wait for its compiled code.
+        [Test]
+        public void EveryCoreBurstJob_CompilesSynchronously()
+        {
+            var jobs = typeof(Ryan6Vrc.MeshOptimizer.Core.Decimation.Decimator).Assembly.GetTypes()
+                .Select(t => (type: t, burst: t.GetCustomAttributes(typeof(BurstCompileAttribute), false).Cast<BurstCompileAttribute>().FirstOrDefault()))
+                .Where(x => x.burst != null)
+                .ToList();
+
+            Assert.That(jobs, Is.Not.Empty);
+            Assert.That(jobs.Where(x => !x.burst.CompileSynchronously).Select(x => x.type.FullName), Is.Empty);
         }
     }
 }
