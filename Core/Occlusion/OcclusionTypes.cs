@@ -123,16 +123,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// How far, in metres, this mesh's faces may have moved inward past where they stood when they covered: a ray
         /// also meets them up to this far behind a sample, measured along its normal, when the sample's
         /// <see cref="CoveredBy"/> names this mesh, so a cover that sank past a sample still covers it. Zero, the
-        /// default, reaches nothing behind any sample. The rule's own limits on an occluder still hold.
+        /// default, reaches nothing behind any sample. The rule's own limits on an occluder still hold. A mesh at index 63
+        /// or later of the solve's list has none, since the bit that would name it names every mesh from 63 on.
         /// </summary>
         public float Setback;
         /// <summary>
-        /// Optional, per vertex: the meshes that covered it before, bit min(index, 63) for the mesh at that index of this
-        /// solve's list, as <see cref="OcclusionResult.CoveredBy"/> reports them. Behind a
-        /// sample, only the faces of a mesh named here cover it (<see cref="Setback"/>). Null names every mesh.
+        /// Optional, two entries per vertex, [2v] for its front sample and [2v + 1] for its back one: the meshes that covered
+        /// that sample before, bit min(index, 63) for the mesh at that index of this solve's list, as
+        /// <see cref="OcclusionResult.CoveredBy"/> reports them. Behind a sample, only the faces of a mesh named for it cover
+        /// it (<see cref="Setback"/>). Null names every mesh.
         /// </summary>
         public ulong[] CoveredBy;
-        /// <summary>Optional, per triangle: as <see cref="CoveredBy"/>, for the samples inside it. Null names every mesh.</summary>
+        /// <summary>
+        /// Optional, two entries per triangle, [2t] for the samples inside it on its front and [2t + 1] for those on its back:
+        /// as <see cref="CoveredBy"/>. Null names every mesh.
+        /// </summary>
         public ulong[] InteriorCoveredBy;
     }
 
@@ -258,13 +263,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// </summary>
         public NativeArray<bool> FrontCovered;
         /// <summary>
-        /// Per vertex: every mesh whose faces blocked a ray of its samples, on either side, at rest or in a configuration,
-        /// one bit per mesh index (meshes from 63 on share bit 63). A mesh that covered a ray another mesh also covered
-        /// may be missing, since each ray names the first blocker met. Informational; what a later solve takes as
-        /// <see cref="OcclusionMesh.CoveredBy"/>.
+        /// Two entries per vertex, [2v] for its front sample and [2v + 1] for its back one (zero where it has none): every
+        /// mesh whose faces blocked a ray of that sample, at rest or in a configuration, one bit per mesh index (meshes from
+        /// 63 on share bit 63). A mesh that covered a ray another mesh also covered may be missing, since each ray names the
+        /// first blocker met. Informational; what a later solve takes as <see cref="OcclusionMesh.CoveredBy"/>.
         /// </summary>
         public NativeArray<ulong> CoveredBy;
-        /// <summary>Per triangle: as <see cref="CoveredBy"/>, over the samples inside it; zero for one sampled at its corners only.</summary>
+        /// <summary>
+        /// Two entries per triangle, [2t] over the samples inside it on its front and [2t + 1] over those on its back: as
+        /// <see cref="CoveredBy"/>; zero for a side sampled at its corners only.
+        /// </summary>
         public NativeArray<ulong> InteriorCoveredBy;
         public DeclineCounts Declined;
 

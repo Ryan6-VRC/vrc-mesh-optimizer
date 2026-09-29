@@ -458,9 +458,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     if (removed != null)
                     {
                         mesh.CoveredBy = job.CoveredBy;
-                        mesh.InteriorCoveredBy = new ulong[source.Length];
+                        // Front and back, per triangle entered, from the evaluation triangle it is.
+                        mesh.InteriorCoveredBy = new ulong[2 * source.Length];
                         for (var e = 0; e < source.Length; e++)
-                            if (mesh.Candidate[e]) mesh.InteriorCoveredBy[e] = job.InteriorCoveredBy[source[e]];
+                            if (mesh.Candidate[e])
+                                for (var side = 0; side < 2; side++) mesh.InteriorCoveredBy[2 * e + side] = job.InteriorCoveredBy[2 * source[e] + side];
                     }
                     meshes.Add(mesh);
                     renderer.Add(i);

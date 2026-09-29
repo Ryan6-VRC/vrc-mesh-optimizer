@@ -85,8 +85,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Per evaluation triangle, true when occlusion removed it; null when occlusion did not decide on this renderer.</summary>
         public bool[] Hidden;
         /// <summary>
-        /// Per evaluation vertex, and per evaluation triangle for the samples inside it, the renderers whose faces covered
-        /// it in the occlusion solve, by their index in <see cref="PreparedAvatar.Extracted"/>
+        /// Per evaluation vertex, and per evaluation triangle for the samples inside it, front then back, the renderers whose
+        /// faces covered that side in the occlusion solve, by their index in <see cref="PreparedAvatar.Extracted"/>
         /// (<see cref="OcclusionResult.CoveredBy"/>); null when occlusion did not decide on this renderer.
         /// </summary>
         public ulong[] CoveredBy, InteriorCoveredBy;

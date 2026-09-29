@@ -91,9 +91,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             public NativeArray<bool> TriTwoSided, NeedsBack;
             /// <summary>Per triangle: it may be hidden (<see cref="OcclusionMesh.Candidate"/>). Per vertex: some such triangle uses it, so it is sampled.</summary>
             public NativeArray<bool> TriCandidate, VertCandidate;
-            /// <summary>Per vertex and per triangle, <see cref="OcclusionMesh.CoveredBy"/> and <see cref="OcclusionMesh.InteriorCoveredBy"/>, every bit set where unset.</summary>
+            /// <summary>Two per vertex and two per triangle, front then back: <see cref="OcclusionMesh.CoveredBy"/> and <see cref="OcclusionMesh.InteriorCoveredBy"/>, every bit set where unset.</summary>
             public NativeArray<ulong> VertCoveredBy, TriCoveredBy;
-            /// <summary>Per mesh, <see cref="OcclusionMesh.Setback"/>.</summary>
+            /// <summary>Per mesh, <see cref="OcclusionMesh.Setback"/>; zero from index 63 on.</summary>
             public NativeArray<float> MeshSetback;
             /// <summary>Some mesh has a setback, so some sample may cast from behind itself.</summary>
             public bool AnySetback;
@@ -144,8 +144,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     if (om.Candidate != null && om.Candidate.Length != t) throw new ArgumentException($"mesh {m}: Candidate has {om.Candidate.Length} entries for {t} triangles");
                     if (om.Blocks != null && om.Blocks.Length != t) throw new ArgumentException($"mesh {m}: Blocks has {om.Blocks.Length} entries for {t} triangles");
                     if (!(om.Setback >= 0f) || float.IsInfinity(om.Setback)) throw new ArgumentException($"mesh {m}: Setback is {om.Setback}; it must be finite and not negative");
-                    if (om.CoveredBy != null && om.CoveredBy.Length != v) throw new ArgumentException($"mesh {m}: CoveredBy has {om.CoveredBy.Length} entries for {v} vertices");
-                    if (om.InteriorCoveredBy != null && om.InteriorCoveredBy.Length != t) throw new ArgumentException($"mesh {m}: InteriorCoveredBy has {om.InteriorCoveredBy.Length} entries for {t} triangles");
+                    if (om.CoveredBy != null && om.CoveredBy.Length != 2 * v) throw new ArgumentException($"mesh {m}: CoveredBy has {om.CoveredBy.Length} entries for {v} vertices; it takes two a vertex");
+                    if (om.InteriorCoveredBy != null && om.InteriorCoveredBy.Length != 2 * t) throw new ArgumentException($"mesh {m}: InteriorCoveredBy has {om.InteriorCoveredBy.Length} entries for {t} triangles; it takes two a triangle");
                     vertBase[m + 1] = vertBase[m] + v;
                     triBase[m + 1] = triBase[m] + t;
                     weightCount += e.Weights.Length;
@@ -192,8 +192,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 NeedsBack = new NativeArray<bool>(V, a);
                 TriCandidate = new NativeArray<bool>(T, a);
                 VertCandidate = new NativeArray<bool>(V, a);
-                VertCoveredBy = new NativeArray<ulong>(V, a);
-                TriCoveredBy = new NativeArray<ulong>(T, a);
+                VertCoveredBy = new NativeArray<ulong>(2 * V, a);
+                TriCoveredBy = new NativeArray<ulong>(2 * T, a);
                 MeshSetback = new NativeArray<float>(meshCount, a);
                 VTStart = new NativeArray<int>(V + 1, a);
                 VTList = new NativeArray<int>(3 * T, a);
@@ -220,11 +220,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     {
                         VertMesh[vb + i] = m;
                         WeightStart[vb + i] = w + e.WeightStart[i];
-                        VertCoveredBy[vb + i] = om.CoveredBy?[i] ?? ulong.MaxValue;
+                        for (var side = 0; side < 2; side++) VertCoveredBy[2 * (vb + i) + side] = om.CoveredBy?[2 * i + side] ?? ulong.MaxValue;
                     }
-                    for (var t = 0; t < e.TriangleCount; t++) TriCoveredBy[tb + t] = om.InteriorCoveredBy?[t] ?? ulong.MaxValue;
-                    MeshSetback[m] = om.Setback;
-                    AnySetback |= om.Setback > 0f;
+                    for (var t = 0; t < 2 * e.TriangleCount; t++) TriCoveredBy[2 * tb + t] = om.InteriorCoveredBy?[t] ?? ulong.MaxValue;
+                    // The bit that would name a mesh from index 63 on names them all, so none of them may cover from behind.
+                    MeshSetback[m] = m < 63 ? om.Setback : 0f;
+                    AnySetback |= MeshSetback[m] > 0f;
                     for (var k = 0; k < e.Weights.Length; k++)
                         if ((uint)e.Weights[k].Bone >= (uint)boneCount)
                             throw new ArgumentException($"mesh {m}: an influence names bone {e.Weights[k].Bone}, outside the table of {boneCount}");
@@ -569,8 +570,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             }
 
             /// <summary>
-            /// Each sample's cover from behind, when some mesh has a setback: the meshes it names, from its vertex for a
-            /// corner sample on either side or from its triangle for an interior one, and the deepest setback among them.
+            /// Each sample's cover from behind, when some mesh has a setback: the meshes named for its side, from its vertex
+            /// for a corner sample or from its triangle for an interior one, and the deepest setback among them.
             /// Unset, every stretch stays zero and every ray starts where the rule starts it.
             /// </summary>
             void CoverBehind(bool interior)
@@ -597,13 +598,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 if (interior)
                 {
                     for (var t = 0; t < S.Tris.Length; t++)
-                        for (var s = TriSampleStart[t]; s < TriSampleStart[t] + TriSampleCount[t]; s++) Set(s, S.TriCoveredBy[t]);
+                        for (var s = TriSampleStart[t]; s < TriSampleStart[t] + TriSampleCount[t]; s++) Set(s, S.TriCoveredBy[2 * t + (SampleBack[s] ? 1 : 0)]);
                     return;
                 }
                 for (var v = 0; v < S.Pos.Length; v++)
                 {
-                    Set(v, S.VertCoveredBy[v]);
-                    if (VertBack[v] >= 0) Set(VertBack[v], S.VertCoveredBy[v]);
+                    Set(v, S.VertCoveredBy[2 * v]);
+                    if (VertBack[v] >= 0) Set(VertBack[v], S.VertCoveredBy[2 * v + 1]);
                 }
             }
 
@@ -703,8 +704,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     r.HiddenTriangles = new NativeArray<bool>(tc, allocator);
                     r.CoveredVertices = new NativeArray<bool>(vc, allocator);
                     r.FrontCovered = new NativeArray<bool>(vc, allocator);
-                    r.CoveredBy = new NativeArray<ulong>(vc, allocator);
-                    r.InteriorCoveredBy = new NativeArray<ulong>(tc, allocator);
+                    r.CoveredBy = new NativeArray<ulong>(2 * vc, allocator);
+                    r.InteriorCoveredBy = new NativeArray<ulong>(2 * tc, allocator);
                 }
                 catch
                 {
@@ -715,11 +716,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 // What covered each sample: its rest witness, replaced by a deletion re-cast, and every earlier one kept beside it.
                 ulong CoveredBy(int s) => Witness[s] | FrameWitness[s];
                 for (var t = 0; t < tc; t++)
-                {
-                    ulong by = 0;
-                    for (var s = TriSampleStart[tb + t]; s < TriSampleStart[tb + t] + TriSampleCount[tb + t]; s++) by |= CoveredBy(s);
-                    r.InteriorCoveredBy[t] = by;
-                }
+                    for (var s = TriSampleStart[tb + t]; s < TriSampleStart[tb + t] + TriSampleCount[tb + t]; s++)
+                        r.InteriorCoveredBy[2 * t + (SampleBack[s] ? 1 : 0)] |= CoveredBy(s);
                 var d = new DeclineCounts();
                 for (var i = 0; i < vc; i++)
                 {
@@ -727,7 +725,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     if (!S.VertCandidate[v]) continue;
                     r.FrontCovered[i] = Covered[v];
                     var back = VertBack[v];
-                    r.CoveredBy[i] = CoveredBy(v) | (back >= 0 ? CoveredBy(back) : 0);
+                    r.CoveredBy[2 * i] = CoveredBy(v);
+                    if (back >= 0) r.CoveredBy[2 * i + 1] = CoveredBy(back);
                     if (Covered[v] && (back < 0 || Covered[back]))
                     {
                         r.CoveredVertices[i] = true;

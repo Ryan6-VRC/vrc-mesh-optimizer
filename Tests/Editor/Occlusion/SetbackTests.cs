@@ -44,7 +44,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             return m;
         }
 
-        static ulong[] Naming(MeshBuilder b, int mesh) => Enumerable.Repeat(1UL << mesh, b.VertexCount).ToArray();
+        static ulong[] Naming(MeshBuilder b, int mesh) => Enumerable.Repeat(1UL << mesh, 2 * b.VertexCount).ToArray();
 
         // A sheet that sank half a millimetre under the speck covers it only with a setback deeper than that, and only when
         // the speck names the sheet as what covered it; a mesh it does not name covers it only in front.
@@ -98,7 +98,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 var tri = inner.Triangle(t);
                 for (var c = 0; c < 3; c++)
                 {
-                    var by = r[0].CoveredBy[tri[c]];
+                    var by = r[0].CoveredBy[2 * tri[c]];
                     Assert.That(by, Is.Not.Zero, $"triangle {t} corner {c} was covered by something");
                     Assert.That(by & ~both, Is.Zero, $"triangle {t} corner {c} names only the bands");
                     var polar = math.degrees(math.acos(math.clamp(math.normalize(inner.Position(tri[c])).y, -1f, 1f)));
@@ -107,10 +107,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                     sawUpper |= by == 0b010UL;
                     sawLower |= by == 0b100UL;
                 }
-                Assert.That(r[0].InteriorCoveredBy[t] & ~both, Is.Zero, $"triangle {t} inside names only the bands");
+                Assert.That(r[0].InteriorCoveredBy[2 * t] & ~both, Is.Zero, $"triangle {t} inside names only the bands");
             }
             Assert.That(sawUpper && sawLower, "each band alone covered some vertex");
-            Assert.That(Enumerable.Range(0, inner.TriangleCount).Any(t => r[0].HiddenTriangles[t] && r[0].InteriorCoveredBy[t] != 0), "some hidden triangle's inside names its cover");
+            Assert.That(Enumerable.Range(0, inner.TriangleCount).Any(t => r[0].HiddenTriangles[t] && r[0].InteriorCoveredBy[2 * t] != 0), "some hidden triangle's inside names its cover");
             Assert.That(Enumerable.Range(0, r[1].CoveredBy.Length).All(v => r[1].CoveredBy[v] == 0), "nothing covers the upper band");
         }
 
@@ -134,8 +134,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             foreach (var (m, b) in new[] { (scene.Meshes[0], inner), (scene.Meshes[1], bowl) })
             {
                 m.Setback = setback;
-                m.CoveredBy = Enumerable.Repeat(names, b.VertexCount).ToArray();
-                m.InteriorCoveredBy = Enumerable.Repeat(names, b.TriangleCount).ToArray();
+                m.CoveredBy = Enumerable.Repeat(names, 2 * b.VertexCount).ToArray();
+                m.InteriorCoveredBy = Enumerable.Repeat(names, 2 * b.TriangleCount).ToArray();
             }
             var with = scene.Solve(OcclusionSettings.Default, Bones);
 
@@ -178,6 +178,63 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             Assert.That(scene.Solve(OcclusionSettings.Default, Bones)[0].HiddenCount, Is.EqualTo(speck.TriangleCount), "at rest, the tile covers the speck through the hole");
         }
 
+        // A speck drawn on both sides, under a sheet 2 mm over it and over one 2 mm under it, both drawn on both sides: each
+        // side is covered by the sheet it faces, and names that sheet alone. Judged again with the sheet under it gone and
+        // the one over it free to cover from 3 mm behind, the speck's back is uncovered: the sheet over it stands behind the
+        // back's samples, but it never covered them.
+        [Test]
+        public void EachSideOfATwoSidedTriangle_NamesItsOwnCover()
+        {
+            var speck = Speck();
+            var both = new OccluderSubmesh { Culling = FaceCulling.Off };
+            var candidate = scene.Add(speck, occludes: false, both);
+            var over = new MeshBuilder();
+            over.Grid(0.002f, -0.01f, 0.01f, -0.01f, 0.01f, 0.0005f, MeshBuilder.On(1));
+            var above = Cover(over);
+            above.Submeshes = new[] { both };
+            var under = new MeshBuilder();
+            under.Grid(-0.002f, -0.01f, 0.01f, -0.01f, 0.01f, 0.0005f, MeshBuilder.On(1));
+            var below = Cover(under);
+            below.Submeshes = new[] { both };
+
+            var first = scene.Solve(OcclusionSettings.Default, Bones);
+            Assert.That(first[0].HiddenCount, Is.EqualTo(speck.TriangleCount), "each side is covered by the sheet it faces");
+            var names = first[0].CoveredBy.ToArray();
+            for (var v = 0; v < speck.VertexCount; v++)
+            {
+                Assert.That(names[2 * v], Is.EqualTo(1UL << 1), $"vertex {v}'s front names the sheet over it");
+                Assert.That(names[2 * v + 1], Is.EqualTo(1UL << 2), $"vertex {v}'s back names the sheet under it");
+            }
+
+            below.Blocks = new bool[under.TriangleCount];
+            above.Setback = 0.003f;
+            candidate.CoveredBy = names;
+            candidate.InteriorCoveredBy = first[0].InteriorCoveredBy.ToArray();
+            Assert.That(scene.Solve(OcclusionSettings.Default, Bones)[0].HiddenCount, Is.Zero, "the back's cover is gone, and the front's does not stand in for it");
+            candidate.CoveredBy = Enumerable.Repeat((1UL << 1) | (1UL << 2), names.Length).ToArray();
+            Assert.That(scene.Solve(OcclusionSettings.Default, Bones)[0].HiddenCount, Is.EqualTo(speck.TriangleCount), "as it would were each side named for both");
+        }
+
+        // Bit 63 names every mesh from index 63 on, which it cannot tell apart, so none of them has a setback: a sheet sunk
+        // under the speck at index 64 covers nothing from behind, though the speck names bit 63.
+        [Test]
+        public void AMeshFromIndex63On_HasNoSetback()
+        {
+            var speck = Speck();
+            var candidate = scene.Add(speck, occludes: false);
+            for (var m = 1; m < 64; m++)
+            {
+                var far = new MeshBuilder();
+                far.Grid(1f + m, -0.001f, 0.001f, -0.001f, 0.001f, 0.001f, MeshBuilder.On(1));
+                Cover(far);
+            }
+            Cover(Sheet()).Setback = 0.001f;
+            Assert.That(scene.Meshes.Count, Is.EqualTo(65));
+            candidate.CoveredBy = Naming(speck, 63);
+
+            Assert.That(scene.Solve(OcclusionSettings.Default, Bones)[0].HiddenCount, Is.Zero);
+        }
+
         [Test]
         public void ASetbackOrNamesOfTheWrongShape_AreRefusedByName()
         {
@@ -186,10 +243,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             m.Setback = -0.001f;
             StringAssert.Contains("Setback", Assert.Throws<ArgumentException>(() => scene.Solve(OcclusionSettings.Default, Bones)).Message);
             m.Setback = 0f;
-            m.CoveredBy = new ulong[speck.VertexCount + 1];
+            m.CoveredBy = new ulong[2 * speck.VertexCount + 1];
             StringAssert.Contains("CoveredBy", Assert.Throws<ArgumentException>(() => scene.Solve(OcclusionSettings.Default, Bones)).Message);
             m.CoveredBy = null;
-            m.InteriorCoveredBy = new ulong[speck.TriangleCount + 1];
+            m.InteriorCoveredBy = new ulong[2 * speck.TriangleCount + 1];
             StringAssert.Contains("InteriorCoveredBy", Assert.Throws<ArgumentException>(() => scene.Solve(OcclusionSettings.Default, Bones)).Message);
         }
     }
