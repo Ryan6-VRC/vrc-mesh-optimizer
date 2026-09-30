@@ -79,14 +79,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     try
                     {
                         for (var t = 0; t < live.Length; t++) live[t] = topology.Triangles[t].x >= 0;
-                        field = pending.Own(ClearanceField.Measure(mesh.Positions, mesh.Triangles, live, clearance, settings.Clearance.Reach, Allocator.Persistent));
+                        field = pending.Own(ClearanceField.Measure(mesh.Positions, mesh.Triangles, live, clearance, settings.Clearance.Reach, Allocator.Persistent,
+                            out pending.NearVertices));
                     }
                     finally
                     {
                         live.Dispose();
                     }
                 }
-                pending.NearVertices = field.NearVertices;
                 var bank = QuadricBank.Build(mesh, topology, settings, bends, Allocator.Persistent);
                 try
                 {
