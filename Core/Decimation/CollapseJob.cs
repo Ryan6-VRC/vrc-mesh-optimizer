@@ -129,9 +129,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         const double TinyWeight = 1e-30;
         const float TieBreak = 1e-4f;
-        /// <summary>The fraction of its crossing a collapse may add without counting as lengthening it: above the float
-        /// rounding of a sum of segment lengths, and relative, so ten thousand collapses on one crossing lengthen it by
-        /// at most a hundredth, where an absolute allowance would add up without bound.</summary>
+        /// <summary>The fraction of its crossing a collapse may add without counting as lengthening it: relative, so ten
+        /// thousand collapses on one crossing lengthen it by at most a hundredth, where an absolute allowance adds up over
+        /// them. The rounding of each segment length summed does not shrink with the crossing, so a short crossing's is
+        /// <see cref="ClearanceSettings.CrossingAllowance"/>'s to cover.</summary>
         const float CrossingSlack = 1e-6f;
         /// <summary>
         /// Metres a new triangle may stand off its own layer's source where it crosses another layer. A total length
@@ -721,7 +722,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 after += _in.Surface.CrossingLength(pv, px, py, layer, CrossingDrift, out var strays);
                 if (strays) return false;
             }
-            return after <= before * (1f + CrossingSlack) + 1e-9f;
+            return after <= before * (1f + CrossingSlack) + _in.Settings.Clearance.CrossingAllowance;
         }
 
         /// <summary>

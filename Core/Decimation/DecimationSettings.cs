@@ -147,12 +147,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// has to stay (1 - Share) * Reach away from them, and the search for neighbours stops here.
         /// </summary>
         public float Reach;
+        /// <summary>
+        /// In metres: how much a collapse may add to the line along which its surface crosses another layer and still
+        /// count as not lengthening it, beyond a millionth of that line. The two lengths compared are sums of float
+        /// segment lengths, which Burst and managed code round differently by up to about 1e-7 m, so where a collapse
+        /// leaves a crossing as it was, an allowance below that rounding can let the two decide it differently and
+        /// record different sequences. Each collapse may lengthen a crossing by up to this, so it adds up over the
+        /// collapses on one crossing. The default, 1e-9, is the rule as first built.
+        /// </summary>
+        public float CrossingAllowance;
 
         public static ClearanceSettings Default => new ClearanceSettings
         {
             Enabled = true,
             Share = 0.4f,
             Reach = 0.02f,
+            CrossingAllowance = 1e-9f,
         };
     }
 
