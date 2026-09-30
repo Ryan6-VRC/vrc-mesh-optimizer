@@ -249,7 +249,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <summary>
         /// Measures crossing once over the report's renderers, as the avatar stands, in the report's linked configurations and
         /// in <see cref="GateRunOptions.Poses"/>, and the geometric channel per written renderer when
-        /// <see cref="GateRunOptions.Geometry"/> asks. A channel that throws is named in <see cref="GateResult.Failures"/> and
+        /// <see cref="GateRunOptions.Geometry"/> asks, with a linked key measured in its link's configurations and never alone. A channel that throws is named in <see cref="GateResult.Failures"/> and
         /// the rest still measured. Run it while the build's clone is open (<see cref="GateReportInputs.From"/> refuses it after).
         /// </summary>
         public static GateResult Measure(OptimizationReport report, Transform root, GateRunOptions options)
@@ -292,7 +292,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     var path = paths[input.Renderer];
                     try
                     {
-                        var measured = GeometryGate.Measure(input.Renderer, root, input.Source, input.Optimized, input.RemovedTriangles, input.Liveness, options.Poses, SurfaceDistanceSettings.Default);
+                        var measured = GeometryGate.MeasureInput(input, root, options.Poses, inputs.Configurations, SurfaceDistanceSettings.Default);
                         geometry.Add(new GeometryFigures(path, measured));
                     }
                     catch (Exception e)

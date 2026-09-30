@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Liveness;
@@ -24,7 +25,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         LiveKeysAtZero,
         /// <summary>
         /// As it stands, with one live key moved to one other weight it reaches, the weights the optimizer evaluates it at
-        /// (<see cref="MeshExtractor.Configurations"/>).
+        /// (<see cref="MeshExtractor.Configurations"/>); or with a link's keys at one of the states the pass evaluated the link
+        /// in, named for it, its <see cref="GateConfiguration.ShapeKey"/> -1.
         /// </summary>
         ShapeKey,
         /// <summary>As it stands, or with live keys at zero when <see cref="GateConfiguration.LiveKeysAtZero"/>, with the bones posed.</summary>
@@ -54,6 +56,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 
         public override string ToString() => Kind switch
         {
+            ConfigurationKind.ShapeKey when ShapeKey < 0 => Name,
             ConfigurationKind.ShapeKey => $"shape key '{Name}' at {Weight.ToString("0.###", CultureInfo.InvariantCulture)}",
             ConfigurationKind.Pose => LiveKeysAtZero ? $"pose '{Name}' with live keys at zero" : $"pose '{Name}'",
             ConfigurationKind.AsItStands => "as it stands, every key at the weight the renderer holds",
@@ -198,11 +201,22 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// is left as it was found, every blendshape weight, every transform and the renderer's mesh, when this throws too.
         /// </remarks>
         public static GeometryReport Measure(Renderer renderer, Transform avatarRoot, Mesh source, Mesh optimized,
-            bool[] removedTriangles, IReadOnlyList<ShapeKeyLiveness> liveness, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings)
+            bool[] removedTriangles, IReadOnlyList<ShapeKeyLiveness> liveness, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings) =>
+            MeasureInput(new GateInput(renderer, source, optimized, removedTriangles, liveness), avatarRoot, poses, null, settings);
+
+        /// <summary>
+        /// <see cref="Measure"/> on a renderer as <see cref="GateReportInputs"/> gives it, with the report's linked states: a key
+        /// in <see cref="GateInput.LinkedKeys"/> is never moved alone, and each of <paramref name="linked"/> that sets this
+        /// renderer's weights is measured, after the keys moved alone, as the pass evaluated it.
+        /// </summary>
+        public static GeometryReport MeasureInput(GateInput input, Transform avatarRoot, IReadOnlyList<GatePose> poses,
+            IReadOnlyList<AvatarConfiguration> linked, in SurfaceDistanceSettings settings)
         {
             if (avatarRoot == null) throw new ArgumentNullException(nameof(avatarRoot));
-            var input = new GateInput(renderer, source, optimized, removedTriangles, liveness);
             input.Check(avatarRoot);
+            var source = input.Source;
+            var optimized = input.Optimized;
+            var removedTriangles = input.RemovedTriangles;
 
             var sides = new Sides();
             try
@@ -211,7 +225,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 sides.B.Triangles = new NativeArray<int3>(MeshTriangles.Read(optimized).triangles, Allocator.Persistent);
                 if (removedTriangles != null) sides.A.Excluded = new NativeArray<bool>(removedTriangles, Allocator.Persistent);
                 return input.Skinned != null
-                    ? MeasureSkinned(input, avatarRoot, poses, settings, ref sides)
+                    ? MeasureSkinned(input, avatarRoot, poses, linked, settings, ref sides)
                     : MeasureRigid(input, avatarRoot, poses ?? Array.Empty<GatePose>(), settings, ref sides);
             }
             finally
@@ -246,7 +260,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             return new GeometryReport(input.Renderer, RendererExtraction.PathOf(root, input.Renderer), measured, skipped);
         }
 
-        static GeometryReport MeasureSkinned(GateInput input, Transform root, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings, ref Sides sides)
+        static GeometryReport MeasureSkinned(GateInput input, Transform root, IReadOnlyList<GatePose> poses, IReadOnlyList<AvatarConfiguration> linked,
+            in SurfaceDistanceSettings settings, ref Sides sides)
         {
             var source = input.Source;
             var liveness = input.Liveness;
@@ -259,13 +274,22 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             if (liveOffZero) configurations.Add((new GateConfiguration(ConfigurationKind.LiveKeysAtZero, "live keys at zero"), null, zeroWeights));
             for (var k = 0; k < source.blendShapeCount; k++)
             {
-                if (liveness[k].State != ShapeKeyState.Live) continue;
+                if (liveness[k].State != ShapeKeyState.Live || input.LinkedKeys.Contains(k)) continue;
                 foreach (var weight in KeyWeights(source, k, liveness[k], standingWeights[k]))
                 {
                     var weights = (float[])standingWeights.Clone();
                     weights[k] = weight;
                     configurations.Add((new GateConfiguration(ConfigurationKind.ShapeKey, source.GetBlendShapeName(k), k, weight), null, weights));
                 }
+            }
+            foreach (var link in linked ?? Array.Empty<AvatarConfiguration>())
+            {
+                if (!link.Weights.TryGetValue(input.Renderer, out var weights)) continue;
+                if (weights == null || weights.Length != source.blendShapeCount)
+                    throw new ArgumentException($"configuration '{link.Name}' gives '{input.Renderer.name}' {weights?.Length ?? 0} weights for a source mesh with {source.blendShapeCount} shape keys", nameof(linked));
+                if (link.Pose != null)
+                    throw new ArgumentException($"configuration '{link.Name}' is posed; a linked state is measured with the bones where the avatar stands, and poses go in poses", nameof(linked));
+                configurations.Add((new GateConfiguration(ConfigurationKind.ShapeKey, link.Name), null, weights));
             }
 
             var skipped = new List<SkippedConfiguration>();

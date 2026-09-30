@@ -19,14 +19,21 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public readonly bool[] RemovedTriangles;
         /// <summary>One entry per shape key of <see cref="Source"/>; may be null only for a mesh without shape keys, or for a MeshRenderer.</summary>
         public readonly IReadOnlyList<ShapeKeyLiveness> Liveness;
+        /// <summary>
+        /// The keys the pass evaluated only in a link's states, never moved alone; the geometric channel measures them in those
+        /// states (<see cref="GeometryGate.MeasureInput"/>). Empty when none.
+        /// </summary>
+        public readonly IReadOnlyCollection<int> LinkedKeys;
 
-        public GateInput(Renderer renderer, Mesh source, Mesh optimized, bool[] removedTriangles, IReadOnlyList<ShapeKeyLiveness> liveness)
+        public GateInput(Renderer renderer, Mesh source, Mesh optimized, bool[] removedTriangles, IReadOnlyList<ShapeKeyLiveness> liveness,
+            IReadOnlyCollection<int> linkedKeys = null)
         {
             Renderer = renderer;
             Source = source;
             Optimized = optimized;
             RemovedTriangles = removedTriangles;
             Liveness = liveness;
+            LinkedKeys = linkedKeys ?? Array.Empty<int>();
         }
 
         public SkinnedMeshRenderer Skinned => Renderer as SkinnedMeshRenderer;
