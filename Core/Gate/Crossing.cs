@@ -53,7 +53,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public float ReachA;
         public float ReachB;
         /// <summary>
-        /// Whether the two triangles face the same way. Under back-face culling only a same-facing crossing shows, as skin
+        /// Whether the two triangles face the same way as drawn. Under back-face culling only a same-facing crossing shows, as skin
         /// through tights does; one surface poking through an opposite-facing one, a skirt through its own lining, shows
         /// only where both sides are drawn.
         /// </summary>
@@ -98,17 +98,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     public static class Crossing
     {
         /// <summary>Fills <paramref name="segments"/> with where A's triangles cross B's. Excluded triangles take no part.</summary>
-        public static CrossingStats Measure(in Surface a, in Surface b, in CrossingSettings settings, NativeList<CrossingSegment> segments) =>
-            Run(a, b, false, settings, segments);
+        /// <param name="drawnOpposite">
+        /// True when exactly one of the two is drawn with its winding reversed, as Unity draws a mirrored renderer: that
+        /// one's front is the side its winding faces away from, so <see cref="CrossingSegment.SameFacing"/> reads the
+        /// other way from the winding.
+        /// </param>
+        public static CrossingStats Measure(in Surface a, in Surface b, in CrossingSettings settings, NativeList<CrossingSegment> segments, bool drawnOpposite = false) =>
+            Run(a, b, false, drawnOpposite, settings, segments);
 
         /// <summary>
         /// Where a surface crosses itself: every pair of its triangles, each pair once, the lower triangle index as A.
         /// A skirt and its lining are often one mesh. Neighbours meet without crossing under the same rule as any pair.
         /// </summary>
         public static CrossingStats MeasureSelf(in Surface a, in CrossingSettings settings, NativeList<CrossingSegment> segments) =>
-            Run(a, a, true, settings, segments);
+            Run(a, a, true, false, settings, segments);
 
-        static CrossingStats Run(in Surface a, in Surface b, bool self, in CrossingSettings settings, NativeList<CrossingSegment> segments)
+        static CrossingStats Run(in Surface a, in Surface b, bool self, bool drawnOpposite, in CrossingSettings settings, NativeList<CrossingSegment> segments)
         {
             SurfaceDistance.Validate(a, "a");
             SurfaceDistance.Validate(b, "b");
@@ -141,6 +146,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                     Nodes = nodes.AsArray(),
                     Prims = prims.GetSubArray(0, count.Value),
                     Self = self,
+                    DrawnOpposite = drawnOpposite,
                     Touch = settings.Touch,
                     Found = found.AsParallelWriter(),
                 }.Schedule(a.Triangles.Length, 64).Complete();

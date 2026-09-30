@@ -186,5 +186,73 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
             Assert.That(GeometryGateTests.State.Of(rig.Root, (SkinnedMeshRenderer)rig.Skin.Renderer), Is.EqualTo(before));
         }
+
+        // Two sheets crossing at 45 degrees along the X axis, half a cell off each grid's lines: A flat, B tilted about X.
+        // Each renderer's source mesh stands 1 m off along its own normal, so every metre of crossing after is new.
+        static readonly Quaternion Tilt = Quaternion.Euler(45f, 0f, 0f);
+        static readonly Vector3 HalfCell = new Vector3(0f, Sheet.Cell / 2f, 0f);
+
+        static (Mesh source, Mesh optimized) SheetPair(GateScene scene, string name)
+        {
+            var optimized = scene.Track(Sheet.Mesh(name));
+            var source = scene.Track(Sheet.Mesh(name + " apart"));
+            source.vertices = source.vertices.Select(v => v + Vector3.forward).ToArray();
+            return (source, optimized);
+        }
+
+        GateInput RigidSheet(Transform root, string name, Vector3 position, Quaternion rotation, bool mirrored)
+        {
+            var at = _scene.Node(name, root, position);
+            at.localRotation = rotation;
+            if (mirrored) at.localScale = new Vector3(-1f, 1f, 1f);
+            var (source, optimized) = SheetPair(_scene, name);
+            at.gameObject.AddComponent<MeshFilter>().sharedMesh = optimized;
+            return new GateInput(at.gameObject.AddComponent<MeshRenderer>(), source, optimized, null, null);
+        }
+
+        static CrossingChange Between(Transform root, GateInput a, GateInput b) =>
+            Pair(CrossingGate.Measure(root, new[] { a, b }, null, null, Settings), a.Renderer.name, b.Renderer.name, "as it stands").Change;
+
+        // A mirror in X maps each sheet onto itself, and Unity draws a mirrored MeshRenderer with its winding reversed
+        // (RendererExtraction.DrawsMirrored, checked against what Unity draws by MirrorTests), so whichever sheets are
+        // mirrored the player sees the same two sheets facing the same way.
+        [Test]
+        public void SheetsUnderAMirror_ReadTheFacingThePlayerSees([Values] bool mirrorA, [Values] bool mirrorB)
+        {
+            var root = _scene.Node("Avatar", null, Vector3.zero);
+            var a = RigidSheet(root, "A", HalfCell, Quaternion.identity, mirrorA);
+            var b = RigidSheet(root, "B", Tilt * HalfCell, Tilt, mirrorB);
+
+            var change = Between(root, a, b);
+
+            Assert.That(change.New, Is.GreaterThan(0.05), "the sheets cross along their 8 cm width after, and not before");
+            Assert.That(change.NewSameFacing, Is.EqualTo(change.New), "the player sees two sheets facing one way");
+            Assert.That(change.After.SameFacingLength, Is.EqualTo(change.After.Length));
+        }
+
+        // A skinned sheet whose bone mirrors it after binding. Unity reverses the winding by the root bone alone, so under
+        // a mirrored root bone the player sees it as the unmirrored sheet, facing A's way; under an unmirrored root bone
+        // the player sees its mirrored faces from behind, facing against A.
+        [Test]
+        public void ASkinnedSheetMirroredByItsBone_ReadsTheFacingItsRootBoneDraws([Values] bool rootBoneMirrored)
+        {
+            var root = _scene.Node("Avatar", null, Vector3.zero);
+            var a = RigidSheet(root, "A", HalfCell, Quaternion.identity, false);
+            var bone = _scene.Node("Bone", root, Tilt * HalfCell);
+            bone.localRotation = Tilt;
+            var at = _scene.Node("B", root, Tilt * HalfCell);
+            at.localRotation = Tilt;
+            var (source, optimized) = SheetPair(_scene, "B");
+            var skinned = _scene.Skin(at, optimized, bone);
+            source.bindposes = optimized.bindposes;
+            skinned.rootBone = rootBoneMirrored ? bone : at;
+            bone.localScale = new Vector3(-1f, 1f, 1f);
+            var b = new GateInput(skinned, source, optimized, null, null);
+
+            var change = Between(root, a, b);
+
+            Assert.That(change.New, Is.GreaterThan(0.05), "the sheets cross along their 8 cm width after, and not before");
+            Assert.That(change.NewSameFacing, Is.EqualTo(rootBoneMirrored ? change.New : 0.0));
+        }
     }
 }

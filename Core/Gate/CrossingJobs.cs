@@ -75,6 +75,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// overlap is the vertex alone and reads as touching, while two that fold through each other overlap beyond it.
         /// </summary>
         public bool Self;
+        /// <summary>Exactly one of the two surfaces is drawn with its winding reversed (<see cref="Crossing.Measure"/>).</summary>
+        public bool DrawnOpposite;
         public float Touch;
         public NativeQueue<CrossingSegment>.ParallelWriter Found;
 
@@ -115,7 +117,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                         TriangleB = prim.Triangle,
                         ReachA = x.ReachA,
                         ReachB = x.ReachB,
-                        SameFacing = x.SameFacing,
+                        SameFacing = x.SameFacing != DrawnOpposite,
                     });
                 }
             }
