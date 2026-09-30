@@ -169,6 +169,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 planned.Add(extra);
             }
 
+            var unreadable = new string[inputs.Count];
+            var left = new SortedDictionary<int, (string reason, List<string> configurations)>();
             var surfaces = new Surfaces(inputs);
             var pairs = new List<PairCrossing>();
             var paths = inputs.Select(i => RendererExtraction.PathOf(avatarRoot, i.Renderer)).ToArray();
@@ -179,8 +181,6 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var scratch = new Mesh { name = "gate-bake" };
             var before = new NativeList<CrossingSegment>(Allocator.Persistent);
             var after = new NativeList<CrossingSegment>(Allocator.Persistent);
-            var unreadable = new string[inputs.Count];
-            var left = new SortedDictionary<int, (string reason, List<string> configurations)>();
             try
             {
                 if (humanoid != null) handler = new HumanPoseHandler(humanoid.avatar, humanoid.transform);
