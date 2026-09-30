@@ -60,7 +60,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         public NativeList<CollapseStep> Steps;
         public NativeList<int2> Records;
-        /// <summary>[0] peak frame-quadric pool entries, [1] clusters left blocked by validity, [2] collapses the clearance rule refused.</summary>
+        /// <summary>
+        /// [0] peak frame-quadric pool entries, [1] clusters left blocked by validity, [2] collapses the clearance rule
+        /// refused, [3] of those, the ones it would not have refused without reading the pair's gap.
+        /// </summary>
         public NativeArray<long> Stats;
 
         public void Execute()
@@ -91,6 +94,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         bool _clearance;
         bool _bent;
         long _refused;
+        long _refusedByPairGap;
+        PairGaps _gaps;
 
         // Working state.
         NativeArray<double3> _p;
@@ -151,6 +156,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _clearance = job.Surface.Nodes.Length > 0;
             _bent = job.Bends.Active;
             _refused = 0;
+            _refusedByPairGap = 0;
             _live = job.LiveTriangles;
             _level = 0f;
             _stampValue = 0;
@@ -181,6 +187,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _affected = new NativeList<int>(64, Allocator.Temp);
             _merged = new NativeList<FrameQuadric>(64, Allocator.Temp);
             _frames = new NativeList<int>(64, Allocator.Temp);
+            _gaps = new PairGaps(job.Surface, Allocator.Temp);
 
             for (var i = 0; i < w; i++)
             {
@@ -258,6 +265,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             }
             _in.Stats[0] = _peak;
             _in.Stats[2] = _refused;
+            _in.Stats[3] = _refusedByPairGap;
         }
 
         // ---------------------------------------------------------------- candidates and cost
@@ -630,18 +638,29 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             if (c.U2 >= 0 && !Survives(c.U2, c.V2)) return false;
             if (!NoFlip(c.U1, c.V1)) return false;
             if (c.U2 >= 0 && !NoFlip(c.U2, c.V2)) return false;
-            if (_clearance && (!ClearanceHolds(c.U1, c.V1) || c.U2 >= 0 && !ClearanceHolds(c.U2, c.V2)))
+            if (_clearance)
             {
-                _refused++;
-                return false;
+                var holds = ClearanceHolds(c.U1, c.V1, true, out var byPair);
+                if (holds && c.U2 >= 0) holds = ClearanceHolds(c.U2, c.V2, true, out byPair);
+                if (!holds)
+                {
+                    _refused++;
+                    // Counted, never decided: the rule without the pair's gap, run again only where the pair's gap refused.
+                    if (byPair && ClearanceHolds(c.U1, c.V1, false, out _) && (c.U2 < 0 || ClearanceHolds(c.U2, c.V2, false, out _)) && BendClearanceAllows(c))
+                        _refusedByPairGap++;
+                    return false;
+                }
             }
-            if (_clearance && _bent && _in.Settings.Bend.ClearanceShare > 0f && c.Bend > 0f && !BendClearanceHolds(c))
+            if (!BendClearanceAllows(c))
             {
                 _refused++;
                 return false;
             }
             return true;
         }
+
+        bool BendClearanceAllows(in Candidate c) =>
+            !(_clearance && _bent && _in.Settings.Bend.ClearanceShare > 0f && c.Bend > 0f) || BendClearanceHolds(c);
 
         // ---------------------------------------------------------------- clearance
 
@@ -665,8 +684,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// judged only by the crossing could reach the other's source there and meet it. The corners' own clearances
         /// settle most triangles without a search.
         /// </summary>
-        bool ClearanceHolds(int u, int v)
+        /// <remarks>
+        /// <paramref name="pairGap"/> off reads only the gaps to the nearest layer of any, as the rule did before it read the
+        /// pair's (see ClearanceSurface.AnyWithin);
+        /// <paramref name="byPair"/> is true when the collapse is refused only through the pair's gap at the triangle that decided it.
+        /// </remarks>
+        bool ClearanceHolds(int u, int v, bool pairGap, out bool byPair)
         {
+            byPair = false;
             var touches = !(FanClearance(u) > 0f);
             var keep = 1f - _in.Settings.Clearance.Share;
             var pv = _in.Positions[_in.Origin[v]];
@@ -693,7 +718,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 var edge = math.max(math.distance(pv, px), math.max(math.distance(px, py), math.distance(py, pv)));
                 var most = keep * math.min(_in.Settings.Clearance.Reach, edge / (1f - keep));
                 if (ClearanceBound.Of(pv, px, py, cv, _in.VertexClearance[x], _in.VertexClearance[y]) >= most) continue;
-                if (_in.Surface.AnyWithin(pv, px, py, _in.TriangleLayer[t], keep, least)) return false;
+                if (_in.Surface.AnyWithin(pv, px, py, _in.TriangleLayer[t], keep, least, pairGap, ref _gaps, out byPair)) return false;
             }
             return !touches || CrossingHolds(u, v);
         }

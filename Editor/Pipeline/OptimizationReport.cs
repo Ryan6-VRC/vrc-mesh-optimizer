@@ -100,6 +100,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int NearVertices { get; internal set; }
         /// <summary>Collapses the clearance rule refused because they came too near another layer.</summary>
         public long ClearanceRefused { get; internal set; }
+        /// <summary>
+        /// Of <see cref="ClearanceRefused"/>, those refused only through the gap between this renderer's layer and another
+        /// where the other's nearest layer is a third one: the rule reading only the gap to the nearest layer of any would
+        /// have let them pass.
+        /// </summary>
+        public long ClearanceRefusedByPairGap { get; internal set; }
         /// <summary>Triangles occlusion found covered but kept because a corner rides an unstable bone.</summary>
         public int KeptOnUnstableBones { get; internal set; }
         /// <summary>Triangles occlusion found covered but kept because their material grows fur past the cover.</summary>
@@ -290,7 +296,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 sb.Append($"\n  {HiddenRestored} hidden triangles kept because decimation took their cover.");
             var refused = Renderers.Sum(r => r.ClearanceRefused);
             if (refused > 0)
-                sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused.");
+                sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused, {Renderers.Sum(r => r.ClearanceRefusedByPairGap)} of them by the pair's gap.");
             foreach (var link in Links)
                 sb.Append($"\n  linked {link}: {Configurations.Count(x => x.Link == link)} configurations.");
             foreach (LinkRefusal reason in System.Enum.GetValues(typeof(LinkRefusal)))

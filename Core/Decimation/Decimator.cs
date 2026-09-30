@@ -18,6 +18,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public long Blocked;
         /// <summary>Collapses refused by the clearance rule alone.</summary>
         public long ClearanceRefused;
+        /// <summary>Of <see cref="ClearanceRefused"/>, those the rule would not have refused without reading the pair's gap.</summary>
+        public long ClearanceRefusedByPairGap;
     }
 
     /// <summary>
@@ -170,7 +172,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             var triangles = Own(new NativeArray<int3>(topology.Triangles, Allocator.Persistent));
             _steps = Own(new NativeList<CollapseStep>(topology.LiveTriangleCount / 2 + 1, Allocator.Persistent));
             _records = Own(new NativeList<int2>(topology.LiveTriangleCount / 2 + 1, Allocator.Persistent));
-            _stats = Own(new NativeArray<long>(3, Allocator.Persistent));
+            _stats = Own(new NativeArray<long>(4, Allocator.Persistent));
             _origin = topology.Origin;
             _workingTriangles = topology.Triangles;
             _liveTriangles = topology.LiveTriangleCount;
@@ -220,7 +222,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public CollapseSequence Complete(Allocator allocator, out ClearanceStats stats)
         {
             var sequence = Finish(allocator, out var collapseStats);
-            stats = new ClearanceStats { NearVertices = NearVertices, Refused = collapseStats.ClearanceRefused };
+            stats = new ClearanceStats { NearVertices = NearVertices, Refused = collapseStats.ClearanceRefused, RefusedByPairGap = collapseStats.ClearanceRefusedByPairGap };
             return sequence;
         }
 
@@ -232,6 +234,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 PeakPoolBytes = _stats[0] * Unity.Collections.LowLevel.Unsafe.UnsafeUtility.SizeOf<FrameQuadric>(),
                 Blocked = _stats[1],
                 ClearanceRefused = _stats[2],
+                ClearanceRefusedByPairGap = _stats[3],
             };
             var sequence = new CollapseSequence { InitialTriangleCount = _liveTriangles };
             try

@@ -366,6 +366,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 CostRaisedForGrowth = job.CostRaisedForGrowth,
                 NearVertices = job.NearVertices,
                 ClearanceRefused = job.ClearanceRefused,
+                ClearanceRefusedByPairGap = job.ClearanceRefusedByPairGap,
                 KeptOnUnstableBones = job.KeptOnUnstableBones,
                 KeptForFur = job.KeptForFur,
                 KeptForOutline = job.KeptForOutline,

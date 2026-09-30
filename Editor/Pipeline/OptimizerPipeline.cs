@@ -532,6 +532,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 job.Decimated = true;
                 job.NearVertices = clearanceStats.NearVertices;
                 job.ClearanceRefused = clearanceStats.Refused;
+                job.ClearanceRefusedByPairGap = clearanceStats.RefusedByPairGap;
             }
             catch (Exception e)
             {

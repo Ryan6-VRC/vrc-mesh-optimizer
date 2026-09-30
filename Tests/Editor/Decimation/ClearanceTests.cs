@@ -144,7 +144,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
             using var _a = ta;
             using var _b = tb;
-            TestContext.WriteLine($"refused {sa.Refused} on the tight layer, {sb.Refused} on the lining");
+            TestContext.WriteLine($"refused {sa.Refused} on the tight layer, {sb.Refused} on the lining; by the pair's gap {sa.RefusedByPairGap} and {sb.RefusedByPairGap}");
+            Assert.That(sa.RefusedByPairGap, Is.GreaterThan(0).And.LessThanOrEqualTo(sa.Refused), "the tight layer is held to the pair's gap, and each such refusal is one of the refusals");
+            Assert.That(sb.RefusedByPairGap, Is.GreaterThan(0).And.LessThanOrEqualTo(sb.Refused), "and so is the lining");
             var levels = new[] { 0.002f, 0.004f };
             var result = new Dictionary<(float, float), float>();
             foreach (var la in levels)
@@ -157,6 +159,19 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             TestContext.WriteLine($"new crossing between the tight layer and the lining: {string.Join(", ", result.Select(kv => $"{kv.Key.Item1 * 1000}/{kv.Key.Item2 * 1000} mm: {kv.Value * 1000:0.00} mm"))}");
             foreach (var kv in result)
                 Assert.That(kv.Value, Is.Zero, $"new crossing, tight layer cut at {kv.Key.Item1 * 1000} mm and the lining at {kv.Key.Item2 * 1000} mm");
+        }
+
+        // Two layers and no third: every source triangle's nearest layer is the one asking, so the pair's gap is never read
+        // apart from it and no refusal is counted to it, though the rule refuses.
+        [Test]
+        public void TwoLayersAlone_NoRefusalIsCountedToThePairsGap()
+        {
+            using var scene = SkinAndLayer(Gap);
+            using var skin = scene.Decimate(0, true, out var ss);
+            using var layer = scene.Decimate(1, true, out var sl);
+            TestContext.WriteLine($"refused {ss.Refused} on the skin, {sl.Refused} on the layer");
+            Assert.That(ss.Refused + sl.Refused, Is.GreaterThan(0), "the rule refuses");
+            Assert.That(ss.RefusedByPairGap + sl.RefusedByPairGap, Is.Zero);
         }
 
         /// <summary>
@@ -762,10 +777,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         }
 
         // The pair's own gap is read with a query restricted to one layer, and the layer each source triangle's clearance
-        // came from is kept, and the gap to the next layer out: each against a brute-force search, over pieces of a few
-        // triangles each.
+        // came from is kept: each against a brute-force search, over pieces of a few triangles each.
         [Test]
-        public void TriangleToLayer_AndEachTrianglesNearestLayers_AgreeWithBruteForce()
+        public void TriangleToLayer_AndEachTrianglesNearestLayer_AgreeWithBruteForce()
         {
             var rng = new Random(13);
             var o = new float3(0.2f, 1.1f, 0.3f);
@@ -806,7 +820,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var layer = layerOf[rng.NextInt(t.Length)];
                 Assert.That(s.TriangleToLayer(a0, a1, a2, layer, reach), Is.EqualTo(Brute(a0, a1, a2, l => l == layer)).Within(1e-6f), $"query {i}");
             }
-            int withNearest = 0, withSecond = 0;
+            var withNearest = 0;
             for (var k = 0; k < s.Prims.Length; k++)
             {
                 var prim = s.Prims[k];
@@ -821,15 +835,135 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(nearest, Is.Not.EqualTo(own), $"prim {k}: its own layer");
                 Assert.That(Brute(prim.A, prim.B, prim.C, l => l == nearest), Is.EqualTo(s.PrimClearance[k]).Within(1e-6f), $"prim {k}: its clearance is to its nearest layer");
                 withNearest++;
-                var second = s.PrimSecondLayer[k];
-                Assert.That(s.PrimSecond[k], Is.EqualTo(Brute(prim.A, prim.B, prim.C, l => l != own && l != nearest)).Within(1e-6f), $"prim {k}: the next layer out");
-                if (second < 0) continue;
-                Assert.That(second, Is.Not.EqualTo(own).And.Not.EqualTo(nearest), $"prim {k}: the next layer out is a third one");
-                Assert.That(Brute(prim.A, prim.B, prim.C, l => l == second), Is.EqualTo(s.PrimSecond[k]).Within(1e-6f), $"prim {k}: the next layer out's gap is to it");
-                withSecond++;
             }
             Assert.That(withNearest, Is.GreaterThan(s.Prims.Length / 2), "most triangles have a layer within the reach");
-            Assert.That(withSecond, Is.GreaterThan(s.Prims.Length / 2), "and most a second one");
+        }
+
+        // The tree search, its bounds and the gaps it keeps between calls decide as a search of every source triangle
+        // does, with the pair's gap read and without. Five tubes: skin, tights over it, a lining and its outer, and one
+        // farther from the rest than the reach. Each query triangle spans several source triangles of one tube, its
+        // corners on that tube's source as the caller promises, from every tube in turn with one set of kept gaps. The
+        // pair's gap never refuses against the querying layer's own triangles, never beyond the reach, and never against
+        // a layer the surface leaves out: with the skin left out, as removed triangles are with the switch off, every
+        // answer is that of a surface built without it, and no triangle names it as its nearest layer.
+        [Test]
+        public void PairGapRefusals_MatchASearchOfEveryTriangle_AndReachNothingLeftOut()
+        {
+            var tubes = new[]
+            {
+                Tube(24, 10, Length, Skin),
+                Tube(20, 9, Length, Over(0.0002f), 0.5f),
+                Tube(24, 10, Length, Over(0.0032f)),
+                Tube(20, 9, Length, Over(0.0037f), 0.5f),
+                Tube(20, 9, Length, Over(0.03f), 0.5f),
+            };
+            var segments = new[] { 24, 20, 24, 20, 20 };
+            var reach = ClearanceSettings.Default.Reach;
+            const float keep = 0.6f;
+            var owned = new List<System.IDisposable>();
+            var meshes = tubes.Select(t => t.Build()).ToList();
+            owned.AddRange(meshes.Cast<System.IDisposable>());
+            ClearanceSurface Build(bool skinLeftOut, bool skinAbsent)
+            {
+                var sources = new List<ClearanceLayerSource>();
+                for (var m = skinAbsent ? 1 : 0; m < meshes.Count; m++)
+                {
+                    var layers = Uniform(meshes[m].Triangles.Length, m);
+                    owned.Add(layers);
+                    var source = new ClearanceLayerSource { Positions = meshes[m].Positions, Triangles = meshes[m].Triangles, TriangleLayer = layers };
+                    if (m == 0 && skinLeftOut)
+                    {
+                        source.Excluded = new NativeArray<bool>(Enumerable.Repeat(true, meshes[m].Triangles.Length).ToArray(), Allocator.Persistent);
+                        owned.Add(source.Excluded);
+                    }
+                    sources.Add(source);
+                }
+                var built = ClearanceSurface.Build(sources, reach, Allocator.Persistent);
+                owned.Add(built);
+                return built;
+            }
+            var all = Build(false, false);
+            var leftOut = Build(true, false);
+            var absent = Build(false, true);
+            var gapsAll = new PairGaps(all, Allocator.Persistent);
+            var gapsLeftOut = new PairGaps(leftOut, Allocator.Persistent);
+            var gapsAbsent = new PairGaps(absent, Allocator.Persistent);
+            try
+            {
+                for (var k = 0; k < leftOut.Prims.Length; k++)
+                {
+                    Assert.That(leftOut.PrimLayer[k], Is.Not.Zero, "the left-out skin is in the surface");
+                    Assert.That(leftOut.PrimNearest[k], Is.Not.Zero, $"prim {k}: the left-out skin as its nearest layer");
+                }
+
+                // Every source triangle against the rule as written; the tree, its bounds and the kept gaps are what is tested.
+                bool Every(ClearanceSurface s, float3 a, float3 b, float3 c, int layer, float least, bool pairGap, out bool onlyPair)
+                {
+                    var old = false;
+                    var pair = false;
+                    for (var k = 0; k < s.Prims.Length; k++)
+                    {
+                        if (s.PrimLayer[k] == layer) continue;
+                        var p = s.Prims[k];
+                        var d = TriangleDistance.TriangleSq(a, b, c, p.A, p.B, p.C);
+                        var r = keep * math.max(s.PrimClearance[k], least);
+                        if (r > 0f && d < r * r) old = true;
+                        var own = s.PrimNearest[k];
+                        if (!pairGap || own == -1 || own == layer) continue;
+                        var corner = keep * math.sqrt(math.min(TriangleDistance.PointSq(a, p.A, p.B, p.C),
+                            math.min(TriangleDistance.PointSq(b, p.A, p.B, p.C), TriangleDistance.PointSq(c, p.A, p.B, p.C))));
+                        if (!(d < corner * corner)) continue;
+                        var toLayer = keep * s.TriangleToLayer(p.A, p.B, p.C, layer, reach);
+                        var other = s.PrimLayer[k];
+                        var side = keep * math.min(s.PointToLayer(a, other, reach), math.min(s.PointToLayer(b, other, reach), s.PointToLayer(c, other, reach)));
+                        if (!(d < toLayer * toLayer) && !(d < side * side)) continue;
+                        pair = true;
+                        Assert.That(math.sqrt(d), Is.LessThan(keep * reach), "a refusal through the pair's gap lies within the reach");
+                    }
+                    onlyPair = pair && !old;
+                    return old || pair;
+                }
+
+                var rng = new Random(29);
+                int queries = 0, onlyThroughPair = 0, withoutPair = 0;
+                for (var i = 0; i < 1500; i++)
+                {
+                    var m = rng.NextInt(tubes.Length);
+                    var seg = segments[m];
+                    var rings = tubes[m].VertexCount / seg - 1;
+                    int Vertex(int r, int sg) => math.clamp(r, 0, rings) * seg + (sg % seg + seg) % seg;
+                    int r0 = rng.NextInt(rings + 1), s0 = rng.NextInt(seg);
+                    var a = tubes[m].Positions[Vertex(r0, s0)];
+                    var b = tubes[m].Positions[Vertex(r0 + rng.NextInt(0, 4), s0 + rng.NextInt(1, 4))];
+                    var c = tubes[m].Positions[Vertex(r0 + rng.NextInt(1, 4), s0 + rng.NextInt(-1, 2))];
+                    if (!(math.lengthsq(math.cross(b - a, c - a)) > 1e-12f)) continue;
+                    var least = rng.NextInt(4) == 0 ? 0f : math.min(all.PointClearance(a, m, reach), math.min(all.PointClearance(b, m, reach), all.PointClearance(c, m, reach)));
+                    queries++;
+                    foreach (var pairGap in new[] { false, true })
+                    {
+                        var expected = Every(all, a, b, c, m, least, pairGap, out var onlyPair);
+                        var actual = all.AnyWithin(a, b, c, m, keep, least, pairGap, ref gapsAll, out var byPair);
+                        Assert.That(actual, Is.EqualTo(expected), $"query {i} from tube {m}, least {least * 1000:0.###} mm, the pair's gap {(pairGap ? "read" : "not read")}");
+                        if (onlyPair) Assert.That(byPair, $"query {i}: refused through the pair's gap alone, and said so");
+                        if (!pairGap && expected) withoutPair++;
+                        if (onlyPair) onlyThroughPair++;
+                        if (m == 0) continue;
+                        var withLeftOut = leftOut.AnyWithin(a, b, c, m, keep, least, pairGap, ref gapsLeftOut, out _);
+                        var withAbsent = absent.AnyWithin(a, b, c, m, keep, least, pairGap, ref gapsAbsent, out _);
+                        Assert.That(withLeftOut, Is.EqualTo(withAbsent), $"query {i} from tube {m}: the left-out skin decides nothing");
+                    }
+                }
+                TestContext.WriteLine($"{queries} queries: {withoutPair} refused without the pair's gap, {onlyThroughPair} only through it");
+                Assert.That(onlyThroughPair, Is.GreaterThan(queries / 50), "the pair's gap decides some queries alone");
+                Assert.That(withoutPair, Is.GreaterThan(queries / 50));
+            }
+            finally
+            {
+                gapsAll.Dispose();
+                gapsLeftOut.Dispose();
+                gapsAbsent.Dispose();
+                foreach (var o in owned) o.Dispose();
+            }
         }
     }
 }

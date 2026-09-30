@@ -24,6 +24,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         public int NearVertices;
         /// <summary>Collapses that passed every other check and were refused for coming too near another layer.</summary>
         public long Refused;
+        /// <summary>
+        /// Of <see cref="Refused"/>, those refused only because a source triangle whose nearest layer is a third one was
+        /// held to the pair's own gap: the rule reading only the gap to the nearest layer of any would have let them pass.
+        /// </summary>
+        public long RefusedByPairGap;
     }
 
     /// <summary>

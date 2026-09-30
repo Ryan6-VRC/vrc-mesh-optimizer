@@ -111,6 +111,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int SequenceLength => Decimated ? Sequence.Length : 0;
         public int NearVertices;
         public long ClearanceRefused;
+        public long ClearanceRefusedByPairGap;
 
         public int HiddenCount
         {
