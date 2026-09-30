@@ -148,6 +148,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public DecimationSettings Decimation { get; internal set; }
         public bool Rejudge { get; internal set; }
         public OcclusionSettings Occlusion { get; internal set; }
+        /// <summary>In millimetres, as the component holds it.</summary>
+        public float MaxError { get; internal set; }
+        public bool RemovedAsNeighbours { get; internal set; }
+        public bool OutlinesShowInside { get; internal set; }
         public float ErrorLevel { get; internal set; }
         public int RejudgePasses { get; internal set; }
         public bool TargetMet { get; internal set; }
@@ -233,7 +237,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             string Mm(float m) => (m * 1000f).ToString("0.000", c);
             var lines = new List<string>(Failures);
             lines.Add($"avatar: {AvatarName}");
-            lines.Add($"settings: target={Target} budget={TriangleBudget} tolerance_mm={Tolerance.ToString(c)} rejudge={Rejudge}");
+            lines.Add($"settings: target={Target} budget={TriangleBudget} tolerance_mm={Tolerance.ToString(c)} rejudge={Rejudge} " +
+                      $"maxError_mm={MaxError.ToString(c)} removedAsNeighbours={RemovedAsNeighbours} outlinesShowInside={OutlinesShowInside}");
             lines.Add($"settings decimation: {Fields(Decimation)}");
             lines.Add($"settings occlusion: {Fields(Occlusion)}");
             lines.Add($"report: before={Renderers.Sum(r => r.TrianglesBefore)} after={Renderers.Sum(r => r.TrianglesAfter)} hidden={Renderers.Sum(r => r.HiddenRemoved)} " +
@@ -406,6 +411,9 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 Decimation = report.Decimation,
                 Rejudge = report.Rejudge,
                 Occlusion = report.Occlusion,
+                MaxError = report.MaxError,
+                RemovedAsNeighbours = report.RemovedAsNeighbours,
+                OutlinesShowInside = report.OutlinesShowInside,
                 ErrorLevel = report.ErrorLevel,
                 RejudgePasses = report.RejudgePasses,
                 TargetMet = report.TargetMet,

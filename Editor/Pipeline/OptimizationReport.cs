@@ -207,12 +207,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float Tolerance { get; internal set; }
         /// <summary>
         /// The settings besides the target that decide a mesh, as the cut ran with them: decimation's (the normal and UV
-        /// weights, clearance and its share, bends), whether it re-judged, and occlusion's. A figure read off this build is
-        /// read at these.
+        /// weights, clearance and its share, bends), whether it re-judged, occlusion's, the budget's error ceiling
+        /// (<see cref="MaxError"/>), whether removed triangles stood in the clearance surface
+        /// (<see cref="RemovedAsNeighbours"/>), and whether outlines show inside (<see cref="OutlinesShowInside"/>). A figure
+        /// read off this build is read at these.
         /// </summary>
         public DecimationSettings Decimation { get; internal set; }
         public bool Rejudge { get; internal set; }
         public OcclusionSettings Occlusion { get; internal set; }
+        /// <summary>The component's max error, in millimetres, as the component holds it; 0 is no ceiling.</summary>
+        public float MaxError { get; internal set; }
+        public bool RemovedAsNeighbours { get; internal set; }
+        public bool OutlinesShowInside { get; internal set; }
 
         public int TrianglesBefore => Renderers.Sum(r => r.TrianglesBefore);
         public int TrianglesAfter => Renderers.Sum(r => r.TrianglesAfter);

@@ -257,6 +257,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 TriangleBudget = settings.triangleBudget,
                 Tolerance = settings.tolerance,
                 Decimation = input.Decimation, Rejudge = input.Rejudge, Occlusion = input.Occlusion,
+                MaxError = settings.maxError, RemovedAsNeighbours = input.RemovedAsNeighbours, OutlinesShowInside = settings.outlinesShowInside,
                 TargetMet = true,
                 OcclusionRan = prepared.OcclusionRan,
                 Declined = prepared.Declined,
