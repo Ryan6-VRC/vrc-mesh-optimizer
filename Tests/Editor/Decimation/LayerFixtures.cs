@@ -111,12 +111,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             /// <summary>The skeleton the meshes are weighted to; unassigned, decimation measures no bends.</summary>
             public BendRig Rig;
 
-            public CollapseSequence Decimate(int mesh, bool rule, out ClearanceStats stats, Func<DecimationSettings, DecimationSettings> tweak = null)
+            /// <param name="excluded">Per triangle of the mesh, one its decimation leaves out, whatever the surface holds; null leaves none out.</param>
+            public CollapseSequence Decimate(int mesh, bool rule, out ClearanceStats stats, Func<DecimationSettings, DecimationSettings> tweak = null, bool[] excluded = null)
             {
                 var s = DecimationSettings.Default;
                 s.Clearance.Enabled = rule;
                 if (tweak != null) s = tweak(s);
-                return Decimator.Run(Meshes[mesh], s, default, new ClearanceInput { Surface = Surface, TriangleLayer = Layers[mesh] }, Rig, Allocator.Persistent, out stats);
+                var clearance = new ClearanceInput { Surface = Surface, TriangleLayer = Layers[mesh] };
+                if (excluded == null) return Decimator.Run(Meshes[mesh], s, default, clearance, Rig, Allocator.Persistent, out stats);
+                using var mask = new NativeArray<bool>(excluded, Allocator.Persistent);
+                using var pending = Decimator.Schedule(Meshes[mesh], mask, s, default, clearance, Rig);
+                return pending.Complete(Allocator.Persistent, out stats);
             }
 
             public void Dispose()

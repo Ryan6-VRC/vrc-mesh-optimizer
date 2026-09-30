@@ -271,11 +271,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         [TestCase(false)]
         public void OnlyKeptSurfaceIsANeighbour(bool deleteUnderLayer)
         {
-            var skin = Tube(64, 80, 0.4f, (a, y) => Skin(a, y - 0.1f));
-            for (var v = 0; v < skin.VertexCount; v++) skin.Positions[v] -= new float3(0, 0.1f, 0);
-            // Deleted: every skin triangle within 3 cm of the layer's height range, beyond the rule's 2 cm reach.
-            var kept = skin.Triangles.Select(t => !deleteUnderLayer ||
-                math.abs((skin.Positions[t.x].y + skin.Positions[t.y].y + skin.Positions[t.z].y) / 3f - Length / 2f) > Length / 2f + 0.03f).ToArray();
+            var skin = SkinLongerThanTheLayer(out var deleted);
+            var kept = deleted.Select(d => !deleteUnderLayer || !d).ToArray();
             using var scene = new Scene();
             scene.Add(skin, kept);
             scene.Add(LayerTube(Over(Gap)));
@@ -283,11 +280,49 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
 
             using var off = scene.Decimate(1, false, out _);
             using var on = scene.Decimate(1, true, out var stats);
-            var same = off.Length == on.Length && Enumerable.Range(0, off.Records.Length).All(i => off.Records[i].Equals(on.Records[i]));
+            var same = SameRecords(off, on);
             TestContext.WriteLine($"near vertices {stats.NearVertices}, refused {stats.Refused}, steps {off.Length} without and {on.Length} with");
             Assert.That(same, Is.EqualTo(deleteUnderLayer), "the layer's decimation is its decimation alone exactly when the skin under it is gone");
             Assert.That(stats.NearVertices == 0, Is.EqualTo(deleteUnderLayer));
         }
+
+        // The same skin deleted under the layer, handed in as the pipeline hands it with removed triangles as neighbours:
+        // in the surface, in the piece it belongs to in the whole skin, and left out of the skin's own decimation. It holds
+        // the layer back as kept skin does, and the skin's own decimation passes it by: the kept skin bordering it, one
+        // piece with it, is no neighbour of it.
+        [Test]
+        public void DeletedSurfaceHandedIn_IsANeighbourOfOtherLayers_AndNotOfItsOwn()
+        {
+            var skin = SkinLongerThanTheLayer(out var deleted);
+            using var scene = new Scene();
+            scene.Add(skin);
+            scene.Add(LayerTube(Over(Gap)));
+            scene.BuildSurface();
+
+            using var layerOff = scene.Decimate(1, false, out _);
+            using var layerOn = scene.Decimate(1, true, out var layerStats);
+            using var skinOff = scene.Decimate(0, false, out _, excluded: deleted);
+            using var skinOn = scene.Decimate(0, true, out var skinStats, excluded: deleted);
+            TestContext.WriteLine($"layer: near vertices {layerStats.NearVertices}, refused {layerStats.Refused}; skin: near vertices {skinStats.NearVertices}, steps {skinOff.Length} without the rule and {skinOn.Length} with");
+            Assert.That(deleted.Count(d => d), Is.GreaterThan(0).And.LessThan(deleted.Length), "some of the skin is deleted, not all");
+            Assert.That(layerStats.NearVertices, Is.GreaterThan(0), "the deleted skin holds the layer back");
+            Assert.That(SameRecords(layerOff, layerOn), Is.False);
+            Assert.That(skinStats.NearVertices, Is.Zero, "the kept skin sees nothing of its own deleted piece");
+            Assert.That(SameRecords(skinOff, skinOn), Is.True, "the skin decimates as if alone");
+        }
+
+        /// <summary>A skin tube reaching 10 cm past each end of the layer's; <paramref name="deleted"/> flags every triangle within 3 cm of the layer's height range, beyond the rule's 2 cm reach.</summary>
+        static MeshBuilder SkinLongerThanTheLayer(out bool[] deleted)
+        {
+            var skin = Tube(64, 80, 0.4f, (a, y) => Skin(a, y - 0.1f));
+            for (var v = 0; v < skin.VertexCount; v++) skin.Positions[v] -= new float3(0, 0.1f, 0);
+            deleted = skin.Triangles.Select(t =>
+                math.abs((skin.Positions[t.x].y + skin.Positions[t.y].y + skin.Positions[t.z].y) / 3f - Length / 2f) <= Length / 2f + 0.03f).ToArray();
+            return skin;
+        }
+
+        static bool SameRecords(CollapseSequence a, CollapseSequence b) =>
+            a.Length == b.Length && Enumerable.Range(0, a.Records.Length).All(i => a.Records[i].Equals(b.Records[i]));
 
         // A skirt and its lining, or stacked frills, are often one mesh in separate pieces: each piece is a layer.
         [Test]

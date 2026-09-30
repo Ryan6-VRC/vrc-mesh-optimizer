@@ -45,6 +45,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// Off, every mesh is written with the removals as occlusion first judged them.
         /// </summary>
         public bool Rejudge = BuildSettings.Rejudging;
+        /// <summary>
+        /// Whether a triangle occlusion removed stands in the clearance surface as a neighbour of the other layers
+        /// (<see cref="OptimizerPipeline.ClearanceSurfaceOf"/>), so one re-judging writes back comes back clear. Off, the
+        /// surface holds only what occlusion kept, and a layer may cross a triangle written back.
+        /// </summary>
+        public bool RemovedAsNeighbours = BuildSettings.RemovedAsNeighbours;
         /// <summary>Time the caller spent classifying liveness, for the report.</summary>
         public double LivenessMs;
         /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
@@ -69,10 +75,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>
-    /// The decimation settings a build runs with, and whether it judges its removals again. The component exposes none of
-    /// them, and the decimation defaults live in <see cref="DecimationSettings.Default"/> alone; this is the one place a
-    /// test or a measurement can hand a build other values, since a build reaches the pipeline through NDMF and not
-    /// through a caller. Nothing in the package overrides them.
+    /// The decimation settings a build runs with, whether it judges its removals again, and what stands in its clearance
+    /// surface. The component exposes none of them, and the decimation defaults live in
+    /// <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a measurement can hand a build other
+    /// values, since a build reaches the pipeline through NDMF and not through a caller. Nothing in the package overrides
+    /// them.
     /// </summary>
     internal static class BuildSettings
     {
@@ -95,6 +102,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var before = Rejudging;
             Rejudging = rejudging;
             return new Scope(() => Rejudging = before);
+        }
+
+        /// <summary>Whether a build's clearance surface holds the triangles occlusion removed (<see cref="PipelineInput.RemovedAsNeighbours"/>); on unless overridden.</summary>
+        internal static bool RemovedAsNeighbours { get; private set; } = true;
+
+        /// <summary>Every build until the returned scope is disposed runs with <see cref="RemovedAsNeighbours"/> as <paramref name="on"/> says; disposing restores what was before.</summary>
+        internal static IDisposable OverrideRemovedAsNeighbours(bool on)
+        {
+            var before = RemovedAsNeighbours;
+            RemovedAsNeighbours = on;
+            return new Scope(() => RemovedAsNeighbours = before);
         }
 
         sealed class Scope : IDisposable
@@ -874,14 +892,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
-        /// each renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>. Kept means what occlusion left: a triangle
-        /// it removed is not in it, so nothing is held clear of it. Re-judging (<see cref="Cut"/>) writes such a triangle back
-        /// where the cut took its cover, and it was never a neighbour, so the renderer cut over it may cross it there. A
-        /// renderer off at build is in it like any other, since whatever
-        /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is a renderer the
-        /// pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be read: it is still
-        /// drawn where it stands, whole, so its neighbours keep clear of its source.
+        /// Every renderer's surface as one clearance surface, each connected piece of each mesh its own layer, and each
+        /// renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>; the one place that decides what stands in
+        /// it. A triangle occlusion removed stands in it, in the piece it belongs to in the whole mesh: that piece's own
+        /// decimation passes it by, as its decimation leaves it out, while every other layer keeps its share of the gap to
+        /// it, so one re-judging (<see cref="Cut"/>) writes back where the cut took its cover comes back clear. The layers
+        /// are then the whole mesh's pieces: a renderer's other pieces (a lining under its outer) keep clear of its removed
+        /// triangles as of kept ones, and pieces joined only through removed triangles are one layer, as in the source.
+        /// <see cref="PipelineInput.RemovedAsNeighbours"/> off leaves a removed triangle out, so nothing is held clear of
+        /// it and the renderer cut over one written back may cross it. A renderer off at build is in it like any other,
+        /// since whatever turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is
+        /// a renderer the pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be
+        /// read: it is still drawn where it stands, whole, so its neighbours keep clear of its source.
         /// </summary>
         static ClearanceSurface ClearanceSurfaceOf(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, float reach)
         {
@@ -893,7 +915,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 foreach (var job in live)
                 {
                     var eval = job.Eval;
-                    var hidden = HiddenMask(job);
+                    var hidden = input.RemovedAsNeighbours ? default : HiddenMask(job);
                     if (hidden.IsCreated) owned.Add(hidden);
                     job.Layers = Layers.Pieces(eval.Positions, eval.Triangles, hidden, Allocator.Persistent, out var pieces);
                     for (var i = 0; i < job.Layers.Length; i++)
@@ -939,7 +961,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        /// <summary>The triangles occlusion removed, as the mask decimation and the clearance surface leave them out by; unset when it removed none. The caller owns it.</summary>
+        /// <summary>The triangles occlusion removed, as the mask decimation leaves them out by, and the clearance surface with <see cref="PipelineInput.RemovedAsNeighbours"/> off; unset when it removed none. The caller owns it.</summary>
         static NativeArray<bool> HiddenMask(PreparedRenderer job) => job.Hidden == null ? default : new NativeArray<bool>(job.Hidden, Allocator.Persistent);
 
         /// <summary>
