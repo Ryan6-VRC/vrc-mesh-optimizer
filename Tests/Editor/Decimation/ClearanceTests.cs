@@ -407,6 +407,129 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
         }
 
+        /// <summary>
+        /// Pairs of centimetre triangles at avatar-sized coordinates: the first <paramref name="count"/> at random around one
+        /// point, the next <paramref name="count"/> moved to sit within a few <see cref="TriangleDistance.Touch"/> of the
+        /// crossing line on one of its three conditions (b reaching past a's plane, a past b's, the two cuts overlapping),
+        /// half of them within float resolution of it.
+        /// </summary>
+        static IEnumerable<(float3[] a, float3[] b, bool near)> CrossingPairs(int count)
+        {
+            var rng = new Random(23);
+            for (var i = 0; i < 2 * count;)
+            {
+                var o = new float3(rng.NextFloat(-0.8f, 0.8f), rng.NextFloat(0f, 1.8f), rng.NextFloat(-0.8f, 0.8f));
+                var a = new[] { o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f) };
+                var b = new[] { o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f) };
+                if (i < count)
+                {
+                    i++;
+                    yield return (a, b, false);
+                    continue;
+                }
+                var h = TriangleDistance.Touch * (1.0 + (rng.NextBool() ? rng.NextDouble(-1.0, 3.0) : rng.NextDouble(-0.01, 0.01)));
+                var A = new[] { (double3)a[0], (double3)a[1], (double3)a[2] };
+                var B = new[] { (double3)b[0], (double3)b[1], (double3)b[2] };
+                var nA = math.normalize(math.cross(A[1] - A[0], A[2] - A[0]));
+                var nB = math.normalize(math.cross(B[1] - B[0], B[2] - B[0]));
+                double3 shift;
+                var moveB = true;
+                switch (rng.NextInt(3))
+                {
+                    case 0: // b reaches past a's plane by h on its lesser side
+                        shift = nA * Onto(B, nA, A[0], h, rng.NextBool());
+                        break;
+                    case 1: // a reaches past b's plane by h
+                        shift = nB * Onto(A, nB, B[0], h, rng.NextBool());
+                        moveB = false;
+                        break;
+                    default: // the two cuts overlap by h along the common line
+                        var dir = math.normalize(math.cross(nA, nB));
+                        if (!Interval(A, nB, B[0], dir, out var aLo, out var aHi) || !Interval(B, nA, A[0], dir, out var bLo, out var bHi)) continue;
+                        shift = dir * (rng.NextBool() ? aHi - h - bLo : aLo + h - bHi);
+                        break;
+                }
+                var moved = moveB ? b : a;
+                for (var k = 0; k < 3; k++) moved[k] = (float3)((double3)moved[k] + shift);
+                i++;
+                yield return (a, b, true);
+            }
+        }
+
+        /// <summary>The move along unit n that leaves triangle t standing past the plane (n, o) by h on its lesser side, below it or above.</summary>
+        static double Onto(double3[] t, double3 n, double3 o, double h, bool below)
+        {
+            double d0 = math.dot(n, t[0] - o), d1 = math.dot(n, t[1] - o), d2 = math.dot(n, t[2] - o);
+            return below ? -h - math.min(d0, math.min(d1, d2)) : h - math.max(d0, math.max(d1, d2));
+        }
+
+        // The one crossing routine against the two it replaces, the clearance rule's and the gate's: the same verdict
+        // except where the pair lies within rounding of Touch on some condition, and the same segment within rounding.
+        [Test]
+        public void Intersect_AgreesWithTheRuleAndTheGate_OnRandomAndNearTouchingPairs()
+        {
+            // Float rounding at avatar-sized coordinates: a position 2 m from the origin carries 2.4e-7 m of it, and the
+            // gate's projections along the line are taken there.
+            const double rounding = 1e-6;
+            const float tolerance = 1e-6f;
+            var touch = TriangleDistance.Touch;
+            int pairs = 0, near = 0, crossings = 0, flipsRule = 0, flipsGate = 0, flipsNear = 0, flipsRuleGate = 0;
+            int offOne = 0, offRule = 0, offGate = 0;
+            double marginRule = 0, marginGate = 0, dRule = 0, dGate = 0, dOracle = 0, dEndRule = 0, dEndGate = 0, dReach = 0;
+            foreach (var (a, b, isNear) in CrossingPairs(4000))
+            {
+                pairs++;
+                if (isNear) near++;
+                var one = TriangleDistance.Intersect(a[0], a[1], a[2], b[0], b[1], b[2], touch, out var x);
+                var ruleLength = TriangleDistance.IntersectionSegment(a[0], a[1], a[2], b[0], b[1], b[2], out var rs, out var re);
+                var rule = ruleLength > 0f;
+                var gate = Core.Gate.TriangleCrossing.Cross(a[0], a[1], a[2], b[0], b[1], b[2], touch, out var g);
+                var reachA = Reach(a[0], a[1], a[2], b[0], b[1], b[2]);
+                var reachB = Reach(b[0], b[1], b[2], a[0], a[1], a[2]);
+                var oracle = IntersectionLength(a[0], a[1], a[2], b[0], b[1], b[2]);
+                var exact = reachA > touch && reachB > touch && oracle > touch;
+                var margin = math.min(math.abs(reachA - touch), math.min(math.abs(reachB - touch), math.abs(oracle - touch)));
+                if (one != exact) offOne++;
+                if (rule != exact) offRule++;
+                if (gate != exact) offGate++;
+                if (one != rule)
+                {
+                    flipsRule++;
+                    marginRule = math.max(marginRule, margin);
+                }
+                if (one != gate)
+                {
+                    flipsGate++;
+                    marginGate = math.max(marginGate, margin);
+                }
+                if (isNear && (one != rule || one != gate)) flipsNear++;
+                if (rule != gate) flipsRuleGate++;
+                if (!one) continue;
+                crossings++;
+                if (rule)
+                {
+                    dRule = math.max(dRule, math.abs(x.Length - ruleLength));
+                    dEndRule = math.max(dEndRule, math.max(math.distance(x.Start, rs), math.distance(x.End, re)));
+                }
+                if (gate)
+                {
+                    dGate = math.max(dGate, math.abs(x.Length - g.Length));
+                    dEndGate = math.max(dEndGate, math.max(math.distance(x.Start, g.Start), math.distance(x.End, g.End)));
+                    dReach = math.max(dReach, math.max(math.abs(x.ReachA - g.ReachA), math.abs(x.ReachB - g.ReachB)));
+                    Assert.That(x.SameFacing, Is.EqualTo(g.SameFacing), $"pair {pairs}");
+                }
+                dOracle = math.max(dOracle, math.abs(x.Length - oracle));
+            }
+            TestContext.WriteLine($"{pairs} pairs, {near} near touching; {crossings} cross by the one routine");
+            TestContext.WriteLine($"verdict flips: {flipsRule} against the rule (largest margin {marginRule:E3} m), {flipsGate} against the gate (largest margin {marginGate:E3} m), {flipsNear} pairs near touching; the rule and the gate flip {flipsRuleGate} between themselves");
+            TestContext.WriteLine($"verdicts off the double one: {offOne} by the one routine, {offRule} by the rule, {offGate} by the gate");
+            TestContext.WriteLine($"largest length deviation: {dRule:E3} m from the rule, {dGate:E3} m from the gate, {dOracle:E3} m from the double oracle");
+            TestContext.WriteLine($"largest end deviation: {dEndRule:E3} m from the rule, {dEndGate:E3} m from the gate; largest reach deviation from the gate {dReach:E3} m");
+            Assert.That(crossings, Is.GreaterThan(pairs / 10));
+            Assert.That(new[] { marginRule, marginGate }, Is.All.LessThanOrEqualTo(rounding), "a verdict flipped farther from Touch than rounding");
+            Assert.That(new[] { dRule, dGate, dOracle, dEndRule, dEndGate, dReach }, Is.All.LessThanOrEqualTo(tolerance));
+        }
+
         // The pruning that settles most pairs without the exact distance must never settle one wrongly: slivers and
         // near-degenerate query triangles at avatar-sized coordinates, against a brute-force search.
         [Test]

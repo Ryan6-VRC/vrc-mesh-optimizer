@@ -37,6 +37,85 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Geometry
         public const float Touch = 1e-5f;
 
         /// <summary>
+        /// Where triangles a and b pass through each other, if they do: each triangle's corners are measured against the
+        /// other's plane, and the pair crosses only when each reaches past the other's plane on both sides by more than
+        /// <paramref name="touch"/>. That leaves out a triangle lying on the other or meeting it along an edge or at a
+        /// corner, whatever the rounding, and a coplanar pair. Each triangle then cuts the other's plane along a segment of
+        /// the planes' common line, and the crossing is where the two overlap, when that is longer than
+        /// <paramref name="touch"/>. Worked relative to a0, so positions along the line keep their precision far from the origin.
+        /// </summary>
+        public static bool Intersect(float3 a0, float3 a1, float3 a2, float3 b0, float3 b1, float3 b2, float touch, out Intersection crossing)
+        {
+            crossing = default;
+            var origin = a0;
+            a1 -= origin;
+            a2 -= origin;
+            b0 -= origin;
+            b1 -= origin;
+            b2 -= origin;
+            var na = math.cross(a1, a2);
+            var nb = math.cross(b1 - b0, b2 - b0);
+            var la = math.length(na);
+            var lb = math.length(nb);
+            if (!(la > 0f) || !(lb > 0f)) return false;
+            na /= la;
+            nb /= lb;
+
+            var da = new float3(math.dot(nb, -b0), math.dot(nb, a1 - b0), math.dot(nb, a2 - b0));
+            if (!(math.cmax(da) > touch && math.cmin(da) < -touch)) return false;
+            var db = new float3(math.dot(na, b0), math.dot(na, b1), math.dot(na, b2));
+            if (!(math.cmax(db) > touch && math.cmin(db) < -touch)) return false;
+
+            var dir = math.cross(na, nb);
+            var ld = math.length(dir);
+            if (!(ld > 0f)) return false;
+            dir /= ld;
+
+            Cut(float3.zero, a1, a2, da, out var pa, out var qa);
+            Cut(b0, b1, b2, db, out var pb, out var qb);
+            Order(dir, ref pa, ref qa, out var ta0, out var ta1);
+            Order(dir, ref pb, ref qb, out var tb0, out var tb1);
+            var overlap = math.min(ta1, tb1) - math.max(ta0, tb0);
+            if (!(overlap > touch)) return false;
+
+            crossing = new Intersection
+            {
+                Start = origin + (ta0 >= tb0 ? pa : pb),
+                End = origin + (ta1 <= tb1 ? qa : qb),
+                Length = overlap,
+                ReachA = math.min(math.cmax(da), -math.cmin(da)),
+                ReachB = math.min(math.cmax(db), -math.cmin(db)),
+                SameFacing = math.dot(na, nb) > 0f,
+            };
+            return true;
+        }
+
+        /// <summary>The two points where a triangle straddling a plane meets it, from the corner alone on its side.</summary>
+        static void Cut(float3 v0, float3 v1, float3 v2, float3 d, out float3 p, out float3 q)
+        {
+            var above = d > 0f;
+            var count = (above.x ? 1 : 0) + (above.y ? 1 : 0) + (above.z ? 1 : 0);
+            // The lone corner is the one whose side the other two do not share.
+            var lone = count == 1 ? above : !above;
+            float3 k, u, w;
+            float dk, du, dw;
+            if (lone.x) { k = v0; dk = d.x; u = v1; du = d.y; w = v2; dw = d.z; }
+            else if (lone.y) { k = v1; dk = d.y; u = v2; du = d.z; w = v0; dw = d.x; }
+            else { k = v2; dk = d.z; u = v0; du = d.x; w = v1; dw = d.y; }
+            p = k + (u - k) * (dk / (dk - du));
+            q = k + (w - k) * (dk / (dk - dw));
+        }
+
+        static void Order(float3 dir, ref float3 p, ref float3 q, out float tp, out float tq)
+        {
+            tp = math.dot(dir, p);
+            tq = math.dot(dir, q);
+            if (tp <= tq) return;
+            (p, q) = (q, p);
+            (tp, tq) = (tq, tp);
+        }
+
+        /// <summary>
         /// The length of the segment along which two triangles pass through each other; 0 when they only touch, or
         /// do not meet. See <see cref="Touch"/>.
         /// </summary>
@@ -219,5 +298,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Geometry
             var denom = 1f / sum;
             return a + ab * (vb * denom) + ac * (vc * denom);
         }
+    }
+
+    /// <summary>Where two triangles pass through each other, as <see cref="TriangleDistance.Intersect"/> finds it.</summary>
+    internal struct Intersection
+    {
+        public float3 Start;
+        public float3 End;
+        /// <summary>Metres along the planes' common line from <see cref="Start"/> to <see cref="End"/>, read along the line itself rather than between the two ends, so it keeps the precision of the corner-relative arithmetic.</summary>
+        public float Length;
+        /// <summary>How far triangle a stands past b's plane on its lesser side; likewise <see cref="ReachB"/>.</summary>
+        public float ReachA;
+        public float ReachB;
+        /// <summary>Whether the two triangles face the same way.</summary>
+        public bool SameFacing;
     }
 }
