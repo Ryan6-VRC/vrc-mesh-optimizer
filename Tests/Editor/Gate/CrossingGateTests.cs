@@ -79,7 +79,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(rest.After.Length, Is.Zero, "straight, the tights' long facets lie where the dropped rings were");
             Assert.That(bent.Before.Length, Is.Zero, "bent, the source tights still clear the skin");
             Assert.That(bent.New, Is.GreaterThan(0.01), "the tights' straight facets cut through the skin round the outside of the bend");
-            Assert.That(bent.New, Is.EqualTo(bent.After.Length).Within(1e-6));
+            Assert.That(bent.New, Is.EqualTo(bent.After.Length), "every crossing bent is new, so all of it");
             Assert.That(bent.Runs, Is.GreaterThanOrEqualTo(1));
             Assert.That(bent.LongestRunTriangleA, Is.GreaterThanOrEqualTo(0));
             Assert.That(bent.LongestRunAt.y, Is.InRange(0.3f, 0.75f), "near the joint");

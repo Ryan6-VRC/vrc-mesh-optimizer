@@ -205,6 +205,32 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(far.LongestRun, Is.EqualTo(0.015).Within(1e-6));
         }
 
+        // New crossing is priced as its share of each segment's own Length, the figure the after total sums, so a wholly
+        // new crossing reads exactly that total. At avatar-sized coordinates a segment's two ends lose precision its
+        // Length keeps, so the distance between them is not the figure to price by.
+        [Test]
+        public void NewCrossing_IsPricedAlongEachSegmentsOwnLength()
+        {
+            var at = new float3(0.3f, 1.2f, -0.4f);
+            (float3[] p, int3[] t) Moved((float3[] p, int3[] t) s) => (s.p.Select(x => x + at).ToArray(), s.t);
+            var after = Cross(Moved(Sheet(0f, patch: 0.002f)), Moved(Outer())).segments;
+            Assert.That(after.Any(s => math.distance(s.Start, s.End) != s.Length),
+                "somewhere the distance between a segment's ends differs from its Length by rounding, or this test tells nothing");
+
+            var whole = Compare(new CrossingSegment[0], after);
+            TestContext.WriteLine($"wholly new: New - After.Length = {whole.New - whole.After.Length:E3} m over {after.Length} segments");
+            Assert.That(whole.New, Is.EqualTo(whole.After.Length), "wholly new, exactly the after total");
+            Assert.That(whole.NewSameFacing, Is.EqualTo(whole.After.SameFacingLength));
+
+            // A before segment on the same line, behind the start, ending Nearness short of the middle: the first half of g is old.
+            var g = after.OrderByDescending(s => s.Length).First();
+            var dir = math.normalize(g.End - g.Start);
+            var end = g.Start + dir * (g.Length / 2f - Settings.Nearness);
+            var half = Compare(new[] { Segment(end - dir * 0.01f, end) }, new[] { g });
+            TestContext.WriteLine($"half new: New - Length / 2 = {half.New - g.Length / 2.0:E3} m of {g.Length * 1000:0.###} mm");
+            Assert.That(half.New, Is.EqualTo(g.Length / 2.0).Within(1e-6), "the half past Nearness");
+        }
+
         [Test]
         public void OneShortBeforeSegment_SpanningMoreCellsThanItsShareOfTheGrid_IsFound()
         {

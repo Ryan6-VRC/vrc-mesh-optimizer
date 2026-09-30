@@ -293,7 +293,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             var a = t0 == 0f ? g.Start : math.lerp(g.Start, g.End, t0);
             var b = t1 == 1f ? g.End : math.lerp(g.Start, g.End, t1);
             pieces.Add(new CrossingPiece { A = a, B = b, Segment = s, T0 = t0, T1 = t1 });
-            double length = math.distance(a, b);
+            // The piece's share of the segment's own Length, so a segment wholly new counts exactly what the after total counts.
+            double length = (t1 - t0) * g.Length;
             r.New += length;
             if (g.SameFacing) r.NewSameFacing += length;
         }
