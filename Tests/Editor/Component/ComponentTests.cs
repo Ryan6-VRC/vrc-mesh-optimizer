@@ -101,9 +101,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
         }
 
         // The decimation defaults a build runs with, which the component does not expose: the normal term's weight, the
-        // clearance rule on at its share, bends at their swing and share of the gap, and re-judging on. Each is a measured
-        // choice, tuned on real avatars against the triangles it costs, so changing one is a decision to measure again and
-        // never a way to make a test pass.
+        // clearance rule on at its share and crossing allowance, bends at their swing and share of the gap, and re-judging
+        // on. Each is a measured choice, tuned on real avatars against the triangles it costs, so changing one is a decision
+        // to measure again and never a way to make a test pass.
         [Test]
         public void ABuild_RunsWithTheMeasuredDecimationDefaults()
         {
@@ -113,6 +113,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
                 Assert.That(s.Normal.Weight, Is.EqualTo(0.5f), $"{name}: normal term weight");
                 Assert.That(s.Clearance.Enabled, Is.True, $"{name}: clearance rule");
                 Assert.That(s.Clearance.Share, Is.EqualTo(0.4f), $"{name}: clearance share");
+                Assert.That(s.Clearance.CrossingAllowance, Is.EqualTo(1e-7f), $"{name}: crossing allowance");
                 Assert.That(s.Bend.Degrees, Is.EqualTo(90f), $"{name}: bend degrees");
                 Assert.That(s.Bend.ClearanceShare, Is.EqualTo(0.7f), $"{name}: bend share of the gap");
             }

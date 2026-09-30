@@ -358,7 +358,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 
             var sw = Stopwatch.StartNew();
             var hashes = report.Renderers.Select(r => new MeshHashes(r.Path,
-                r.SourceMesh != null && (r.SourceMesh.isReadable || !Application.isPlaying) ? MeshContent.Hash(r.SourceMesh) : (ulong?)null,
+                r.SourceMesh != null && OptimizerPipeline.CanRead(r.SourceMesh, Application.isPlaying) ? MeshContent.Hash(r.SourceMesh) : (ulong?)null,
                 r.OutputMesh != null ? MeshContent.Hash(r.OutputMesh) : (ulong?)null)).ToArray();
             var hashMs = sw.Elapsed.TotalMilliseconds;
 

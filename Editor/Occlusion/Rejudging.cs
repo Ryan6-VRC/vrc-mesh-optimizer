@@ -35,8 +35,9 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
     /// <summary>
     /// Judging a cut's removals again. Occlusion judges a triangle hidden against the always-on renderers' source, and a
     /// cut then moves those faces, so a removed triangle can lose its cover. Every triangle a cut leaves out as hidden is
-    /// judged again by the first solve's rule, settings, bone table and configurations, with the triangles the always-on
-    /// renderers are written with as the only blockers; one no longer hidden is written back.
+    /// judged again by the first solve's rule, bone table and configurations and the settings the cut reads, the solve's
+    /// unless the input changed, with the triangles the always-on renderers are written with as the only blockers; one no
+    /// longer hidden is written back.
     /// </summary>
     internal static class Rejudging
     {

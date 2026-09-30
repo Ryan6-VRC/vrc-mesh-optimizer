@@ -270,7 +270,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// The gate's figures on this build, measured once its meshes were applied, when the build was switched to measure
-        /// them (<see cref="BuildSettings.OverrideGate(bool)"/>); null otherwise, and when the measure threw
+        /// them (<see cref="PipelineInput.Gate"/>); null otherwise, and when the measure threw
         /// (<see cref="DiagnosticKeys.GateFailed"/>). Plain data, so it outlives the build's clone.
         /// </summary>
         internal GateResult Gate { get; set; }
@@ -338,20 +338,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
     /// <summary>
     /// The most recent optimization reports, newest last. Each holds its meshes, which keeps them loaded, so only a
-    /// few are kept; a domain reload or <see cref="Clear"/> lets them go.
+    /// few are kept; a domain reload lets them go.
     /// </summary>
     internal static class OptimizationReports
     {
         const int Kept = 4;
         static readonly List<OptimizationReport> _recent = new List<OptimizationReport>();
 
-        public static IReadOnlyList<OptimizationReport> Recent => _recent;
         public static OptimizationReport Latest => _recent.Count > 0 ? _recent[_recent.Count - 1] : null;
-
-        /// <summary>The newest report for an avatar by its root's name; a build clone's name ends "(Clone)".</summary>
-        public static OptimizationReport For(string avatarName) => _recent.LastOrDefault(r => r.AvatarName == avatarName);
-
-        public static void Clear() => _recent.Clear();
 
         internal static void Add(OptimizationReport report)
         {

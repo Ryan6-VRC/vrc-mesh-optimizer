@@ -101,7 +101,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int LockedForFur;
         public int CostRaisedForGrowth;
         public int FloorTriangles;
-        /// <summary>Per extracted triangle, its layer in the clearance surface, -1 for one occlusion removed; created only while recording with the rule on.</summary>
+        /// <summary>
+        /// Per extracted triangle, its layer in the clearance surface; one occlusion removed carries its piece's layer, and -1
+        /// only with <see cref="PipelineInput.RemovedAsNeighbours"/> off. Created only while recording with the rule on.
+        /// </summary>
         public NativeArray<int> Layers;
         public CollapseSequence Sequence;
         public bool Decimated;
