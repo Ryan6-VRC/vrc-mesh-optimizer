@@ -6,6 +6,7 @@ using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Liveness;
+using Ryan6Vrc.MeshOptimizer.Localization;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEngine;
 
@@ -275,17 +276,28 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// </summary>
         internal GateResult Gate { get; set; }
 
-        /// <summary>A few lines for the console.</summary>
+        /// <summary>
+        /// The summary's first line, one key per target and outcome. {0} the avatar, {1} the triangles before, {2} after,
+        /// {3} hidden removed, {4} decimated, {5} the budget or the tolerance in millimetres, {6} the error level in
+        /// millimetres, {7} the milliseconds taken.
+        /// </summary>
+        internal const string SummaryBudgetMet = "MeshOptimizer:summary:budget-met";
+        internal const string SummaryBudgetNotMet = "MeshOptimizer:summary:budget-not-met";
+        internal const string SummaryTolerance = "MeshOptimizer:summary:tolerance";
+
+        /// <summary>
+        /// A few lines for the console. The first is the user's, in their language. The rest are English detail for whoever
+        /// is tuning the optimizer, which tests and measurement tools read.
+        /// </summary>
         public string Summary()
         {
             var c = CultureInfo.InvariantCulture;
             var sb = new StringBuilder();
-            sb.Append($"[Mesh Optimizer] {AvatarName}: {TrianglesBefore} -> {TrianglesAfter} triangles");
-            sb.Append($" ({HiddenRemoved} hidden removed, {TrianglesBefore - HiddenRemoved - TrianglesAfter} decimated). ");
-            sb.Append(Target == TargetKind.TriangleBudget
-                ? $"Budget {TriangleBudget} {(TargetMet ? "met" : "NOT met")}"
-                : $"Tolerance {Tolerance.ToString("0.###", c)} mm");
-            sb.Append($", error level {(ErrorLevel * 1000f).ToString("0.###", c)} mm, {Times.Total.ToString("0", c)} ms.");
+            var key = Target == TargetKind.Tolerance ? SummaryTolerance : TargetMet ? SummaryBudgetMet : SummaryBudgetNotMet;
+            sb.Append(string.Format(c, L10n.Tr(key), AvatarName, TrianglesBefore, TrianglesAfter, HiddenRemoved,
+                TrianglesBefore - HiddenRemoved - TrianglesAfter,
+                Target == TargetKind.TriangleBudget ? TriangleBudget.ToString(c) : Tolerance.ToString("0.###", c),
+                (ErrorLevel * 1000f).ToString("0.###", c), Times.Total.ToString("0", c)));
             if (HiddenRestored > 0)
                 sb.Append($"\n  {HiddenRestored} hidden triangles kept because decimation took their cover.");
             var refused = Renderers.Sum(r => r.ClearanceRefused);

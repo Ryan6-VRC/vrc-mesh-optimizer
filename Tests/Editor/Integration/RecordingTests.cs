@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Liveness;
+using Ryan6Vrc.MeshOptimizer.Localization;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using Unity.Collections;
@@ -130,7 +131,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That((g.Decimated, g.SequenceLength), Is.EqualTo((false, 0)));
             var named = failed.Diagnostics.Where(d => d.Key == DiagnosticKeys.RendererFailed).ToList();
             Assert.That(named.Count, Is.EqualTo(1));
-            Assert.That(named[0].Args, Is.EqualTo(new object[] { garment, nameof(PipelineStage.Decimation), "injected" }));
+            Assert.That(named[0].Args, Is.EqualTo(new object[] { garment, L10n.Tr(DiagnosticKeys.Stage(PipelineStage.Decimation)), "injected" }));
             foreach (var r in decimated)
                 if (r != garment) AssertSameRecording(Of(healthy, r), Of(failed, r));
         }

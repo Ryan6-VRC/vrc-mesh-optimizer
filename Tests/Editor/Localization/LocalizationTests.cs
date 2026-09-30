@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Inspector;
+using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
 using UnityEngine;
@@ -33,6 +34,28 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
 
             Assert.That(ja.Keys, Is.EquivalentTo(en.Keys));
             Assert.That(ja.Where(e => string.IsNullOrWhiteSpace(e.Value)).Select(e => e.Key), Is.Empty);
+        }
+
+        // A placeholder one language drops loses that value for its readers, and one it adds that the English lacks throws.
+        [Test]
+        public void EveryJapaneseString_TakesTheSamePlaceholders_AsItsEnglish()
+        {
+            var en = Entries("en-us.po");
+            var ja = Entries("ja-jp.po");
+            string Placeholders(string s) => string.Join(",", Regex.Matches(s, @"\{\d+\}").Cast<Match>().Select(m => m.Value).Distinct().OrderBy(p => p));
+
+            Assert.That(en.Keys.Where(k => ja.ContainsKey(k) && Placeholders(en[k]) != Placeholders(ja[k])), Is.Empty);
+        }
+
+        // Keys built in code rather than drawn by the inspector: the stage a renderer failed at, and the summary's first line.
+        [Test]
+        public void EveryStageAndSummaryKey_HasAnEnglishString()
+        {
+            var en = Entries("en-us.po");
+            var keys = System.Enum.GetValues(typeof(PipelineStage)).Cast<PipelineStage>().Select(DiagnosticKeys.Stage)
+                .Concat(new[] { OptimizationReport.SummaryBudgetMet, OptimizationReport.SummaryBudgetNotMet, OptimizationReport.SummaryTolerance });
+
+            Assert.That(keys.Where(k => !en.ContainsKey(k)), Is.Empty);
         }
 
         [Test]
