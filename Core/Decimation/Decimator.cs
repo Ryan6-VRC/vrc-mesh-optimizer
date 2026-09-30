@@ -25,7 +25,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// together) onto a neighbour and moves nothing: every surviving vertex keeps its position, weights, UVs,
     /// normals and shape deltas exactly as authored, so the output is a subset of the source vertices.
     /// </summary>
-    public static class Decimator
+    internal static class Decimator
     {
         public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, Allocator allocator) =>
             Run(mesh, settings, protection, default, default, allocator, out _);

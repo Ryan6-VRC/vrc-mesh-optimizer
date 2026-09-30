@@ -9,7 +9,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     // Each test builds a body under a cover and states the verdict the shared-weights rule owes it, with a
     // control beside it: the same geometry with the one property under test changed, deciding the other
     // way. A test whose control would decide the same way proves nothing about that property.
-    public class OcclusionRuleTests
+    internal class OcclusionRuleTests
     {
         const float Inner = 0.1f;
         const float Outer = 0.105f;

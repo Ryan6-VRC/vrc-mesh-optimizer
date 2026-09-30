@@ -8,7 +8,7 @@ using Unity.Mathematics;
 namespace Ryan6Vrc.MeshOptimizer.Core.Topology
 {
     /// <summary>How a wedge may move under decimation.</summary>
-    public enum VertexKind : byte
+    internal enum VertexKind : byte
     {
         /// <summary>No open edge: may collapse onto any neighbour.</summary>
         Interior = 0,
@@ -22,7 +22,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         Locked = 3,
     }
 
-    public struct TopologySettings
+    internal struct TopologySettings
     {
         /// <summary>Two wedges' influences agree when every bone's weight differs by at most this.</summary>
         public float WeightTolerance;
@@ -45,7 +45,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
     /// share, so a material boundary through a shared vertex becomes a seam between the submeshes' uses of it.
     /// Wedges are working vertices at one exact position.
     /// </summary>
-    public struct MeshTopology : IDisposable
+    internal struct MeshTopology : IDisposable
     {
         /// <summary>Working vertex to source vertex. Identity over the first source-count entries.</summary>
         public NativeArray<int> Origin;

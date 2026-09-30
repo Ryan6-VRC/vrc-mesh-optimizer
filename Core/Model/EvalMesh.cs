@@ -8,14 +8,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
     /// One skin influence. <see cref="Bone"/> is an avatar-wide id, one per Transform, so influences
     /// compare across renderers.
     /// </summary>
-    public struct BoneInfluence
+    internal struct BoneInfluence
     {
         public int Bone;
         public float Weight;
     }
 
     /// <summary>A live shape key frame: a run of <see cref="EvalMesh.Deltas"/>, and the state of the avatar it is part of.</summary>
-    public struct ShapeFrame
+    internal struct ShapeFrame
     {
         public int DeltaStart;
         public int DeltaCount;
@@ -31,7 +31,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
     /// One vertex's displacement in one frame, in avatar-root space: from where it stands at rest to where
     /// the frame's configuration puts it.
     /// </summary>
-    public struct ShapeDelta
+    internal struct ShapeDelta
     {
         public int Vertex;
         public float3 Delta;
@@ -53,7 +53,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Model
     /// weights they reach, every other key held. Vertex v stands at Positions[v] in the rest state, and at
     /// Positions[v] plus the frame's delta for v, if it has one, in that frame's configuration.
     /// </summary>
-    public struct EvalMesh : IDisposable
+    internal struct EvalMesh : IDisposable
     {
         public NativeArray<float3> Positions;
         /// <summary>Unit length, avatar-root space.</summary>

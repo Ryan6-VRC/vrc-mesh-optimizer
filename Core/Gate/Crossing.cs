@@ -6,7 +6,7 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Gate
 {
-    public struct CrossingSettings
+    internal struct CrossingSettings
     {
         /// <summary>
         /// Metres a triangle must reach past the other's plane, on both sides, for the pair to cross. A surface sewn to
@@ -34,7 +34,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     }
 
     /// <summary>One piece of the line where a triangle of A crosses a triangle of B, in the surfaces' space.</summary>
-    public struct CrossingSegment
+    internal struct CrossingSegment
     {
         public float3 Start;
         public float3 End;
@@ -60,7 +60,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public bool SameFacing;
     }
 
-    public struct CrossingStats
+    internal struct CrossingStats
     {
         /// <summary>Metres of crossing line.</summary>
         public double Length;
@@ -73,7 +73,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     }
 
     /// <summary>What an optimizer pass did to the crossing between one pair of surfaces in one configuration.</summary>
-    public struct CrossingChange
+    internal struct CrossingChange
     {
         public CrossingStats Before;
         public CrossingStats After;
@@ -95,7 +95,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     /// <see cref="CrossingSettings.Touch"/>, and their two cuts along the planes' common line overlap. Deterministic:
     /// the segments come sorted by triangle pair, and every sum runs in that order.
     /// </summary>
-    public static class Crossing
+    internal static class Crossing
     {
         /// <summary>Fills <paramref name="segments"/> with where A's triangles cross B's. Excluded triangles take no part.</summary>
         /// <param name="drawnOpposite">

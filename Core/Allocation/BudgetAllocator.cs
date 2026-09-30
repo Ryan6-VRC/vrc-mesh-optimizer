@@ -6,7 +6,7 @@ using Unity.Collections;
 namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
 {
     /// <summary>One renderer's recorded decimation, and how far it may be cut.</summary>
-    public struct AllocationEntry
+    internal struct AllocationEntry
     {
         public NativeArray<CollapseStep> Steps;
         public int InitialTriangleCount;
@@ -34,7 +34,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
         }
     }
 
-    public struct AllocationResult
+    internal struct AllocationResult
     {
         /// <summary>Per entry, the step count to cut its sequence at.</summary>
         public int[] Cuts;
@@ -54,7 +54,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
     /// the most error: a flat lining gives up more than a curved face. Each renderer's error is multiplied by
     /// its weight before comparison, and no renderer is cut below its floor.
     /// </summary>
-    public static class BudgetAllocator
+    internal static class BudgetAllocator
     {
         /// <summary>
         /// The lowest common weighted error level whose cuts total at most <paramref name="triangleBudget"/>. Above 0,

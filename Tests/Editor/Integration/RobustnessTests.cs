@@ -11,7 +11,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 {
     // Real avatars bring renderers the pass cannot or need not change. Each one is left exactly as it was, and
     // named when it is a problem the user can see, while the rest of the avatar is still optimized.
-    public class RobustnessTests
+    internal class RobustnessTests
     {
         AvatarFixture a;
         Transform chest;
