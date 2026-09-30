@@ -16,7 +16,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public const string OcclusionFailed = "MeshOptimizer:diag:occlusion-failed";
         /// <summary>{0} the exception's message.</summary>
         public const string RejudgeFailed = "MeshOptimizer:diag:rejudge-failed";
-        /// <summary>{0} the triangles reached, {1} the budget.</summary>
+        /// <summary>{0} the triangles reached, {1} the budget, {2} of the triangles reached, the hidden ones written back because the cut took their cover.</summary>
         public const string BudgetNotMet = "MeshOptimizer:diag:budget-not-met";
         /// <summary>{0} the triangles reached, {1} the budget, {2} the error ceiling in millimetres, which stopped the cut first.</summary>
         public const string BudgetCeilingHeld = "MeshOptimizer:diag:budget-ceiling-held";

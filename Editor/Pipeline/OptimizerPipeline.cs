@@ -291,7 +291,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 report.Diagnostics.Add(pass.CeilingHeld && pass.TrianglesAfter(jobs) > settings.triangleBudget
                     ? new Diagnostic(DiagnosticKeys.BudgetCeilingHeld, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString(),
                         settings.maxError.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
-                    : new Diagnostic(DiagnosticKeys.BudgetNotMet, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString()));
+                    : new Diagnostic(DiagnosticKeys.BudgetNotMet, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString(), report.HiddenRestored.ToString()));
             report.Times.Total = prepared.PrepareMs + total.Elapsed.TotalMilliseconds + input.LivenessMs;
             return report;
         }
