@@ -71,8 +71,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                         throw new System.ArgumentException($"clearance share {c.Share} is outside [0, 0.5): at one half or more, two layers each giving up their share can meet");
                     if (!(c.Reach > 0f))
                         throw new System.ArgumentException($"clearance reach {c.Reach} m must be above 0; turn the rule off with Clearance.Enabled instead");
-                    if (!(c.CrossingAllowance >= 0f))
-                        throw new System.ArgumentException($"crossing allowance {c.CrossingAllowance} m must be 0 or more; below 0, surface that touches another layer without crossing it could never collapse");
+                    if (!(c.CrossingAllowance >= 0f) || float.IsPositiveInfinity(c.CrossingAllowance))
+                        throw new System.ArgumentException($"crossing allowance {c.CrossingAllowance} m must be finite and 0 or more; below 0, surface that touches another layer without crossing it could never collapse, and at infinity any crossing could lengthen");
                     if (c.Reach != clearance.Surface.Reach)
                         throw new System.ArgumentException($"clearance reach {c.Reach} m differs from the {clearance.Surface.Reach} m the surface was built with; build it with the reach decimation runs with");
                     var live = new NativeArray<bool>(topology.Triangles.Length, Allocator.Persistent);

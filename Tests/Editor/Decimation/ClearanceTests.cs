@@ -382,17 +382,20 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(Enumerable.Range(0, off.Records.Length).All(i => off.Records[i].Equals(plain.Records[i])), Is.True);
         }
 
-        [TestCase(0.5f, 0.02f)]
-        [TestCase(-0.1f, 0.02f)]
-        [TestCase(0.4f, 0f)]
-        [TestCase(0.4f, 0.01f)]
-        public void ASettingThatBreaksTheGuarantee_IsRefused(float share, float reach)
+        [TestCase(0.5f, 0.02f, 1e-9f)]
+        [TestCase(-0.1f, 0.02f, 1e-9f)]
+        [TestCase(0.4f, 0f, 1e-9f)]
+        [TestCase(0.4f, 0.01f, 1e-9f)]
+        [TestCase(0.4f, 0.02f, -1e-9f)]
+        [TestCase(0.4f, 0.02f, float.PositiveInfinity)]
+        public void ASettingThatBreaksTheGuarantee_IsRefused(float share, float reach, float allowance)
         {
             using var scene = SkinAndLayer(Gap);
             var e = Assert.Throws<System.ArgumentException>(() => scene.Decimate(1, true, out _, s =>
             {
                 s.Clearance.Share = share;
                 s.Clearance.Reach = reach;
+                s.Clearance.CrossingAllowance = allowance;
                 return s;
             }).Dispose());
             TestContext.WriteLine(e.Message);

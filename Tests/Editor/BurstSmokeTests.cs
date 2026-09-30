@@ -112,6 +112,18 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             }
         }
 
+        /// <summary>Step for step and bit for bit the same sequence: every error level, triangle count and record.</summary>
+        static void AssertSame(in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence x, in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence y, string name)
+        {
+            Assert.That(y.Length, Is.EqualTo(x.Length), $"{name}: steps");
+            for (var s = 0; s < x.Length; s++)
+            {
+                Assert.That(math.asuint(y.Steps[s].Error), Is.EqualTo(math.asuint(x.Steps[s].Error)), $"{name} step {s}: error");
+                Assert.That(y.Steps[s].TriangleCount, Is.EqualTo(x.Steps[s].TriangleCount), $"{name} step {s}: triangles");
+            }
+            Assert.That(y.Records.ToArray(), Is.EqualTo(x.Records.ToArray()), $"{name}: records");
+        }
+
         /// <summary>Three tubes a millimetre or less apart over a joint, with the rig they are weighted to.</summary>
         static Decimation.LayerFixtures.Scene BentLayers()
         {
@@ -137,10 +149,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
         // The loop with the clearance rule on, over the scenes the side-by-side test uses: near layers over a joint, measured in
         // bends, and a crossing, where the rule compares crossing lengths Burst and managed code round differently. It runs with a
         // crossing allowance of 1e-7 m. At the default, 1e-9, the two paths part: where a collapse leaves a crossing as it was, the
-        // rule compares two sums of segment lengths equal but for rounding, the paths round them apart by up to about 1e-8 m there,
-        // and the crossing scene's skin is refused at step 1,381 under Burst a collapse managed code makes, then records a different
-        // mesh. At 1e-7 every crossing check decides alike and the crossing scene records bit for bit the same on both paths. The
-        // bent layers' records part among collapses of near-equal cost with the rule on or off, within the comparison above.
+        // rule compares two sums of segment lengths equal but for rounding, the paths put that margin apart by up to about 1.5e-8 m,
+        // and at step 1,381 of the crossing scene's skin Burst refuses a collapse managed code makes, so from there the two record
+        // different meshes. At 1e-7 every crossing check decides alike, and the crossing scene must record bit for bit the same on
+        // both paths. The bent layers' records part among collapses of near-equal cost with the rule on or off, from rounding in the
+        // bends rather than the crossing check, so they are held only to the comparison above.
         const float CrossingAllowance = 1e-7f;
 
         [Test]
@@ -155,7 +168,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             using var crossing = SlopedCrossing();
             var held = JobsUtility.JobCompilerEnabled;
             Assume.That(held, "Burst is off in this Editor, so there is no compiled code to compare");
-            foreach (var (scene, label) in new[] { (bent, "bent layers"), (crossing, "crossing") })
+            foreach (var (scene, label, same) in new[] { (bent, "bent layers", false), (crossing, "crossing", true) })
                 for (var m = 0; m < scene.Meshes.Count; m++)
                 {
                     Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst = default, managed = default;
@@ -175,6 +188,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
                         TestContext.WriteLine($"{label} mesh {m}: {burst.Length} steps under Burst, {managed.Length} managed; refused {burstStats.Refused} and {managedStats.Refused}; last error {burst.Steps[burst.Length - 1].Error * 1000:0.0000} and {managed.Steps[managed.Length - 1].Error * 1000:0.0000} mm");
                         Assert.That(burstStats.Refused, Is.GreaterThan(0), $"{label} mesh {m}: the rule acts");
                         AssertAlike(burst, managed, $"{label} mesh {m}");
+                        if (same) AssertSame(burst, managed, $"{label} mesh {m}");
                     }
                     finally
                     {
@@ -211,13 +225,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
                         var x = alone[m];
                         var y = together[m];
                         Assert.That(x.Length, Is.GreaterThan(100), $"mesh {m} decimates");
-                        Assert.That(y.Length, Is.EqualTo(x.Length), $"mesh {m}: steps");
-                        for (var s = 0; s < x.Length; s++)
-                        {
-                            Assert.That(math.asuint(y.Steps[s].Error), Is.EqualTo(math.asuint(x.Steps[s].Error)), $"mesh {m} step {s}: error");
-                            Assert.That(y.Steps[s].TriangleCount, Is.EqualTo(x.Steps[s].TriangleCount), $"mesh {m} step {s}: triangles");
-                        }
-                        Assert.That(y.Records.ToArray(), Is.EqualTo(x.Records.ToArray()), $"mesh {m}: records");
+                        AssertSame(x, y, $"mesh {m}");
                     }
                 }
                 finally

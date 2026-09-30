@@ -130,7 +130,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         const double TinyWeight = 1e-30;
         const float TieBreak = 1e-4f;
         /// <summary>The fraction of its crossing a collapse may add without counting as lengthening it: relative, so ten
-        /// thousand collapses on one crossing lengthen it by at most a hundredth, where an absolute allowance adds up over
+        /// thousand collapses on one crossing lengthen it by about a hundredth, where an absolute allowance adds up over
         /// them. The rounding of each segment length summed does not shrink with the crossing, so a short crossing's is
         /// <see cref="ClearanceSettings.CrossingAllowance"/>'s to cover.</summary>
         const float CrossingSlack = 1e-6f;
