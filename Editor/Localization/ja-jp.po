@@ -107,6 +107,78 @@ msgstr "保護の強さ"
 msgid "RendererSettings:protection:tooltip"
 msgstr "このレンダラーの細部をどれだけ残すかです。目標に対して、このレンダラーの誤差をこの倍数で数えます。1が標準で、大きいほど多く残します。"
 
+msgid "MeshOptimizer:faceFloor"
+msgstr "顔に残す割合"
+
+msgid "MeshOptimizer:faceFloor:tooltip"
+msgstr "リップシンクに使う顔のレンダラーが、目標に関係なく残すポリゴンの割合です。表情で最も大きく変形し、他のプレイヤーが最もよく見る部分なので、削減はまず他の部分で行われます。"
+
+msgid "MeshOptimizer:lockFingers"
+msgstr "指を保護する"
+
+msgid "MeshOptimizer:lockFingers:tooltip"
+msgstr "Humanoidのボーン割り当てから指を見つけ、指に乗っている頂点をすべて残します。指は関節ごとに曲がり、削減するとすぐに細くなってしまいます。"
+
+msgid "MeshOptimizer:fingerWeight"
+msgstr "指のウェイト"
+
+msgid "MeshOptimizer:fingerWeight:tooltip"
+msgstr "指のボーンにこの値以上のウェイトを持つ頂点を、指の頂点として扱います。小さくするほど手の多くの部分が保護されます。"
+
+msgid "MeshOptimizer:advanced"
+msgstr "詳細設定"
+
+msgid "MeshOptimizer:preset"
+msgstr "プリセット"
+
+msgid "MeshOptimizer:preset:tooltip"
+msgstr "許容差の目安です。「細かい」は細部を最も多く残し、「粗い」は最も多く削減します。許容差を直接変更すると「カスタム」になります。"
+
+msgid "TolerancePreset:Fine"
+msgstr "細かい (0.5 mm)"
+
+msgid "TolerancePreset:Standard"
+msgstr "標準 (1 mm)"
+
+msgid "TolerancePreset:Medium"
+msgstr "やや粗い (2 mm)"
+
+msgid "TolerancePreset:Coarse"
+msgstr "粗い (3 mm)"
+
+msgid "TolerancePreset:Custom"
+msgstr "カスタム"
+
+msgid "MeshOptimizer:preview"
+msgstr "削減をプレビュー"
+
+msgid "MeshOptimizer:preview:tooltip"
+msgstr "削減後のメッシュをシーンビューに表示します。最初のプレビューはすべてのメッシュを記録するため時間がかかることがあります。その後に目標を変えた場合は、切り直すだけで済みます。"
+
+msgid "MeshOptimizer:preview:off"
+msgstr "プレビューはオフです。"
+
+msgid "MeshOptimizer:preview:pending"
+msgstr "プレビューを計算しています。"
+
+msgid "MeshOptimizer:preview:result"
+msgstr "ポリゴン数 {0} → {1}、誤差レベル {2} mm"
+
+msgid "MeshOptimizer:preview:failed"
+msgstr "プレビューに失敗しました: {0}"
+
+msgid "MeshOptimizer:preview:note:controllers"
+msgstr "プレビューはポリゴン削減のみを表示します。隠れたポリゴンの削除はビルド時に行われます。シェイプキーは、他のツールがアニメーターを追加する前の、アバター自身のアニメーターから判定するため、ビルド結果のポリゴン数とは異なることがあります。"
+
+msgid "MeshOptimizer:preview:note:every-key-live"
+msgstr "プレビューはポリゴン削減のみを表示します。隠れたポリゴンの削除はビルド時に行われます。アニメーターが見つからないため、すべてのシェイプキーを動くものとして判定しています。ビルドではさらに削減されることがあります。"
+
+msgid "MeshOptimizer:preview:progress"
+msgstr "Mesh Optimizer プレビュー"
+
+msgid "MeshOptimizer:preview:progress:info"
+msgstr "{0} の削減を記録しています"
+
 msgid "MeshOptimizer:diag:not-readable"
 msgstr "Mesh Optimizerが{1}を読み込めません"
 

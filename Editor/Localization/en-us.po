@@ -107,6 +107,78 @@ msgstr "Protection"
 msgid "RendererSettings:protection:tooltip"
 msgstr "How much detail this renderer keeps: its error counts this many times over against the target. 1 is neutral; higher keeps more."
 
+msgid "MeshOptimizer:faceFloor"
+msgstr "Face keeps at least"
+
+msgid "MeshOptimizer:faceFloor:tooltip"
+msgstr "The share of its triangles the lip-sync face renderer keeps, whatever the target. Its expressions deform it most and other players watch it, so the reduction is spent elsewhere first."
+
+msgid "MeshOptimizer:lockFingers"
+msgstr "Lock fingers"
+
+msgid "MeshOptimizer:lockFingers:tooltip"
+msgstr "Keep every vertex that rides a finger, found through the humanoid rig. Fingers bend at every joint and thin out quickly when decimated."
+
+msgid "MeshOptimizer:fingerWeight"
+msgstr "Finger weight"
+
+msgid "MeshOptimizer:fingerWeight:tooltip"
+msgstr "A vertex with at least this much skin weight on a finger bone counts as a finger vertex. Lower locks more of the hand."
+
+msgid "MeshOptimizer:advanced"
+msgstr "Advanced"
+
+msgid "MeshOptimizer:preset"
+msgstr "Preset"
+
+msgid "MeshOptimizer:preset:tooltip"
+msgstr "A tolerance to start from. Fine keeps the most detail and Coarse removes the most; editing the tolerance by hand makes it Custom."
+
+msgid "TolerancePreset:Fine"
+msgstr "Fine (0.5 mm)"
+
+msgid "TolerancePreset:Standard"
+msgstr "Standard (1 mm)"
+
+msgid "TolerancePreset:Medium"
+msgstr "Medium (2 mm)"
+
+msgid "TolerancePreset:Coarse"
+msgstr "Coarse (3 mm)"
+
+msgid "TolerancePreset:Custom"
+msgstr "Custom"
+
+msgid "MeshOptimizer:preview"
+msgstr "Preview decimation"
+
+msgid "MeshOptimizer:preview:tooltip"
+msgstr "Show the decimated meshes in the Scene view. The first preview records every mesh and can take a while; changing the target afterwards only re-cuts."
+
+msgid "MeshOptimizer:preview:off"
+msgstr "The preview is off."
+
+msgid "MeshOptimizer:preview:pending"
+msgstr "The preview is being computed."
+
+msgid "MeshOptimizer:preview:result"
+msgstr "Triangles {0} before, {1} after; error level {2} mm"
+
+msgid "MeshOptimizer:preview:failed"
+msgstr "The preview failed: {0}"
+
+msgid "MeshOptimizer:preview:note:controllers"
+msgstr "The preview shows decimation only; hidden triangles are removed at build. Shape keys are judged from the avatar's own animators, before other tools add theirs, so the build's count can differ."
+
+msgid "MeshOptimizer:preview:note:every-key-live"
+msgstr "The preview shows decimation only; hidden triangles are removed at build. No animator was found, so every shape key is judged as animated and the build can cut deeper."
+
+msgid "MeshOptimizer:preview:progress"
+msgstr "Mesh Optimizer preview"
+
+msgid "MeshOptimizer:preview:progress:info"
+msgstr "Recording the decimation of {0}"
+
 msgid "MeshOptimizer:diag:not-readable"
 msgstr "Mesh Optimizer cannot read {1}"
 

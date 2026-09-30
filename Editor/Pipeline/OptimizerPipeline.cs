@@ -342,7 +342,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         static void Record(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             var settings = input.Settings;
-            var protection = new Protection(input.Root, bones, input.ScaleCurves);
+            var protection = new Protection(input.Root, bones, settings.faceFloor, settings.lockFingers, settings.fingerWeight, input.ScaleCurves);
             var perRenderer = new Dictionary<Renderer, RendererSettings>();
             foreach (var s in settings.renderers)
                 if (s != null && s.renderer != null) perRenderer[s.renderer] = s;

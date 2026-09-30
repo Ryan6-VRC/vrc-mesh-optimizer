@@ -100,6 +100,31 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
+        // The protect settings were constants before they were fields: the face keeps half its triangles and a vertex with a
+        // hundredth of its weight on a finger is locked. A component saved before the fields existed, as the fixture was,
+        // reads those same values, so it builds as it did.
+        [Test]
+        public void TheProtectSettings_ReadTheFormerConstants_FreshAndForAComponentSavedBeforeThem()
+        {
+            var text = System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture));
+            foreach (var field in new[] { "faceFloor", "lockFingers", "fingerWeight" })
+                Assert.That(text, Does.Not.Contain(field), "the fixture stands for a component saved before the fields");
+            var fresh = new GameObject("Fresh");
+            try
+            {
+                foreach (var c in new[] { AssetDatabase.LoadAssetAtPath<GameObject>(Fixture).GetComponent<AvatarMeshOptimizer>(), fresh.AddComponent<AvatarMeshOptimizer>() })
+                {
+                    Assert.That(c.faceFloor, Is.EqualTo(0.5f));
+                    Assert.That(c.lockFingers, Is.True);
+                    Assert.That(c.fingerWeight, Is.EqualTo(0.01f));
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+            }
+        }
+
         // The decimation defaults a build runs with, which the component does not expose: the normal term's weight, the
         // clearance rule on at its share and crossing allowance, bends at their swing and share of the gap, and re-judging
         // on. Each is a measured choice, tuned on real avatars against the triangles it costs, so changing one is a decision

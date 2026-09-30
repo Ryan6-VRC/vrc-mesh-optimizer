@@ -4,6 +4,7 @@ using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
+using Ryan6Vrc.MeshOptimizer.Runtime;
 using Unity.Collections;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
@@ -13,14 +14,14 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
     /// <summary>What decimation must keep on an avatar, found from the avatar's own descriptor and humanoid mapping.</summary>
     internal sealed class Protection
     {
-        /// <summary>
-        /// The share of its triangles the face renderer keeps whatever the target: lip sync and expressions deform it
-        /// most and it is the surface other players watch, so an aggressive budget is spent elsewhere first.
-        /// </summary>
-        public const float FaceFloor = 0.5f;
+        /// <summary>The share of its triangles the face renderer keeps whatever the target (<see cref="AvatarMeshOptimizer.faceFloor"/>).</summary>
+        readonly float _faceFloor;
 
-        /// <summary>A vertex with at least this much weight on a finger is a finger vertex.</summary>
-        public const float FingerWeight = 0.01f;
+        /// <summary>
+        /// A vertex with at least this much weight on a finger is a finger vertex (<see cref="AvatarMeshOptimizer.fingerWeight"/>);
+        /// infinite when the fingers are not locked, so no weight reaches it.
+        /// </summary>
+        readonly float _fingerWeight;
 
         static readonly HumanBodyBones[] FingerRoots =
         {
@@ -36,9 +37,14 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         /// <summary>The renderer the descriptor names for visemes, or null.</summary>
         public Renderer Face { get; }
 
+        /// <param name="faceFloor">The face's share, clamped to 0 to 1 (<see cref="AvatarMeshOptimizer.faceFloor"/>).</param>
+        /// <param name="lockFingers">Whether finger vertices are locked at all (<see cref="AvatarMeshOptimizer.lockFingers"/>).</param>
+        /// <param name="fingerWeight">The finger weight that locks a vertex, raised to 0.001 at least (<see cref="AvatarMeshOptimizer.fingerWeight"/>).</param>
         /// <param name="scaleCurves">Scale curves any clip can play, for <see cref="UnstableBones.Growth"/>; null reads as none.</param>
-        public Protection(Transform root, AvatarBones bones, IEnumerable<ScaleCurve> scaleCurves = null)
+        public Protection(Transform root, AvatarBones bones, float faceFloor, bool lockFingers, float fingerWeight, IEnumerable<ScaleCurve> scaleCurves = null)
         {
+            _faceFloor = Mathf.Clamp01(faceFloor);
+            _fingerWeight = lockFingers ? Mathf.Max(fingerWeight, 0.001f) : float.PositiveInfinity;
             _growth = UnstableBones.Growth(bones, scaleCurves);
             var descriptor = root.GetComponent<VRCAvatarDescriptor>();
             Face = descriptor != null ? descriptor.VisemeSkinnedMesh : null;
@@ -61,7 +67,7 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
 
         /// <summary>The fewest triangles <paramref name="renderer"/> may be cut to, out of <paramref name="triangles"/>.</summary>
         public int FloorFor(Renderer renderer, int triangles) =>
-            renderer != null && renderer == Face ? Mathf.CeilToInt(triangles * FaceFloor) : 0;
+            renderer != null && renderer == Face ? Mathf.CeilToInt(triangles * _faceFloor) : 0;
 
         /// <summary>
         /// What the decimator keeps of one renderer's vertices: every vertex <see cref="Locks"/> locks, every vertex of a
@@ -127,7 +133,7 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
                     var bone = mesh.Weights[k].Bone;
                     if (bone < _finger.Length && _finger[bone]) onFinger += mesh.Weights[k].Weight;
                 }
-                if (onFinger < FingerWeight && !fromZero) continue;
+                if (onFinger < _fingerWeight && !fromZero) continue;
                 locks ??= new byte[mesh.VertexCount];
                 locks[v] = 1;
                 count++;

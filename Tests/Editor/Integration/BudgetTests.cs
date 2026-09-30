@@ -162,21 +162,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(round.sharedMesh, Is.SameAs(mesh));
         }
 
-        [Test]
-        public void TheVisemeRenderer_StaysAtOrAboveItsFloor_WhileItsTwinGoesBelow()
+        // At the component's default floor, and at one the user raised: the face keeps its share, its twin does not.
+        [TestCase(null)]
+        [TestCase(0.8f)]
+        public void TheVisemeRenderer_StaysAtOrAboveItsFloor_WhileItsTwinGoesBelow(float? faceFloor)
         {
             var face = Ball("Face", new Vector3(1, 0, 0));
             var twin = Ball("Twin", new Vector3(2, 0, 0));
             var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
             descriptor.VisemeSkinnedMesh = face;
-            Budget(100);
+            var c = Budget(100);
+            if (faceFloor.HasValue) c.faceFloor = faceFloor.Value;
+            var floor = c.faceFloor;
 
             var report = a.Run();
 
             var f = Of(report, face);
-            Assert.That(f.FloorTriangles, Is.EqualTo(Mathf.CeilToInt(f.TrianglesBefore * Protection.FaceFloor)));
+            Assert.That(f.FloorTriangles, Is.EqualTo(Mathf.CeilToInt(f.TrianglesBefore * floor)));
             Assert.That(f.TrianglesAfter, Is.GreaterThanOrEqualTo(f.FloorTriangles));
-            Assert.That(Kept(Of(report, twin)), Is.LessThan(Protection.FaceFloor), "the same sphere, unnamed, is cut deeper");
+            Assert.That(Kept(f), Is.GreaterThanOrEqualTo(floor));
+            Assert.That(Kept(Of(report, twin)), Is.LessThan(floor), "the same sphere, unnamed, is cut deeper");
             Assert.That(report.TargetMet, Is.False, "the floor stops the budget");
         }
 
@@ -275,10 +280,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         }
 
         // A dense patch on the right hand: the half at +X rides the index finger, the rest the hand. Fingers are
-        // found through the humanoid mapping, so the same bones without a humanoid avatar protect nothing.
-        [TestCase(true)]
-        [TestCase(false)]
-        public void FingerVertices_SurviveAnyBudget_WhenTheHumanoidMappingNamesThem(bool humanoid)
+        // found through the humanoid mapping, so the same bones without a humanoid avatar protect nothing, and neither
+        // does a humanoid one with the lock turned off.
+        [TestCase(true, true)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        public void FingerVertices_SurviveAnyBudget_WhenTheHumanoidMappingNamesThem(bool humanoid, bool lockFingers)
         {
             var skeleton = new Humanoid(a);
             if (!humanoid) a.Root.GetComponent<Animator>().avatar = null;
@@ -287,7 +294,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var mesh = a.Grid(24, 0.002f, "hand");
             Weight(mesh, v => v.x > 0 ? 1 : 0);
             var renderer = a.Skinned("Hand", mesh, new[] { hand, finger }, parent: hand);
-            Budget(20);
+            Budget(20).lockFingers = lockFingers;
 
             var report = a.Run();
 
@@ -295,14 +302,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var kept = new HashSet<int>(r.KeptVertices);
             var onFinger = mesh.vertices.Select((v, i) => (v, i)).Where(p => p.v.x > 0).Select(p => p.i).ToList();
             var onHand = mesh.vertices.Length - onFinger.Count;
-            if (humanoid)
+            if (humanoid && lockFingers)
             {
                 Assert.That(onFinger.Where(i => !kept.Contains(i)), Is.Empty, "every finger vertex is locked");
                 Assert.That(r.LockedVertices, Is.EqualTo(onFinger.Count));
             }
             else
             {
-                Assert.That(onFinger.Count(i => !kept.Contains(i)), Is.GreaterThan(onFinger.Count / 2), "bone names alone protect nothing");
+                Assert.That(onFinger.Count(i => !kept.Contains(i)), Is.GreaterThan(onFinger.Count / 2), "nothing protects them");
                 Assert.That(r.LockedVertices, Is.Zero);
             }
             Assert.That(kept.Count, Is.LessThan(onFinger.Count + onHand), "the hand half decimates either way");
