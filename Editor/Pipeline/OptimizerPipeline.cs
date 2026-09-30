@@ -875,7 +875,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>
         /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
         /// each renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>. Kept means what occlusion left: a triangle
-        /// it deleted is not there to be passed through. A renderer off at build is in it like any other, since whatever
+        /// it removed is not in it, so nothing is held clear of it. Re-judging (<see cref="Cut"/>) writes such a triangle back
+        /// where the cut took its cover, and it was never a neighbour, so the renderer cut over it may cross it there. A
+        /// renderer off at build is in it like any other, since whatever
         /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is a renderer the
         /// pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be read: it is still
         /// drawn where it stands, whole, so its neighbours keep clear of its source.

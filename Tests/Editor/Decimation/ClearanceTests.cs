@@ -20,10 +20,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         static readonly float[] Levels = { 0.0005f, 0.001f, 0.002f, 0.004f };
 
         /// <summary>
-        /// The cost without the normal term, for the two cases below whose bounds hold on the order the position cost alone
-        /// collapses in. The normal term keeps more of a rippled tube whether the rule is on or not, so a count of vertices
-        /// kept near a line reads higher; and where layers meet at under about 6 degrees the rule lets a crossing move
-        /// farther than the gate's 5 mm (see CrossingDrift), so there another order can read as new crossing.
+        /// The cost without the normal term, for the case below whose bound holds on the order the position cost alone
+        /// collapses in: where layers meet at under about 6 degrees the rule lets a crossing move farther than the gate's
+        /// 5 mm (see CrossingDrift), so there another order can read as new crossing.
         /// </summary>
         static DecimationSettings PositionCostOnly(DecimationSettings s)
         {
@@ -143,10 +142,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         {
             using var scene = SkinAndSlopedLayer(from, to);
             var before = Crossing(scene.Builders[0], scene.Builders[1]);
-            using var skinOff = scene.Decimate(0, false, out _, PositionCostOnly);
-            using var layerOff = scene.Decimate(1, false, out _, PositionCostOnly);
-            using var skinOn = scene.Decimate(0, true, out var skinStats, PositionCostOnly);
-            using var layerOn = scene.Decimate(1, true, out var layerStats, PositionCostOnly);
+            using var skinOff = scene.Decimate(0, false, out _);
+            using var layerOff = scene.Decimate(1, false, out _);
+            using var skinOn = scene.Decimate(0, true, out var skinStats);
+            using var layerOn = scene.Decimate(1, true, out var layerStats);
             var line = lineAt * Length;
             const float band = 0.006f;
             var sourceNear = Enumerable.Range(0, scene.Builders[1].VertexCount).Count(v => math.abs(scene.Builders[1].Positions[v].y - line) < band);
@@ -162,8 +161,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var nearOff = KeptNear(scene.Builders[1], clo, line, band);
                 var nearOn = KeptNear(scene.Builders[1], cl, line, band);
                 TestContext.WriteLine($"{level * 1000} mm: crossing {crossOff * 100:0.0} cm without, {crossOn * 100:0.0} cm with; layer vertices kept near the line {nearOff} without, {nearOn} with");
-                // Against a locked region, which would keep every source vertex along the line.
-                Assert.That(nearOn, Is.LessThanOrEqualTo(level >= 0.002f ? sourceNear / 4 : sourceNear / 2), $"at {level * 1000} mm the region along the line decimates");
+                // Against a locked region, which would keep every source vertex along the line: the rule keeps no more than
+                // half of what the same cost without it removes there, so what is kept is the rule's and not the cost's.
+                Assert.That(nearOn, Is.LessThanOrEqualTo(nearOff + (sourceNear - nearOff) / 2), $"at {level * 1000} mm the region along the line decimates");
                 Assert.That(crossOff, Is.GreaterThan(before), $"at {level * 1000} mm without the rule the crossing grows");
                 Assert.That(crossOn, Is.LessThanOrEqualTo(before), $"at {level * 1000} mm with the rule it does not");
             }
@@ -201,26 +201,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
 
         // A coarse layer, a boot of few large triangles, crossing a fine one along a ring. Where the two already cross,
         // a collapse may not lengthen the crossing; it may not move it either, by shortening it against one of the
-        // boot's triangles and lengthening it against another.
-        // At meetings shallower than about a degree a crossing moves along by millimetres for every hundredth of a
-        // millimetre either surface moves, which the gate reads as new by its own stated design; this holds 2 degrees on
-        // the position cost's collapse order, below the 6 degrees the rule itself answers for.
-        [TestCase(0.004f, TestName = "{m}(meeting at about 2 degrees)")]
-        public void AFineLayerCrossingACoarseOne_GainsNoNewCrossing(float reach)
+        // boot's triangles and lengthening it against another. Held within CrossingDrift of its own source, a crossing
+        // stays within the gate's 5 mm wherever the layers meet at over 6 degrees: the rule's guarantee, checked here at
+        // about 7 degrees on the cost as it ships.
+        // Below the guarantee a crossing moves along by millimetres for every hundredth of a millimetre either surface
+        // moves, which the gate reads as new by its own stated design. The 2-degree case is a stated limit under it: it
+        // holds on the position cost's collapse order, and the normal term's order moves the crossing past the gate's 5 mm.
+        [TestCase(0.012f, false, TestName = "{m}(meeting at about 7 degrees)")]
+        [TestCase(0.004f, true, TestName = "{m}(meeting at about 2 degrees)")]
+        public void AFineLayerCrossingACoarseOne_GainsNoNewCrossing(float reach, bool positionCostOnly)
         {
             using var scene = new Scene();
             scene.Add(SkinTube());
             scene.Add(Tube(10, 4, Length, (a, y) => Skin(a, y) + math.lerp(-reach, reach, y / Length), 0.3f));
             scene.BuildSurface();
-            using var skin = scene.Decimate(0, true, out _, PositionCostOnly);
-            var result = new Dictionary<float, float>();
-            foreach (var level in Levels)
+            var cost = positionCostOnly ? PositionCostOnly : (System.Func<DecimationSettings, DecimationSettings>)null;
+            Dictionary<float, float> NewCrossingOfTheSkin(bool rule)
             {
-                using var cut = skin.Cut(Fixtures.CutAtError(skin, level), Allocator.Persistent);
-                result[level] = NewCrossing(scene.Builders[0], Fixtures.ToArray(cut.Triangles), scene.Builders[1], scene.Builders[1].Triangles.ToArray());
+                using var skin = scene.Decimate(0, rule, out _, cost);
+                var result = new Dictionary<float, float>();
+                foreach (var level in Levels)
+                {
+                    using var cut = skin.Cut(Fixtures.CutAtError(skin, level), Allocator.Persistent);
+                    result[level] = NewCrossing(scene.Builders[0], Fixtures.ToArray(cut.Triangles), scene.Builders[1], scene.Builders[1].Triangles.ToArray());
+                }
+                return result;
             }
-            TestContext.WriteLine($"new crossing with the rule: {string.Join(", ", result.Select(kv => $"{kv.Key * 1000} mm: {kv.Value * 100:0.0} cm"))}");
-            foreach (var kv in result) Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key * 1000} mm");
+            string Describe(Dictionary<float, float> r) => string.Join(", ", r.Select(kv => $"{kv.Key * 1000} mm: {kv.Value * 1000:0.0} mm"));
+            var off = NewCrossingOfTheSkin(false);
+            var on = NewCrossingOfTheSkin(true);
+            TestContext.WriteLine($"new crossing without the rule: {Describe(off)}");
+            TestContext.WriteLine($"new crossing with the rule: {Describe(on)}");
+            Assert.That(off.Values.Max(), Is.GreaterThan(0.005f), "without the rule the cut skin crosses the boot anew");
+            foreach (var kv in on) Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key * 1000} mm");
         }
 
         // Occlusion deletes the skin under a garment, leaving a hole with an open border that the garment passes over.

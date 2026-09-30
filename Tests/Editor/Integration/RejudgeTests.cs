@@ -34,16 +34,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         /// <summary>
         /// The garment a band of sphere from <paramref name="garmentFrom"/> degrees down, over a body of
-        /// <paramref name="rings"/> rings, left undecimated unless <paramref name="bodyDecimated"/>.
+        /// <paramref name="rings"/> rings, left undecimated unless <paramref name="bodyDecimated"/>. With
+        /// <paramref name="mirrored"/>, the garment is its own mirror image under a parent that mirrors it back, as
+        /// <see cref="MirrorTests"/> builds it: the world sees the same garment, drawn mirrored.
         /// </summary>
-        void Build(float garmentFrom, int rings = 16, bool bodyDecimated = false)
+        void Build(float garmentFrom, int rings = 16, bool bodyDecimated = false, bool mirrored = false)
         {
             a = new AvatarFixture();
             chest = a.Bone("Armature/Hips/Chest");
             var bodyMesh = Welded(a.Sphere(0.1f, rings, 2 * rings, name: "body"));
             bodyMesh.AddBlendShapeFrame("Swell", 100f, bodyMesh.vertices.Select(v => v.y < -0.03f ? v.normalized * 0.001f : Vector3.zero).ToArray(), null, null);
             body = a.Skinned("Body", bodyMesh, new[] { chest });
-            garment = a.Skinned("Garment", Welded(a.Sphere(0.105f, rings + rings / 2, 3 * rings, garmentFrom, 180f, name: "garment")), new[] { chest });
+            var garmentMesh = Welded(a.Sphere(0.105f, rings + rings / 2, 3 * rings, garmentFrom, 180f, name: "garment"));
+            if (mirrored)
+            {
+                var mirror = a.Bone("Armature/Hips/Chest/Mirror");
+                mirror.localScale = new Vector3(-1, 1, 1);
+                garment = a.Skinned("Garment", a.MirroredX(garmentMesh), new[] { a.Bone("Armature/Hips/Chest/Mirror/Bone") }, parent: mirror);
+            }
+            else garment = a.Skinned("Garment", garmentMesh, new[] { chest });
             var c = a.Optimizer(decimate: true);
             c.alwaysOn.Add(garment);
             if (!bodyDecimated) c.renderers.Add(new RendererSettings { renderer = body, excludeFromDecimation = true });
@@ -186,6 +195,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                         submesh.AddRange(eval.TriangleSubmesh);
                         removed.AddRange(new bool[eval.TriangleCount]);
                     }
+                    // As occlusion reads it: Unity draws a mirrored renderer with its winding reversed.
+                    if (rr.Mirrored)
+                        for (var i = 0; i < triangles.Count; i++) triangles[i] = triangles[i].xzy;
                     var written = eval;
                     written.Triangles = new NativeArray<int3>(triangles.ToArray(), Allocator.Persistent);
                     owned.Add(written.Triangles);
@@ -415,6 +427,24 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(on.TrianglesAfter, Is.LessThanOrEqualTo(635));
             var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
+        }
+
+        // The garment of MirrorTests, drawn mirrored, coarsened at 16 mm until its rim draws back. The re-judge reads its
+        // faces as Unity draws them, as the first solve did: it gives back what the cut uncovered, and every triangle still
+        // removed is covered, judged by the checker from the same winding.
+        [Test]
+        public void AMirroredGarment_GivesBackWhatItNoLongerCovers_AndWhatStaysRemovedIsCovered()
+        {
+            Build(garmentFrom: 60f, mirrored: true);
+
+            var on = Run(TargetKind.Tolerance, 16f, rejudge: true);
+
+            var check = CheckWritten(on, setback: true);
+            TestContext.WriteLine($"{on.HiddenRestored} restored, {Of(on, body).HiddenRemoved} still removed; the garment cut from {Of(on, garment).TrianglesBefore} to {Of(on, garment).TrianglesAfter} triangles");
+            Assert.That(Of(on, garment).Mirrored, Is.True, "the garment is drawn mirrored");
+            Assert.That(on.HiddenRestored, Is.GreaterThan(0), "the cut uncovered some of the body");
+            Assert.That(check.Ok, Is.True, check.ToString());
+            Assert.That(check.HiddenChecked, Is.GreaterThan(0), "some of the body stays removed");
         }
 
         [Test]

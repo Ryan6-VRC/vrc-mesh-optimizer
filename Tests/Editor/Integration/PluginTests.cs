@@ -44,7 +44,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert) errors.Add(message);
         }
 
-        SkinnedMeshRenderer inner;
+        SkinnedMeshRenderer inner, garment;
 
         (SkinnedMeshRenderer body, Mesh source) Avatar(bool withComponent)
         {
@@ -52,13 +52,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var chest = a.Bone("Armature/Hips/Chest");
             var source = a.Sphere(0.1f, 16, 32, name: "body");
             var body = a.Skinned("Body", source, new[] { chest });
-            var garment = a.Skinned("Garment", a.Sphere(0.105f, 24, 48, 60f, 180f, name: "garment"), new[] { chest });
-            // A small sphere inside a closed shell loses every triangle, so NDMF finishes the build over an empty mesh.
+            garment = a.Skinned("Garment", a.Sphere(0.105f, 24, 48, 60f, 180f, name: "garment"), new[] { chest });
+            // A small sphere inside a closed shell loses every triangle, so NDMF finishes the build over an empty mesh. Both hang
+            // under the belly, clear of the body and the garment.
             var belly = a.Bone("Armature/Hips/Belly");
             belly.localPosition = new Vector3(0, 0, 1);
-            inner = a.Skinned("Inner", a.Sphere(0.05f, 8, 16, name: "inner"), new[] { belly });
-            var shell = a.Skinned("Shell", a.Sphere(0.06f, 12, 24, name: "shell"), new[] { belly });
-            if (withComponent) a.Optimizer().alwaysOn.AddRange(new Renderer[] { garment, shell });
+            inner = a.Skinned("Inner", a.Sphere(0.05f, 8, 16, name: "inner"), new[] { belly }, parent: belly);
+            var shell = a.Skinned("Shell", a.Sphere(0.06f, 12, 24, name: "shell"), new[] { belly }, parent: belly);
+            // Decimating, as the component ships, so the build takes the path a user's does.
+            if (withComponent) a.Optimizer(decimate: true).alwaysOn.AddRange(new Renderer[] { garment, shell });
             return (body, source);
         }
 
@@ -95,6 +97,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Triangles(body.sharedMesh), Is.LessThan(Triangles(source)));
             Assert.That(OptimizationReports.Latest?.AvatarName, Is.EqualTo(a.Root.name));
             Assert.That(OptimizationReports.Latest.Renderers.Single(r => r.Renderer == body).OutputMesh, Is.SameAs(body.sharedMesh));
+            var g = OptimizationReports.Latest.Renderers.Single(r => r.Renderer == garment);
+            TestContext.WriteLine($"garment: {g.SequenceLength} steps recorded, {g.TrianglesBefore} to {g.TrianglesAfter} triangles, {g.NearVertices} vertices near the body; {OptimizationReports.Latest.HiddenRestored} restored");
+            Assert.That(g.SequenceLength, Is.GreaterThan(0), "the build decimated");
+            Assert.That(g.NearVertices, Is.GreaterThan(0), "with the clearance rule");
+            Assert.That(OptimizationReports.Latest.HiddenRestored, Is.GreaterThan(0), "and re-judged what the cut uncovered");
+            Assert.That(OptimizationReports.Latest.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.RendererFailed).And.No.Member(DiagnosticKeys.RejudgeFailed));
             Assert.That(log.Any(l => l.StartsWith("[Mesh Optimizer] " + a.Root.name)), "a summary reaches the console");
 
             var passes = OptimizingPasses();

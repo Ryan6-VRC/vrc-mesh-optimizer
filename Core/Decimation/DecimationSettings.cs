@@ -125,8 +125,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// Limits: clearance is measured at rest; in a bend of the rig a collapse is held only to a share of that gap (see
     /// <see cref="BendSettings.ClearanceShare"/>), and a shape key that moves two layers differently is not checked;
     /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
-    /// pieces meeting at one vertex) are one layer; and the gap is read per source triangle, so where it changes by a
-    /// large part of itself across one source triangle, the least of it stands for the whole.
+    /// pieces meeting at one vertex) are one layer; the gap is read per source triangle, so where it changes by a
+    /// large part of itself across one source triangle, the least of it stands for the whole; and the other layers are
+    /// the triangles the caller hands in, so one left out is held clear of by nothing, and if it is drawn after all (the
+    /// pipeline leaves out a triangle occlusion removed, and re-judging can write it back) it was never a neighbour and a
+    /// layer may cross it.
     /// </summary>
     public struct ClearanceSettings
     {

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
@@ -41,16 +42,15 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         static Mesh Drawn(OptimizationReport report, Renderer r) => Of(report, r).OutputMesh != null ? Of(report, r).OutputMesh : Of(report, r).SourceMesh;
 
         /// <summary>The renderers sit at the root, so mesh space is avatar space for both.</summary>
-        static float Crossing(Mesh m1, Mesh m2)
+        static float Crossing(Mesh m1, Mesh m2) => LayerFixtures.CrossingLength(Pos(m1), Tris(m1), Pos(m2), Tris(m2));
+
+        static int3[] Tris(Mesh m)
         {
-            int3[] Tris(Mesh m)
-            {
-                var t = m.triangles;
-                return Enumerable.Range(0, t.Length / 3).Select(i => new int3(t[3 * i], t[3 * i + 1], t[3 * i + 2])).ToArray();
-            }
-            float3[] Pos(Mesh m) => m.vertices.Select(v => (float3)v).ToArray();
-            return LayerFixtures.CrossingLength(Pos(m1), Tris(m1), Pos(m2), Tris(m2));
+            var t = m.triangles;
+            return Enumerable.Range(0, t.Length / 3).Select(i => new int3(t[3 * i], t[3 * i + 1], t[3 * i + 2])).ToArray();
         }
+
+        static float3[] Pos(Mesh m) => m.vertices.Select(v => (float3)v).ToArray();
 
         // A garment toggled off at build is still a neighbour: whatever turns it on shows it against the body.
         [TestCase(true)]
@@ -110,7 +110,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         // cut garment both uncovers and crosses the deleted body, re-judging writes some of it back where it stands, crossed
         // by the garment, since the rule never saw it; what is measured here is what the rule saw. A build re-judges by
         // default, and with the switch on this fixture writes back about 130 body triangles and the last assertion reads
-        // about 7 cm of crossing, so what ships is not what this test checks.
+        // about 7 cm of crossing, so what ships is not what this test checks; the test after it does.
         [Test]
         public void BodyDeletedUnderTheGarment_IsNoNeighbour()
         {
@@ -127,6 +127,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             TestContext.WriteLine($"garment near vertices {Of(kept, garment).NearVertices} with the body whole, {Of(removed, garment).NearVertices} with it deleted underneath; refused {Of(kept, garment).ClearanceRefused} and {Of(removed, garment).ClearanceRefused}");
             Assert.That(Of(removed, garment).NearVertices, Is.LessThan(Of(kept, garment).NearVertices / 2));
             Assert.That(Crossing(Drawn(removed, body), Drawn(removed, garment)), Is.Zero, "what is kept of the body is still kept clear of");
+        }
+
+        // The rule's stated limit, on the path a build takes. Re-judging writes back body the cut garment drew away from,
+        // at its source corners; it was never a neighbour, so the garment may cross it, and only it: every crossing between
+        // the two lies on a triangle written back, and what occlusion kept is still kept clear of.
+        [Test]
+        public void BodyWrittenBackByReJudging_WasNoNeighbour_AndIsTheOnlyBodyTheGarmentCrosses()
+        {
+            var garment = Garment(60f);
+            a.Root.GetComponent<AvatarMeshOptimizer>().alwaysOn.Add(garment);
+
+            var first = a.Run(tweak: i => i.Rejudge = false, apply: false);
+            var report = a.Run(apply: false);
+
+            var r = Of(report, body);
+            Assert.That(r.HiddenRestored, Is.GreaterThan(0), "re-judging wrote body back");
+            var source = body.sharedMesh.triangles;
+            var restored = new HashSet<(int, int, int)>();
+            for (var t = 0; t < source.Length / 3; t++)
+                if (Of(first, body).HiddenSourceTriangles[t] && !r.HiddenSourceTriangles[t])
+                    restored.Add((source[3 * t], source[3 * t + 1], source[3 * t + 2]));
+            Assert.That(restored.Count, Is.EqualTo(r.HiddenRestored));
+            var written = Tris(r.OutputMesh);
+            bool Restored(int3 t) => restored.Contains((r.KeptVertices[t.x], r.KeptVertices[t.y], r.KeptVertices[t.z]));
+            Assert.That(written.Count(Restored), Is.EqualTo(r.HiddenRestored), "each is drawn at its source corners");
+
+            var bodyAt = Pos(r.OutputMesh);
+            var garmentMesh = Drawn(report, garment);
+            float CrossingOf(bool onRestored) =>
+                LayerFixtures.CrossingLength(bodyAt, written.Where(t => Restored(t) == onRestored).ToArray(), Pos(garmentMesh), Tris(garmentMesh));
+            var crossing = CrossingOf(true);
+            TestContext.WriteLine($"{r.HiddenRestored} body triangles written back; the garment crosses them along {crossing * 100:0.0} cm");
+            Assert.That(CrossingOf(false), Is.Zero, "the garment crosses no body triangle but those written back");
         }
     }
 }
