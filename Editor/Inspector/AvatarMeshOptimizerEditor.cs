@@ -14,8 +14,9 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
     /// <summary>
     /// The component's inspector: every label through <see cref="L10n"/>, and only the fields the chosen settings use.
     /// Each of the two features is a section whose toggle is its header, with its fields flush beneath it; the lists draw
-    /// one line per entry under a header naming the columns; the only indent is the Advanced group's. Text is body size:
-    /// each occlusion list keeps one or two visible sentences saying what it does, and the detail sits in tooltips.
+    /// one line per entry under a header naming the columns. The material analysis sits under the always-on list whose
+    /// materials it reads. Advanced comes last, below a rule, and is the only indent. Text is body size: each occlusion
+    /// list keeps one or two visible sentences saying what it does, and the detail sits in tooltips.
     /// </summary>
     [CustomEditor(typeof(AvatarMeshOptimizer))]
     [CanEditMultipleObjects]
@@ -89,8 +90,8 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             serializedObject.Update();
             LanguageSwitcher.DrawImmediate();
 
-            var decimate = _decimate.boolValue || _decimate.hasMultipleDifferentValues;
             Header(_decimate);
+            var decimate = _decimate.boolValue || _decimate.hasMultipleDifferentValues;
             if (decimate)
             {
                 DrawTarget();
@@ -98,21 +99,21 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                 DrawList(_rendererList, _renderers);
                 Gap();
                 DrawPreview();
-                Gap();
-                DrawAdvanced();
             }
 
             Header(_removeHidden);
-            if (_removeHidden.boolValue || _removeHidden.hasMultipleDifferentValues)
+            var removeHidden = _removeHidden.boolValue || _removeHidden.hasMultipleDifferentValues;
+            if (removeHidden)
             {
                 Intro(InspectorKeys.AlwaysOnHelp);
                 DrawList(_alwaysOnList, _alwaysOn);
-                ToggleLeft(_outlines);
+                DrawCheck();
                 Gap();
                 Intro(InspectorKeys.MaterialsHelp);
                 DrawList(_materialList, _materials);
-                DrawCheck();
             }
+
+            DrawAdvanced(decimate, removeHidden);
 
             serializedObject.ApplyModifiedProperties();
         }
@@ -180,23 +181,62 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             }
         }
 
-        /// <summary>The protect settings, collapsed by default; the one group drawn indented.</summary>
-        void DrawAdvanced()
+        /// <summary>
+        /// The settings most avatars leave alone, last and below a rule, collapsed by default; the one group drawn indented.
+        /// It holds only the fields of the features that are on, and is not drawn when both are off.
+        /// </summary>
+        void DrawAdvanced(bool decimate, bool removeHidden)
         {
+            if (!decimate && !removeHidden) return;
+            EditorGUILayout.Space(6f);
+            Rule();
             var open = EditorGUILayout.Foldout(SessionState.GetBool(AdvancedOpen, false), L10n.G(InspectorKeys.Advanced), true);
             SessionState.SetBool(AdvancedOpen, open);
             if (!open) return;
+
+            var fields = new List<SerializedProperty>();
+            if (decimate) fields.AddRange(new[] { _faceFloor, _lockFingers, _fingerWeight });
+            if (removeHidden) fields.Add(_outlines);
+
             EditorGUI.indentLevel++;
-            // The indent eats into the label column, so widen it to the longest label, up to half the width.
+            // The indent eats into the label column, so widen it to the longest label, up to a little over half the width.
             var labelWidth = EditorGUIUtility.labelWidth;
-            var needed = new[] { _faceFloor, _lockFingers, _fingerWeight }.Max(p => EditorStyles.label.CalcSize(Label(p)).x) + 15f * EditorGUI.indentLevel + 8f;
-            EditorGUIUtility.labelWidth = Mathf.Max(labelWidth, Mathf.Min(needed, EditorGUIUtility.currentViewWidth * 0.5f));
-            Field(_faceFloor);
-            Field(_lockFingers);
-            using (new EditorGUI.DisabledScope(!_lockFingers.boolValue && !_lockFingers.hasMultipleDifferentValues))
-                Field(_fingerWeight);
+            var needed = fields.Max(p => EditorStyles.label.CalcSize(Label(p)).x) + 15f * EditorGUI.indentLevel + 8f;
+            EditorGUIUtility.labelWidth = Mathf.Max(labelWidth, Mathf.Min(needed, EditorGUIUtility.currentViewWidth * 0.55f));
+            if (decimate)
+            {
+                Percent(_faceFloor);
+                Field(_lockFingers);
+                using (new EditorGUI.DisabledScope(!_lockFingers.boolValue && !_lockFingers.hasMultipleDifferentValues))
+                    Field(_fingerWeight);
+            }
+            if (removeHidden) Field(_outlines);
             EditorGUIUtility.labelWidth = labelWidth;
             EditorGUI.indentLevel--;
+        }
+
+        /// <summary>
+        /// A 0 to 1 share drawn as a whole-percent slider with a % sign after it. The stored value is written only when the
+        /// slider is moved, so a value between whole percents survives being looked at.
+        /// </summary>
+        static void Percent(SerializedProperty property)
+        {
+            var rect = EditorGUILayout.GetControlRect();
+            using (var scope = new EditorGUI.PropertyScope(rect, Label(property), property))
+            {
+                var sign = new GUIContent("%");
+                var signWidth = EditorStyles.label.CalcSize(sign).x;
+                var slider = new Rect(rect.x, rect.y, rect.width - signWidth - 2f, rect.height);
+                EditorGUI.showMixedValue = property.hasMultipleDifferentValues;
+                EditorGUI.BeginChangeCheck();
+                var percent = EditorGUI.IntSlider(slider, scope.content, Mathf.RoundToInt(property.floatValue * 100f), 0, 100);
+                if (EditorGUI.EndChangeCheck()) property.floatValue = percent / 100f;
+                EditorGUI.showMixedValue = false;
+                var indent = EditorGUI.indentLevel;
+                EditorGUI.indentLevel = 0;
+                EditorGUI.LabelField(new Rect(slider.xMax + 2f, rect.y, signWidth, rect.height), sign);
+                EditorGUI.indentLevel = indent;
+            }
         }
 
         /// <summary>
@@ -219,8 +259,10 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             var shown = _checked.Where(m => m != null).ToList();
             if (shown.Count == 0) return;
             var sets = new[] { OcclusionMode.ForceOpaque, OcclusionMode.NeverOccludes }.Select(SetLabel).ToArray();
+            // Sized to the verdicts alone: the header runs on over the buttons' column, which has none, so a long header
+            // does not take width from the material names.
             var verdictWidth = Columns.Width(EditorStyles.label, 60f,
-                new[] { InspectorKeys.Verdict, InspectorKeys.VerdictOpaque, InspectorKeys.VerdictSeeThrough, InspectorKeys.VerdictUnchecked }
+                new[] { InspectorKeys.VerdictOpaque, InspectorKeys.VerdictSeeThrough, InspectorKeys.VerdictUnchecked }
                     .Select(L10n.Tr).Append(string.Format(L10n.Tr(InspectorKeys.VerdictByAlpha), 100)).ToArray());
             var buttonWidth = Columns.Width(GUI.skin.button, 60f, sets.Select(s => s.text).ToArray());
 
@@ -239,7 +281,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             var header = Columns.Split(new Rect(headerRect.x + Pad, headerRect.y + 1f, headerRect.width - 2f * Pad, EditorGUIUtility.singleLineHeight),
                 verdictWidth, buttonWidth);
             EditorGUI.LabelField(header[0], L10n.G("MaterialOcclusion:" + nameof(MaterialOcclusion.material)));
-            EditorGUI.LabelField(header[1], L10n.G(InspectorKeys.Verdict));
+            EditorGUI.LabelField(new Rect(header[1].x, header[1].y, header[2].xMax - header[1].x, header[1].height), L10n.G(InspectorKeys.Verdict));
             for (var i = 0; i < shown.Count; i++)
             {
                 var material = shown[i];
@@ -320,8 +362,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         static void Header(SerializedProperty property)
         {
             EditorGUILayout.Space(6f);
-            EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1f), Styles.Rule);
-            EditorGUILayout.Space(2f);
+            Rule();
             var rect = EditorGUILayout.GetControlRect();
             using (var scope = new EditorGUI.PropertyScope(rect, Label(property), property))
             {
@@ -333,6 +374,13 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             }
         }
 
+        /// <summary>The thin line above a section's header, the separator Limitex draws.</summary>
+        static void Rule()
+        {
+            EditorGUI.DrawRect(EditorGUILayout.GetControlRect(false, 1f), Styles.Rule);
+            EditorGUILayout.Space(2f);
+        }
+
         /// <summary>What a list does and when to use it, in body-size text above it, where it reads without hovering.</summary>
         static void Intro(string key) => EditorGUILayout.LabelField(L10n.Tr(key), Styles.Body);
 
@@ -340,19 +388,6 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             EditorGUILayout.LabelField(new GUIContent(text, EditorGUIUtility.IconContent("console.warnicon").image), Styles.Warning);
 
         static void Gap() => EditorGUILayout.Space(4f);
-
-        static void ToggleLeft(SerializedProperty property)
-        {
-            var rect = EditorGUILayout.GetControlRect();
-            using (var scope = new EditorGUI.PropertyScope(rect, Label(property), property))
-            {
-                EditorGUI.showMixedValue = property.hasMultipleDifferentValues;
-                EditorGUI.BeginChangeCheck();
-                var value = EditorGUI.ToggleLeft(rect, scope.content, property.boolValue);
-                if (EditorGUI.EndChangeCheck()) property.boolValue = value;
-                EditorGUI.showMixedValue = false;
-            }
-        }
 
         static void DelayedFloat(SerializedProperty property)
         {
