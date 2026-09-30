@@ -251,9 +251,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     HeapSet(r, c.Key);
                     continue;
                 }
-                // The heap orders by key, which carries a length tie-break, so one cost over the limit does not
-                // prove every remaining cost is: drop this cluster and keep going.
-                if (c.Cost > _in.Settings.MaxError) continue;
                 Apply(c);
             }
             _in.Stats[0] = _peak;
