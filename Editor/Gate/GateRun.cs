@@ -9,6 +9,7 @@ using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
+using Unity.Jobs.LowLevel.Unsafe;
 using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Gate
@@ -43,6 +44,21 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             HiddenRestored = r.HiddenRestored;
             Error = r.Error;
             Skip = r.Skip;
+        }
+    }
+
+    /// <summary>One renderer's meshes by content (<see cref="MeshContent.Hash"/>): the source, null when it cannot be read, and what the pass wrote, null when it wrote nothing.</summary>
+    internal readonly struct MeshHashes
+    {
+        public readonly string Path;
+        public readonly ulong? Source;
+        public readonly ulong? Output;
+
+        public MeshHashes(string path, ulong? source, ulong? output)
+        {
+            Path = path;
+            Source = source;
+            Output = output;
         }
     }
 
@@ -135,6 +151,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public int RejudgePasses { get; internal set; }
         public bool TargetMet { get; internal set; }
         public IReadOnlyList<RendererFigures> Renderers { get; internal set; }
+        /// <summary>Per report row, its meshes by content, in the report's order.</summary>
+        public IReadOnlyList<MeshHashes> Hashes { get; internal set; }
+        /// <summary>
+        /// What else a written mesh depends on, as measured: whether jobs ran Burst-compiled, since Burst and managed code round
+        /// the clearance rule differently at its margin, and where the avatar root stood, since extraction reads bones in world
+        /// space. A hash compares against a build made the same way.
+        /// </summary>
+        public bool BurstCompiled { get; internal set; }
+        public Vector3 RootPosition { get; internal set; }
+        public Quaternion RootRotation { get; internal set; }
         /// <summary>Every report diagnostic, failures included, as its key and substitutions, a renderer by its path.</summary>
         public IReadOnlyList<string> Diagnostics { get; internal set; }
         /// <summary>Every renderer left out of a channel, by path, with which and why: the report's inputs first, then crossing's.</summary>
@@ -147,11 +173,13 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public IReadOnlyList<GeometryFigures> Geometry { get; internal set; }
         public double CrossingMs { get; internal set; }
         public double GeometryMs { get; internal set; }
+        public double HashMs { get; internal set; }
 
         /// <summary>
-        /// Stable lines: failures first, then the settings the build ran with, the report's figures, what was left out, the
-        /// crossing channel in each configuration and its pairs with new crossing, and the geometric channel's worst figures
-        /// per renderer and kind. Every timing is on a line of its own, at the end.
+        /// Stable lines: failures first, then the settings the build ran with, the report's figures, what was left out, how the
+        /// meshes were built and each mesh's hash by path, the crossing channel in each configuration and its pairs with new
+        /// crossing, and the geometric channel's worst figures per renderer and kind. Every timing is on a line of its own, at
+        /// the end.
         /// </summary>
         public string[] Lines()
         {
@@ -168,6 +196,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 lines.Add($"  {r.Path} {r.TrianglesBefore}>{r.TrianglesAfter} hidden={r.HiddenRemoved} restored={r.HiddenRestored} err_mm={Mm(r.Error)} skip={r.Skip}");
             foreach (var d in Diagnostics) lines.Add("diagnostic: " + d);
             foreach (var (path, reason) in LeftOut) lines.Add($"leftOut: {path}: {reason}");
+
+            string F(float x) => x.ToString("0.######", c);
+            lines.Add($"build: burst={BurstCompiled} root at ({F(RootPosition.x)},{F(RootPosition.y)},{F(RootPosition.z)}) rotation ({F(RootRotation.x)},{F(RootRotation.y)},{F(RootRotation.z)},{F(RootRotation.w)})");
+            var ordered = Hashes.OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
+            lines.Add("-- mesh hashes");
+            foreach (var x in ordered.Where(x => x.Output.HasValue)) lines.Add($"  meshhash {x.Path} {x.Output.Value:x16}");
+            lines.Add("-- end mesh hashes");
+            lines.Add("-- source hashes");
+            foreach (var x in ordered) lines.Add($"  sourcehash {x.Path} {(x.Source.HasValue ? x.Source.Value.ToString("x16") : "not readable")}");
+            lines.Add("-- end source hashes");
 
             lines.Add("-- crossing");
             lines.Add($"linked configurations passed to the crossing channel: {LinkedConfigurations}");
@@ -189,6 +227,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 }
             }
 
+            lines.Add($"hashMs={HashMs.ToString("0", c)}");
             lines.Add($"crossingMs={CrossingMs.ToString("0", c)}");
             if (Geometry != null) lines.Add($"geometryMs={GeometryMs.ToString("0", c)}");
             return lines.ToArray();
@@ -247,10 +286,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         static readonly string[] FailureKeys = { DiagnosticKeys.RendererFailed, DiagnosticKeys.OcclusionFailed, DiagnosticKeys.RejudgeFailed, DiagnosticKeys.PassFailed };
 
         /// <summary>
-        /// Measures crossing once over the report's renderers, as the avatar stands, in the report's linked configurations and
-        /// in <see cref="GateRunOptions.Poses"/>, and the geometric channel per written renderer when
-        /// <see cref="GateRunOptions.Geometry"/> asks, with a linked key measured in its link's configurations and never alone. A channel that throws is named in <see cref="GateResult.Failures"/> and
-        /// the rest still measured. Run it while the build's clone is open (<see cref="GateReportInputs.From"/> refuses it after).
+        /// Hashes every report row's meshes, and measures crossing once over the report's renderers, as the avatar stands, in
+        /// the report's linked configurations and in <see cref="GateRunOptions.Poses"/>, and the geometric channel per written
+        /// renderer when <see cref="GateRunOptions.Geometry"/> asks, a linked key in its link's configurations and never alone.
+        /// A channel that throws is named in <see cref="GateResult.Failures"/> and the rest still measured. Run it while the
+        /// build's clone is open (<see cref="GateReportInputs.From"/> refuses it after).
         /// </summary>
         public static GateResult Measure(OptimizationReport report, Transform root, GateRunOptions options)
         {
@@ -261,6 +301,12 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             foreach (var r in report.Renderers)
                 if (r.Renderer != null && !paths.ContainsKey(r.Renderer)) paths[r.Renderer] = r.Path;
 
+            var sw = Stopwatch.StartNew();
+            var hashes = report.Renderers.Select(r => new MeshHashes(r.Path,
+                r.SourceMesh != null && (r.SourceMesh.isReadable || !Application.isPlaying) ? MeshContent.Hash(r.SourceMesh) : (ulong?)null,
+                r.OutputMesh != null ? MeshContent.Hash(r.OutputMesh) : (ulong?)null)).ToArray();
+            var hashMs = sw.Elapsed.TotalMilliseconds;
+
             var failures = new List<string>();
             var diagnostics = new List<string>();
             foreach (var d in report.Diagnostics)
@@ -270,7 +316,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 if (FailureKeys.Contains(d.Key)) failures.Add("FAILED in the pass, which fell back: " + line);
             }
 
-            var sw = Stopwatch.StartNew();
+            sw.Restart();
             CrossingReport crossing = null;
             try
             {
@@ -316,6 +362,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 RejudgePasses = report.RejudgePasses,
                 TargetMet = report.TargetMet,
                 Renderers = report.Renderers.Select(r => new RendererFigures(r)).ToArray(),
+                Hashes = hashes,
+                BurstCompiled = JobsUtility.JobCompilerEnabled,
+                RootPosition = root.position,
+                RootRotation = root.rotation,
                 Diagnostics = diagnostics,
                 LeftOut = inputs.LeftOut.Concat(crossing?.LeftOut ?? Array.Empty<(string, string)>()).ToArray(),
                 LinkedConfigurations = inputs.Configurations.Count,
@@ -323,6 +373,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 Geometry = geometry,
                 CrossingMs = crossingMs,
                 GeometryMs = sw.Elapsed.TotalMilliseconds,
+                HashMs = hashMs,
             };
         }
 

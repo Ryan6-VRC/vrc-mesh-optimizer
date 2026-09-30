@@ -157,12 +157,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(new[] { body, bowl }.Select(r => r.sharedMesh), Is.EqualTo(drawn));
             Assert.That(CanHoldAUnityObject(typeof(GateResult), new HashSet<Type>()), Is.False);
             Assert.That(result.Failures, Is.Empty);
+            var written = $"  meshhash Body {MeshContent.Hash(Of(report, body).OutputMesh):x16}";
+            var source = $"  sourcehash Garment {MeshContent.Hash(bowl.sharedMesh):x16}";
             Object.DestroyImmediate(a.Root);
             var lines = result.Lines();
             Assert.That(lines[0], Is.EqualTo("avatar: " + report.AvatarName), "no failure, so nothing reads before the avatar");
             Assert.That(lines, Has.Some.StartWith("[as it stands] pairs=3 "));
             Assert.That(lines, Has.Some.StartWith("  Body: as it stands: 1 configurations, worst p99=0.000"));
             Assert.That(lines, Has.Member("leftOut: Empty: left out of both channels: NoMesh"));
+            Assert.That(lines.SkipWhile(l => l != "-- mesh hashes").Skip(1).TakeWhile(l => l != "-- end mesh hashes"), Is.EqualTo(new[] { written }),
+                "the one mesh the pass wrote, as the measurement runner prints it");
+            Assert.That(lines, Has.Member(source));
             Assert.That(lines.Last(), Does.StartWith("geometryMs="));
         }
 
