@@ -28,46 +28,33 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     public static class Decimator
     {
         public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, Allocator allocator) =>
-            Run(mesh, settings, protection, default, allocator, out _);
+            Run(mesh, settings, protection, default, default, allocator, out _);
 
         /// <summary>
         /// Records the sequence keeping clear of the other layers in <paramref name="clearance"/>, when its settings
-        /// enable the rule and it holds any; otherwise as the overload without it.
+        /// enable the rule and it holds any, and with each collapse's error also measured in bends of <paramref name="rig"/>'s
+        /// bones (see <see cref="BendSettings"/>), so a surface spanning a joint keeps what it needs to follow the joint when
+        /// it bends. Either left unset takes no part.
         /// </summary>
         public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance,
-            Allocator allocator, out ClearanceStats stats) =>
-            Run(mesh, settings, protection, clearance, default, allocator, out stats);
-
-        /// <summary>
-        /// As the overload without <paramref name="rig"/>; with it, each collapse's error is also measured in bends of the
-        /// rig's bones (see <see cref="BendSettings"/>), so a surface spanning a joint keeps what it needs to follow the
-        /// joint when it bends.
-        /// </summary>
-        public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance,
-            in BendRig rig, Allocator allocator, out ClearanceStats stats) =>
-            Run(mesh, default, settings, protection, clearance, rig, allocator, out stats);
-
-        /// <summary>
-        /// As the overload without <paramref name="excluded"/>, but a triangle it flags takes no part, as one that repeats a
-        /// vertex takes none: the sequence is the one recorded from a copy of the mesh without those triangles, while every
-        /// triangle keeps its index in <paramref name="mesh"/>, so <see cref="CutResult.SourceTriangle"/> names the mesh's
-        /// triangles and <see cref="ClearanceInput.TriangleLayer"/> has one entry per triangle of it, an excluded one's unread.
-        /// </summary>
-        /// <param name="excluded">Per triangle of <paramref name="mesh"/>; unset excludes none.</param>
-        public static CollapseSequence Run(in EvalMesh mesh, NativeArray<bool> excluded, in DecimationSettings settings, in VertexProtection protection,
-            in ClearanceInput clearance, in BendRig rig, Allocator allocator, out ClearanceStats stats)
+            in BendRig rig, Allocator allocator, out ClearanceStats stats)
         {
-            using var pending = Schedule(mesh, excluded, settings, protection, clearance, rig);
+            using var pending = Schedule(mesh, default, settings, protection, clearance, rig);
             return pending.Complete(allocator, out stats);
         }
 
         /// <summary>
-        /// Starts recording what <see cref="Run(in EvalMesh, NativeArray{bool}, in DecimationSettings, in VertexProtection, in ClearanceInput, in BendRig, Allocator, out ClearanceStats)"/>
+        /// Starts recording what <see cref="Run(in EvalMesh, in DecimationSettings, in VertexProtection, in ClearanceInput, in BendRig, Allocator, out ClearanceStats)"/>
         /// records, on a worker thread, and returns once it is under way: meshes scheduled before any is completed are
         /// recorded side by side, each exactly as alone. <paramref name="mesh"/>, <paramref name="protection"/> and
         /// <paramref name="clearance"/> are read until <see cref="PendingSequence.Complete"/>, so they must outlive it;
-        /// <paramref name="excluded"/> and <paramref name="rig"/> are read before this returns.
+        /// <paramref name="excluded"/> and <paramref name="rig"/> are read before this returns. A triangle
+        /// <paramref name="excluded"/> flags takes no part, as one that repeats a vertex takes none: the sequence is the one
+        /// recorded from a copy of the mesh without those triangles, while every triangle keeps its index in
+        /// <paramref name="mesh"/>, so <see cref="CutResult.SourceTriangle"/> names the mesh's triangles and
+        /// <see cref="ClearanceInput.TriangleLayer"/> has one entry per triangle of it, an excluded one's unread.
         /// </summary>
+        /// <param name="excluded">Per triangle of <paramref name="mesh"/>; unset excludes none.</param>
         internal static PendingSequence Schedule(in EvalMesh mesh, NativeArray<bool> excluded, in DecimationSettings settings, in VertexProtection protection,
             in ClearanceInput clearance, in BendRig rig)
         {

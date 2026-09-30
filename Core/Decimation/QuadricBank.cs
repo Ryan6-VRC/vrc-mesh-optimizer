@@ -57,12 +57,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             if (NormalFrames.IsCreated) NormalFrames.Dispose();
         }
 
-        public static QuadricBank Build(in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, Allocator allocator)
-        {
-            using var none = Bends.None(Allocator.Persistent);
-            return Build(mesh, topo, settings, none, allocator);
-        }
-
         /// <summary>With <paramref name="bends"/>, each vertex also holds a quadric for every bend that moves its surroundings apart (see <see cref="Bends"/>).</summary>
         public static QuadricBank Build(in EvalMesh mesh, in MeshTopology topo, in DecimationSettings settings, in Bends bends, Allocator allocator)
         {
