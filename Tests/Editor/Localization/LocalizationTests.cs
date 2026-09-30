@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Inspector;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
 using UnityEngine;
@@ -44,6 +46,21 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
                 .Concat(System.Enum.GetNames(typeof(TargetKind)).Select(n => $"TargetKind:{n}"));
 
             Assert.That(fields.Where(k => !en.ContainsKey(k)), Is.Empty);
+        }
+
+        // The inspector's own keys: its headings, the preset names and the preview's lines. Each is a constant in
+        // InspectorKeys or a preset's key, so none can be drawn without an entry here.
+        [Test]
+        public void EveryInspectorKey_HasAnEnglishString()
+        {
+            var en = Entries("en-us.po");
+            var keys = typeof(InspectorKeys).GetFields(BindingFlags.Public | BindingFlags.Static)
+                .Where(f => f.IsLiteral).Select(f => (string)f.GetRawConstantValue())
+                .Concat(System.Enum.GetValues(typeof(TolerancePreset)).Cast<TolerancePreset>().Select(TolerancePresets.Key))
+                .ToList();
+
+            Assert.That(keys, Is.Not.Empty);
+            Assert.That(keys.Where(k => !en.ContainsKey(k)), Is.Empty);
         }
 
         [Test]
