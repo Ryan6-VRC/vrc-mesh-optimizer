@@ -13,7 +13,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// cuts the chord of the curve the finer source follows once the joint bends; at rest nothing shows it, since the
     /// surface there is near flat. The bends come from the rig alone, never from an animation or a pose.
     /// </summary>
-    public struct BendSettings
+    internal struct BendSettings
     {
         /// <summary>
         /// Degrees each bone swings, either way about each of two axes square to its length. 0 turns bends off, and the
@@ -38,7 +38,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// The avatar's skeleton, per avatar-wide bone id (see <see cref="BoneInfluence.Bone"/>), in the evaluation meshes'
     /// space. Unassigned, a mesh has no bends.
     /// </summary>
-    public struct BendRig : IDisposable
+    internal struct BendRig : IDisposable
     {
         /// <summary>Per bone, its parent's id, or -1.</summary>
         public NativeArray<int> Parent;

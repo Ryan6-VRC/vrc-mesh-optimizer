@@ -6,7 +6,7 @@ using Unity.Mathematics;
 namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 {
     /// <summary>How one occluder submesh takes part in blocking rays.</summary>
-    public enum OccluderMode : byte
+    internal enum OccluderMode : byte
     {
         /// <summary>Opaque, unless the submesh carries an <see cref="AlphaMap"/>: then a hit where the map samples see-through does not block.</summary>
         Auto = 0,
@@ -21,7 +21,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// convention, in avatar-root space; the extractor flips the winding of a mirrored renderer so this
     /// holds after its transform. A culled side does not render, so a ray that meets it is not blocked.
     /// </summary>
-    public enum FaceCulling : byte
+    internal enum FaceCulling : byte
     {
         /// <summary>Only the front renders: a ray blocks only on a face whose front looks along the ray, toward the viewer at its far end.</summary>
         Back = 0,
@@ -32,7 +32,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>How a texture coordinate outside [0, 1) reaches a texel, as Unity's <c>TextureWrapMode</c> does.</summary>
-    public enum AlphaWrap : byte
+    internal enum AlphaWrap : byte
     {
         Repeat = 0,
         Clamp = 1,
@@ -47,7 +47,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// A hit blocks only when all four texels of its bilinear footprint reach <see cref="Threshold"/>,
     /// so an edge between opaque and see-through reads as see-through.
     /// </summary>
-    public sealed class AlphaMap
+    internal sealed class AlphaMap
     {
         public readonly int Width;
         public readonly int Height;
@@ -84,7 +84,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>One submesh's material, as occlusion reads it: how it blocks rays as an occluder, and, by its culling, which sides of its own triangles must be covered to hide them.</summary>
-    public sealed class OccluderSubmesh
+    internal sealed class OccluderSubmesh
     {
         public OccluderMode Mode = OccluderMode.Auto;
         public FaceCulling Culling = FaceCulling.Back;
@@ -99,7 +99,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>One renderer's geometry and its part in occlusion.</summary>
-    public sealed class OcclusionMesh
+    internal sealed class OcclusionMesh
     {
         /// <summary>Read, never disposed, by the solver.</summary>
         public EvalMesh Mesh;
@@ -143,7 +143,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>The avatar's bone tree, indexed by the avatar-wide bone id <see cref="BoneInfluence.Bone"/> names. Read, never disposed, by the solver.</summary>
-    public struct OcclusionBones
+    internal struct OcclusionBones
     {
         /// <summary>Each bone's parent id, or -1 for a root.</summary>
         public NativeArray<int> Parents;
@@ -159,7 +159,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// The shared-weights rule's parameters. <see cref="Default"/> holds the starting values; change one only
     /// against a measurement.
     /// </summary>
-    public struct OcclusionSettings
+    internal struct OcclusionSettings
     {
         /// <summary>Half-angle of the cone of rays about a sample's normal, in degrees.</summary>
         public float ConeDegrees;
@@ -222,7 +222,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// Why a mesh's vertices were not covered, one reason per declined vertex: the first failure met, at rest
     /// before any configuration. Only vertices some candidate triangle uses are counted.
     /// </summary>
-    public struct DeclineCounts
+    internal struct DeclineCounts
     {
         /// <summary>Influences sum under <see cref="OcclusionSettings.MinRawWeight"/>.</summary>
         public int Unweighted;
@@ -252,7 +252,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>One mesh's result, over its own indices. The caller disposes it.</summary>
-    public struct OcclusionResult : IDisposable
+    internal struct OcclusionResult : IDisposable
     {
         /// <summary>Per triangle: true when it is hidden in every configuration and may be deleted.</summary>
         public NativeArray<bool> HiddenTriangles;
@@ -298,7 +298,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>What a solve cost, for measurement.</summary>
-    public struct OcclusionStats
+    internal struct OcclusionStats
     {
         public int OccluderTriangles;
         public int BvhNodes;

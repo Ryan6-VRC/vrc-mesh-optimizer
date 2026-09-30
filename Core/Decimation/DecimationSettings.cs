@@ -8,7 +8,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// excess is max(0, frame error squared - rest error squared): what a frame adds beyond the rest error, so
     /// a frame that only translates a region adds nothing.
     /// </summary>
-    public enum ShapeAggregation
+    internal enum ShapeAggregation
     {
         /// <summary>The largest error over the rest state and every frame.</summary>
         WorstCase = 0,
@@ -18,7 +18,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         Blend = 2,
     }
 
-    public struct DecimationSettings
+    internal struct DecimationSettings
     {
         public TopologySettings Topology;
 
@@ -99,7 +99,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// cylinder) pays for the triangles its shading needs; decimation without the term mis-shades such a surface too, and
     /// a strongly rippled one can cost twice as many triangles at a given tolerance.
     /// </summary>
-    public struct NormalSettings
+    internal struct NormalSettings
     {
         /// <summary>
         /// A plain factor; 0 turns the term off, and the sequence is then exactly the one without it. The default, 0.5, is
@@ -132,7 +132,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// can write back, as neighbours of every other layer; its RemovedAsNeighbours switch off leaves them out, and a
     /// layer may then cross one written back.
     /// </summary>
-    public struct ClearanceSettings
+    internal struct ClearanceSettings
     {
         /// <summary>Off: collapses ignore the other layers.</summary>
         public bool Enabled;
@@ -172,7 +172,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// Per-source-vertex protection, supplied by whoever knows what a vertex is (a hand, a face). Either array
     /// may be left unassigned; when assigned, its length is the source vertex count.
     /// </summary>
-    public struct VertexProtection
+    internal struct VertexProtection
     {
         /// <summary>Nonzero: the vertex is never removed. It may still be a collapse target.</summary>
         public NativeArray<byte> Locked;

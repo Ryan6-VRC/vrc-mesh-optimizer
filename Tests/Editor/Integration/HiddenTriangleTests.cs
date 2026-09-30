@@ -13,7 +13,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
     // A body sphere under a bowl-shaped garment on the same chest bone: everything the bowl covers from every
     // direction goes, the open top stays. Each test changes one input the pass owes occlusion and checks the
     // verdict turns with it, against the same scene where it does not.
-    public class HiddenTriangleTests
+    internal class HiddenTriangleTests
     {
         const float BodyRadius = 0.1f;
         const float GarmentRadius = 0.105f;

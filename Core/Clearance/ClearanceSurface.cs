@@ -10,7 +10,7 @@ using Unity.Mathematics;
 namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 {
     /// <summary>One source of layers for <see cref="ClearanceSurface.Build"/>: a mesh's triangles, which of them it keeps, and each kept one's layer.</summary>
-    public struct ClearanceLayerSource
+    internal struct ClearanceLayerSource
     {
         public NativeArray<float3> Positions;
         public NativeArray<int3> Triangles;
@@ -27,7 +27,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
     /// the triangles around a vertex, being one piece, are never each other's neighbours. Read only once built, so a job
     /// holds it as one field and asks it the queries below.
     /// </summary>
-    public struct ClearanceSurface : IDisposable
+    internal struct ClearanceSurface : IDisposable
     {
         [ReadOnly] internal NativeArray<TreeNode> Nodes;
         /// <summary>In leaf order; <see cref="TreePrim.Triangle"/> is the prim's index in build order.</summary>
@@ -622,7 +622,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
     }
 
     /// <summary>Splits a mesh's triangles into layers: the pieces connected through shared corners, corners at one exact position being one.</summary>
-    public static class Layers
+    internal static class Layers
     {
         /// <summary>
         /// Per triangle, the piece it belongs to, numbered from 0 in order of first appearance; <paramref name="count"/>

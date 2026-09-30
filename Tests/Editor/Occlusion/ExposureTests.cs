@@ -8,7 +8,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 {
     // Ways to make the solver hide a triangle a viewer can see, each with the control that decides the other
     // way, and each scene also handed to CoverChecker.
-    public class ExposureTests
+    internal class ExposureTests
     {
         static readonly int[] Bones = { -1, 0 };
         static readonly float3 Up = new float3(0, 1, 0);

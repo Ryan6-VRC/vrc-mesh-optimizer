@@ -7,7 +7,7 @@ using Unity.Mathematics;
 namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 {
     /// <summary>What decimation needs to keep one mesh clear of the other layers.</summary>
-    public struct ClearanceInput
+    internal struct ClearanceInput
     {
         /// <summary>Every layer's kept surface, this mesh's included.</summary>
         public ClearanceSurface Surface;
@@ -18,7 +18,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
     }
 
     /// <summary>What the clearance rule saw and did on one mesh.</summary>
-    public struct ClearanceStats
+    internal struct ClearanceStats
     {
         /// <summary>Vertices with another layer within the reach: the ones the rule can act on.</summary>
         public int NearVertices;

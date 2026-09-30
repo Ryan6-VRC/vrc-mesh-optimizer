@@ -23,7 +23,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     /// Why a shape key moves alone though another key is driven by exactly the same set of clips of known identity: the
     /// first reason found. The last two are the pipeline's, for a link it found and could not evaluate as one.
     /// </summary>
-    public enum LinkRefusal
+    internal enum LinkRefusal
     {
         /// <summary>The descriptor (visemes, jaw flap, eyelids) or an MMD world drives it without a clip.</summary>
         DrivenOutsideClips,

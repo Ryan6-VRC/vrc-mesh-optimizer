@@ -20,7 +20,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
     // has returned or thrown. The avatar exercises every owner: occlusion, the clearance surface with a renderer the pass
     // leaves as it was, recorded sequences and cuts, and judging the removals again, since the budget cuts the garment
     // deep enough to uncover some of the body it hides.
-    public class DisposalTests
+    internal class DisposalTests
     {
         AvatarFixture a;
         SkinnedMeshRenderer body;

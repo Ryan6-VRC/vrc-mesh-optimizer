@@ -7,7 +7,7 @@ using Unity.Mathematics;
 namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 {
     /// <summary>One collapse: a vertex, or a seam or border pair moving together, removed onto its target.</summary>
-    public struct CollapseStep
+    internal struct CollapseStep
     {
         /// <summary>The error level reached, in metres: the running maximum of every collapse's error so far,
         /// so it never decreases along the sequence.</summary>
@@ -25,7 +25,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// Vertex indices in <see cref="Records"/> are working vertices (see <see cref="Topology.MeshTopology"/>);
     /// <see cref="Cut"/> translates to source indices.
     /// </summary>
-    public struct CollapseSequence : IDisposable
+    internal struct CollapseSequence : IDisposable
     {
         public NativeArray<CollapseStep> Steps;
         /// <summary>(removed, target) working-vertex pairs, grouped by step.</summary>
@@ -132,7 +132,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     }
 
     /// <summary>A cut through a collapse sequence, in source indices.</summary>
-    public struct CutResult : IDisposable
+    internal struct CutResult : IDisposable
     {
         /// <summary>Surviving triangles, each corner naming the source vertex it now uses.</summary>
         public NativeList<int3> Triangles;

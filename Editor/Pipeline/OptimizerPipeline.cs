@@ -157,7 +157,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>The per-renderer stages, as a failure names them.</summary>
-    public enum PipelineStage
+    internal enum PipelineStage
     {
         Extraction,
         Decimation,

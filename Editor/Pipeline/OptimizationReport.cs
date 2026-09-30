@@ -12,7 +12,7 @@ using UnityEngine;
 namespace Ryan6Vrc.MeshOptimizer.Pipeline
 {
     /// <summary>Why a renderer's mesh was left as it was.</summary>
-    public enum SkipReason
+    internal enum SkipReason
     {
         None,
         /// <summary>The renderer draws no mesh.</summary>
@@ -41,7 +41,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// submesh order, each submesh's triangles in index order; submeshes of other topologies are passed through
     /// and not counted.
     /// </summary>
-    public sealed class RendererReport
+    internal sealed class RendererReport
     {
         public Renderer Renderer { get; internal set; }
         /// <summary>The renderer's path from the avatar root, as the hierarchy shows it.</summary>
@@ -123,7 +123,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>One shape key on one renderer: the renderer, its path from the avatar root, and the key by index and name.</summary>
-    public readonly struct ShapeKeyRef
+    internal readonly struct ShapeKeyRef
     {
         public readonly Renderer Renderer;
         public readonly string Path;
@@ -142,7 +142,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>Shape keys the pass found cannot be driven apart, and so evaluated only together.</summary>
-    public sealed class LinkReport
+    internal sealed class LinkReport
     {
         public IReadOnlyList<ShapeKeyRef> Keys { get; }
 
@@ -155,7 +155,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// One state of the whole avatar occlusion evaluated besides rest: a link's keys, each at <see cref="Weight"/> of its full
     /// scale, every other key on every renderer where it is held. <see cref="Id"/> is the id its frames carry.
     /// </summary>
-    public sealed class ConfigurationReport
+    internal sealed class ConfigurationReport
     {
         public int Id { get; }
         public LinkReport Link { get; }
@@ -176,7 +176,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>Wall-clock per stage, in milliseconds.</summary>
-    public struct StageTimes
+    internal struct StageTimes
     {
         public double Liveness;
         public double Extraction;
@@ -196,7 +196,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// What one optimization did to one avatar. The latest few builds' stay in memory, in
     /// <see cref="OptimizationReports"/>; nothing is written to disk.
     /// </summary>
-    public sealed class OptimizationReport
+    internal sealed class OptimizationReport
     {
         public string AvatarName { get; internal set; }
         public List<RendererReport> Renderers { get; } = new List<RendererReport>();
@@ -315,7 +315,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>A user-facing problem: a localized key, its severity and its substitutions ({0}, {1}...).</summary>
-    public readonly struct Diagnostic
+    internal readonly struct Diagnostic
     {
         public readonly string Key;
         /// <summary>True when the problem left work undone that the user can fix; false for a notice.</summary>
@@ -334,7 +334,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// The most recent optimization reports, newest last. Each holds its meshes, which keeps them loaded, so only a
     /// few are kept; a domain reload or <see cref="Clear"/> lets them go.
     /// </summary>
-    public static class OptimizationReports
+    internal static class OptimizationReports
     {
         const int Kept = 4;
         static readonly List<OptimizationReport> _recent = new List<OptimizationReport>();

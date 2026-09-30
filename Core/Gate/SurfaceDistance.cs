@@ -6,7 +6,7 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Gate
 {
-    public struct SurfaceDistanceSettings
+    internal struct SurfaceDistanceSettings
     {
         /// <summary>
         /// Metres between neighbouring samples along a triangle's longest edge. A triangle is sampled on a
@@ -42,7 +42,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     }
 
     /// <summary>One side of a comparison: a triangle surface, in the same space and unit as the other side.</summary>
-    public struct Surface
+    internal struct Surface
     {
         public NativeArray<float3> Positions;
         public NativeArray<int3> Triangles;
@@ -53,7 +53,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public NativeArray<bool> Excluded;
     }
 
-    public enum Statistic
+    internal enum Statistic
     {
         Mean,
         Rms,
@@ -69,7 +69,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     /// sampled (<see cref="Sampled"/>): every triangle on the sampled side had no area or was excluded, as on a mesh
     /// whose bones stand at zero scale.
     /// </summary>
-    public struct DistanceStats
+    internal struct DistanceStats
     {
         public float Mean;
         public float Rms;
@@ -108,7 +108,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     }
 
     /// <summary>Distances from the samples of one side to the surface of the other, and where the largest one is.</summary>
-    public struct DirectedDistance
+    internal struct DirectedDistance
     {
         public DistanceStats Stats;
         /// <summary>The sample that reads <see cref="DistanceStats.Max"/>, on the sampled side. The first in triangle order on a tie.</summary>
@@ -126,7 +126,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public float Step;
     }
 
-    public struct SurfaceDistanceResult
+    internal struct SurfaceDistanceResult
     {
         /// <summary>Sampled on A, measured to B: what B lost of A.</summary>
         public DirectedDistance AToB;
@@ -144,7 +144,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     /// a fixed order, so the same input gives the same numbers bit for bit. The two-sided, area-sampled measure follows
     /// Metro (Cignoni, Rocchini and Scopigno 1998).
     /// </summary>
-    public static class SurfaceDistance
+    internal static class SurfaceDistance
     {
         /// <summary>A run that would sample more points than this is refused: at about 36 bytes a point it would hold over a gigabyte.</summary>
         public const long MaxSamples = 32L << 20;

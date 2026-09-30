@@ -8,7 +8,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     /// <see cref="Distance"/>, spans so many pixels. An offset along the line of sight spans fewer, so the figure is
     /// the most that offset can show.
     /// </summary>
-    public struct GateCamera
+    internal struct GateCamera
     {
         public float VerticalFovDegrees;
         /// <summary>Pixel rows across the vertical field of view.</summary>

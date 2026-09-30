@@ -44,7 +44,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// that mesh's setback: the cover moved past it by no more than that, and a viewer sees the cover where it stood. That
     /// is one ray a sample, cast only when the cone fails. With no setback, the solve is the rule's own to the bit.
     /// </summary>
-    public static class OcclusionSolver
+    internal static class OcclusionSolver
     {
         const byte ExposedByFrame = 1;
         const byte ExposedByDeletion = 2;
