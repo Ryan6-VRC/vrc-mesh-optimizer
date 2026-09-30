@@ -422,82 +422,38 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// Every triangle occlusion removed from a renderer the pass writes, judged again by the first solve's rule, settings,
-        /// bone table and configurations, with the triangles the always-on renderers are written with as the only blockers.
-        /// A renderer the pass leaves as it was draws its whole source and removes nothing. What is no longer hidden goes
-        /// into <see cref="Pass.Restored"/>.
-        ///
-        /// A removed triangle comes back when its cover is gone, not when the cut moved its cover past it. So a sample the
-        /// rule finds uncovered stays covered when a face of a cut always-on renderer lies straight behind it within that
-        /// cut's recorded error (<see cref="OcclusionMesh.Setback"/>), and only a renderer that covered it in the first
-        /// solve (<see cref="PreparedRenderer.CoveredBy"/>): a layer that lies just under a triangle and never covered it
-        /// does not stand in for the cover it lost. Every extracted renderer is entered at its index in the first solve, so
-        /// the solve's names for what covered each sample hold here.
+        /// Judges the pass's removals again (<see cref="Rejudging.Restored"/>) and puts what is no longer hidden into
+        /// <see cref="Pass.Restored"/>. Every extracted renderer is entered at its index in the first solve, as the pass
+        /// leaves it: a renderer it writes draws what it keeps and leaves out what occlusion removed, and one it leaves as
+        /// it was draws its whole source.
         /// </summary>
         static void RejudgeOnce(PreparedAvatar prepared, Pass pass)
         {
             var jobs = prepared.Renderers;
             var live = prepared.Extracted;
-            var owned = new List<IDisposable>();
-            OcclusionResult[] results = null;
-            try
+            var renderers = new List<CutRenderer>(live.Count);
+            foreach (var job in live)
             {
-                var meshes = new List<OcclusionMesh>();
-                var renderer = new List<int>();
-                var sources = new List<int[]>();
-                foreach (var job in live)
+                var i = jobs.IndexOf(job);
+                var kept = pass.Kept[i];
+                renderers.Add(new CutRenderer
                 {
-                    var i = jobs.IndexOf(job);
-                    var kept = pass.Kept[i];
-                    var removed = kept != null && job.HiddenCount > 0 ? job.Hidden : null;
-                    // Neither judged nor blocking, a renderer changes no verdict, and holds its index with no triangles.
-                    var bystander = !job.Occludes && removed == null;
-                    var drawn = bystander ? Array.Empty<int3>() : kept?.Triangles ?? job.Eval.Triangles.ToArray();
-                    var drawnSource = bystander ? Array.Empty<int>() : kept?.Source ?? Enumerable.Range(0, drawn.Length).ToArray();
-                    var mesh = OcclusionInput.Rejudged(job.Eval, job.Mirrored, job.Occludes, job.OccluderSubmeshes, removed, drawn, drawnSource, owned, out var source);
-                    if (job.Occludes && job.Decimated) mesh.Setback = job.Sequence.ErrorAt(pass.Steps[i]);
-                    if (removed != null)
-                    {
-                        mesh.CoveredBy = job.CoveredBy;
-                        // Front and back, per triangle entered, from the evaluation triangle it is.
-                        mesh.InteriorCoveredBy = new ulong[2 * source.Length];
-                        for (var e = 0; e < source.Length; e++)
-                            if (mesh.Candidate[e])
-                                for (var side = 0; side < 2; side++) mesh.InteriorCoveredBy[2 * e + side] = job.InteriorCoveredBy[2 * source[e] + side];
-                    }
-                    meshes.Add(mesh);
-                    renderer.Add(i);
-                    sources.Add(source);
-                }
-                var bones = new OcclusionBones { Parents = new NativeArray<int>(prepared.BoneParents, Allocator.Persistent) };
-                owned.Add(bones.Parents);
-                bones.Vanishes = new NativeArray<bool>(prepared.VanishingBones, Allocator.Persistent);
-                owned.Add(bones.Vanishes);
-
-                results = OcclusionSolver.Solve(meshes, bones, prepared.OcclusionSettings, Allocator.Persistent, out _);
-                pass.Restored = new bool[jobs.Count][];
-                pass.RestoredCount = 0;
-                for (var k = 0; k < meshes.Count; k++)
-                {
-                    var candidate = meshes[k].Candidate;
-                    var hidden = results[k].HiddenTriangles;
-                    var source = sources[k];
-                    bool[] restored = null;
-                    for (var e = 0; e < candidate.Length; e++)
-                    {
-                        if (!candidate[e] || hidden[e]) continue;
-                        restored ??= new bool[jobs[renderer[k]].Eval.TriangleCount];
-                        restored[source[e]] = true;
-                        pass.RestoredCount++;
-                    }
-                    pass.Restored[renderer[k]] = restored;
-                }
+                    Eval = job.Eval,
+                    Mirrored = job.Mirrored,
+                    Occludes = job.Occludes,
+                    Submeshes = job.OccluderSubmeshes,
+                    Removed = kept != null && job.HiddenCount > 0 ? job.Hidden : null,
+                    Drawn = kept?.Triangles,
+                    DrawnSource = kept?.Source,
+                    Setback = job.Occludes && job.Decimated ? job.Sequence.ErrorAt(pass.Steps[i]) : 0f,
+                    CoveredBy = job.CoveredBy,
+                    InteriorCoveredBy = job.InteriorCoveredBy,
+                });
             }
-            finally
-            {
-                if (results != null) foreach (var r in results) r.Dispose();
-                foreach (var o in owned) o.Dispose();
-            }
+            var restored = Rejudging.Restored(renderers, prepared.BoneParents, prepared.VanishingBones, prepared.OcclusionSettings, out var count);
+            pass.Restored = new bool[jobs.Count][];
+            for (var k = 0; k < live.Count; k++) pass.Restored[jobs.IndexOf(live[k])] = restored[k];
+            pass.RestoredCount = count;
         }
 
         /// <summary>What one cut did to one extracted renderer.</summary>
