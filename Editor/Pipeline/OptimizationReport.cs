@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Runtime;
@@ -203,6 +204,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int TriangleBudget { get; internal set; }
         /// <summary>In millimetres, as the component holds it.</summary>
         public float Tolerance { get; internal set; }
+        /// <summary>
+        /// The settings besides the target that decide a mesh, as the cut ran with them: decimation's (the normal and UV
+        /// weights, clearance and its share, bends), whether it re-judged, and occlusion's. A figure read off this build is
+        /// read at these.
+        /// </summary>
+        public DecimationSettings Decimation { get; internal set; }
+        public bool Rejudge { get; internal set; }
+        public OcclusionSettings Occlusion { get; internal set; }
 
         public int TrianglesBefore => Renderers.Sum(r => r.TrianglesBefore);
         public int TrianglesAfter => Renderers.Sum(r => r.TrianglesAfter);
