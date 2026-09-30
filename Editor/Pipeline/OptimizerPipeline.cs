@@ -608,8 +608,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>
         /// When <see cref="PipelineInput.Gate"/> asks, measures the gate (<see cref="GateRun.Measure"/>) into
         /// <see cref="OptimizationReport.Gate"/>; otherwise does nothing. Call it after <see cref="Apply"/>, on the avatar as
-        /// the build leaves it: each renderer holding its written mesh, which is how a runner measuring a finished build finds
-        /// it. The gate restores every mesh, weight and transform it moves, so the avatar is written as without it. A measure
+        /// this pass leaves it: each renderer holding its written mesh. That is what this pass did, before any later plugin
+        /// runs; a runner measuring the finished build reads the same only where no later pass changes a renderer the report
+        /// names. The gate restores every mesh, weight and transform it moves, so the avatar is written as without it. A measure
         /// that throws is named under <see cref="DiagnosticKeys.GateFailed"/> and leaves <see cref="OptimizationReport.Gate"/>
         /// null; it never fails the build.
         /// </summary>

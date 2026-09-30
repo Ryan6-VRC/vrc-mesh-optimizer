@@ -180,7 +180,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 
         /// <summary>
         /// One line for the console beside the report's summary, in <see cref="Lines"/>' units and digits: any channel that
-        /// failed, first; new crossing as the avatar stands, all of it and the same-facing part, and how much of that is
+        /// failed and any stage of the pass that fell back, first; new crossing as the avatar stands, all of it and the same-facing part, and how much of that is
         /// between different renderers; the pose configuration with the most new crossing; the geometric channel's largest max
         /// and where it was read; and the time the gate took.
         /// </summary>
@@ -192,6 +192,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var failed = new List<string>();
             if (Crossing == null) failed.Add("crossing channel");
             if (GeometryFailed > 0) failed.Add($"geometric channel on {GeometryFailed} renderers");
+            var fellBack = Failures.Count - (Crossing == null ? 1 : 0) - GeometryFailed;
+            if (fellBack > 0) failed.Add($"{fellBack} stages of the pass, which fell back");
             if (failed.Count > 0) sb.Append($" FAILED {string.Join(", ", failed)}, see the gate's lines.");
 
             if (Crossing != null)
