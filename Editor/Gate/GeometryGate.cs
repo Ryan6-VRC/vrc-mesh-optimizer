@@ -99,13 +99,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     internal sealed class GeometryReport
     {
         public readonly Renderer Renderer;
+        /// <summary>The renderer's path from the avatar root, as <see cref="RendererExtraction.PathOf"/> gives it; each line starts with it.</summary>
+        public readonly string Path;
         public readonly IReadOnlyList<ConfigurationDistance> Configurations;
         /// <summary>Configurations asked for and not measured, each with why.</summary>
         public readonly IReadOnlyList<SkippedConfiguration> Skipped;
 
-        public GeometryReport(Renderer renderer, IReadOnlyList<ConfigurationDistance> configurations, IReadOnlyList<SkippedConfiguration> skipped)
+        public GeometryReport(Renderer renderer, string path, IReadOnlyList<ConfigurationDistance> configurations, IReadOnlyList<SkippedConfiguration> skipped)
         {
             Renderer = renderer;
+            Path = path;
             Configurations = configurations;
             Skipped = skipped;
         }
@@ -147,10 +150,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             foreach (var c in Configurations)
             {
                 var d = c.Distance;
-                lines.Add($"{Renderer.name}, {c.Configuration}: source-to-optimized {Direction(d.AToB, "source", camera)}; " +
+                lines.Add($"{Path}, {c.Configuration}: source-to-optimized {Direction(d.AToB, "source", camera)}; " +
                           $"optimized-to-source {Direction(d.BToA, "optimized", camera)}");
             }
-            foreach (var s in Skipped) lines.Add($"{Renderer.name}, {s.Name}: not measured, {s.Reason}");
+            foreach (var s in Skipped) lines.Add($"{Path}, {s.Name}: not measured, {s.Reason}");
             return lines.ToArray();
         }
 
@@ -240,7 +243,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var skipped = new List<SkippedConfiguration>();
             foreach (var pose in poses)
                 skipped.Add(new SkippedConfiguration($"pose '{pose.Name}'", "a MeshRenderer moves rigidly with its bone, so every pose reads as it stands"));
-            return new GeometryReport(input.Renderer, measured, skipped);
+            return new GeometryReport(input.Renderer, RendererExtraction.PathOf(root, input.Renderer), measured, skipped);
         }
 
         static GeometryReport MeasureSkinned(GateInput input, Transform root, IReadOnlyList<GatePose> poses, in SurfaceDistanceSettings settings, ref Sides sides)
@@ -301,7 +304,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     UnityEngine.Object.DestroyImmediate(scratch);
                 }
             }
-            return new GeometryReport(input.Renderer, measured, skipped);
+            return new GeometryReport(input.Renderer, RendererExtraction.PathOf(root, input.Renderer), measured, skipped);
         }
 
         /// <summary>

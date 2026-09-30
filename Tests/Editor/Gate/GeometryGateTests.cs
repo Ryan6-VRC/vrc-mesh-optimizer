@@ -340,7 +340,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
                 StringAssert.Contains("nothing sampled", line);
                 StringAssert.DoesNotContain(" mm", line);
             }
-            var mixed = new GeometryReport(renderer, new[] { measured.Configurations[1], collapsed.Configurations[0], measured.Configurations[0] },
+            var mixed = new GeometryReport(renderer, measured.Path, new[] { measured.Configurations[1], collapsed.Configurations[0], measured.Configurations[0] },
                 Array.Empty<SkippedConfiguration>());
             Assert.That(mixed.Worst(GateDirection.Combined, Statistic.Max), Is.EqualTo(1));
             Assert.That(mixed.Worst(GateDirection.SourceToOptimized, Statistic.Mean), Is.EqualTo(1));

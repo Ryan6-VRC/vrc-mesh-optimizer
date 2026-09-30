@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using nadena.dev.ndmf.runtime;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Unity.Collections;
@@ -28,6 +29,13 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             var drawnBy = renderer is SkinnedMeshRenderer skinned && skinned.rootBone != null ? skinned.rootBone : renderer.transform;
             return drawnBy.localToWorldMatrix.determinant < 0f;
         }
+
+        /// <summary>
+        /// A renderer's path from the avatar root, the one its report row carries as <c>RendererReport.Path</c>, so a gate
+        /// line joins to its row by string equality: empty for a renderer on the root itself, and the renderer's own name
+        /// when it is not under the root.
+        /// </summary>
+        public static string PathOf(Transform root, Renderer renderer) => RuntimeUtil.RelativePath(root.gameObject, renderer.gameObject) ?? renderer.name;
 
         /// <summary>
         /// Avatar-root space: the root's position and rotation, in metres. The root's own scale is left out so an

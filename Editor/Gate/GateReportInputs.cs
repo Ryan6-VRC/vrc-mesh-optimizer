@@ -16,7 +16,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <summary>Renderers the pass wrote a mesh for: each against its own source, by <see cref="GeometryGate"/>.</summary>
         public readonly IReadOnlyList<GateInput> Geometry;
         /// <summary>
-        /// Every renderer with a readable mesh, written or not, for <see cref="CrossingGate"/>: a renderer the pass left as
+        /// Every renderer with a readable, finite mesh, written or not, for <see cref="CrossingGate"/>: a renderer the pass left as
         /// it was can still have a changed one driven through it, so it takes part with its source mesh on both sides.
         /// </summary>
         public readonly IReadOnlyList<GateInput> Crossing;
@@ -56,7 +56,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var leftOut = new List<(string, string)>();
             foreach (var r in report.Renderers)
             {
-                if (r.SourceMesh == null || r.Skip == SkipReason.NoMesh || r.Skip == SkipReason.NoTriangles || r.Skip == SkipReason.NotReadable)
+                if (r.SourceMesh == null || r.Skip == SkipReason.NoMesh || r.Skip == SkipReason.NoTriangles || r.Skip == SkipReason.NotReadable ||
+                    r.Skip == SkipReason.NonFinite)
                 {
                     leftOut.Add((r.Path, $"left out of both channels: {Why(r)}"));
                     continue;
