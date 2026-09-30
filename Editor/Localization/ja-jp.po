@@ -9,19 +9,19 @@ msgid "MeshOptimizer:decimate"
 msgstr "ポリゴンを削減する"
 
 msgid "MeshOptimizer:decimate:tooltip"
-msgstr "辺をまとめてポリゴン数を減らします。アバターが変形したりアニメーションしたりする部分の形は保たれます。"
+msgstr "辺をまとめてポリゴン数を減らします。アバターが曲がる所や動く所の形はそのまま保ちます。"
 
 msgid "MeshOptimizer:removeHiddenTriangles"
 msgstr "隠れたポリゴンを削除する"
 
 msgid "MeshOptimizer:removeHiddenTriangles:tooltip"
-msgstr "同じボーンで動く常時表示のレンダラーに、どの方向からも覆われているポリゴンを削除します。"
+msgstr "同じボーンで動く常時表示のレンダラーに、どこから見ても覆われているポリゴンを削除します。"
 
 msgid "MeshOptimizer:target"
 msgstr "目標"
 
 msgid "MeshOptimizer:target:tooltip"
-msgstr "アバター全体のポリゴン数か、許容差のどちらかを目標に削減します。"
+msgstr "アバター全体を決めたポリゴン数まで減らすか、許容差の範囲で減らせるだけ減らします。"
 
 msgid "TargetKind:TriangleBudget"
 msgstr "ポリゴン数"
@@ -33,61 +33,109 @@ msgid "MeshOptimizer:triangleBudget"
 msgstr "目標ポリゴン数"
 
 msgid "MeshOptimizer:triangleBudget:tooltip"
-msgstr "最適化後のアバター全体のポリゴン数です。"
+msgstr "最適化した後のアバター全体のポリゴン数です。"
 
 msgid "MeshOptimizer:maxError"
 msgstr "最大誤差 (mm)"
 
 msgid "MeshOptimizer:maxError:tooltip"
-msgstr "目標がポリゴン数のときに使います。目標に届くために、最適化後の表面が元の形からずれてよい最大の距離です。単位はミリメートルです。これを超えないと届かない場合は、目標に届かないままになります。0にすると上限はありません。"
+msgstr "目標のポリゴン数まで減らすときに、表面が動いてよい距離をミリメートルで指定します。これより大きく動かさないと届かない場合は、目標に届かないまま止まります。0にすると制限しません。"
 
 msgid "MeshOptimizer:tolerance"
 msgstr "許容差 (mm)"
 
 msgid "MeshOptimizer:tolerance:tooltip"
-msgstr "最適化後の表面が元の形からずれてよい最大の距離です。単位はミリメートルです。"
+msgstr "最適化した表面が元の形から動いてよい距離を、ミリメートルで指定します。"
 
 msgid "MeshOptimizer:alwaysOn"
 msgstr "常時表示のレンダラー"
 
 msgid "MeshOptimizer:alwaysOn:tooltip"
-msgstr "常に表示されるレンダラーです。他のレンダラーのポリゴンを隠せるのはここにあるレンダラーだけなので、オフにできるものは入れないでください。"
+msgstr "非表示にならないレンダラーです。他のメッシュのポリゴンを隠せるのはここにあるものだけなので、トグルでオフにできるものは入れないでください。"
+
+msgid "MeshOptimizer:alwaysOn:help"
+msgstr "このリストのレンダラーに覆われたポリゴンは削除されます。ゲーム内で非表示にすると覆っていた部分が穴になって見えるので、オフにしないレンダラーだけを入れてください。"
 
 msgid "MeshOptimizer:outlinesShowInside"
-msgstr "輪郭線で内側を見せる"
+msgstr "アウトラインで内側を見せる"
 
 msgid "MeshOptimizer:outlinesShowInside:tooltip"
-msgstr "マテリアルの輪郭線が裏面を描くポリゴンは、覆われていても残します。輪郭線越しに内側が見える衣装向けです。オフにすると、主に服の下の肌がより多く削除されます。"
+msgstr "マテリアルのアウトラインが裏面を描いているポリゴンは、覆われていても残します。アウトライン越しに内側が見える衣装ではオンにしてください。オフのままだと、主に服の下の肌がより多く削除されます。"
 
 msgid "MeshOptimizer:materials"
-msgstr "マテリアルごとの遮蔽"
+msgstr "マテリアルの上書き"
 
 msgid "MeshOptimizer:materials:tooltip"
-msgstr "マテリアルごとに、その面が後ろにあるものを隠すかどうかを設定します。"
+msgstr "ほとんどのマテリアルは「自動」で正しく判定されます。レースやメッシュ、不透明シェーダーで描いた切り抜きのように、すき間があるのに不透明と判定されたものは「透過」にします。販売元が半透明のRender Queueにしていたり、テクスチャのアルファが完全には不透明でなかったりして、不透明なのに透けると判定されたものは「不透明」にします。各マテリアルの判定は「レンダラーのマテリアルを解析」で確認できます。"
+
+msgid "MeshOptimizer:materials:help"
+msgstr "常時表示のレンダラーのマテリアルが後ろを隠すかどうかは「自動」が判定するので、判定が間違っているものがなければ、このリストは空のままで大丈夫です。「不透明」は常に後ろを隠し、「透過」は何も隠しません。"
 
 msgid "MaterialOcclusion:material"
 msgstr "マテリアル"
 
 msgid "MaterialOcclusion:mode"
-msgstr "遮蔽"
+msgstr "扱い"
 
 msgid "OcclusionMode:Automatic"
 msgstr "自動"
 
 msgid "OcclusionMode:Automatic:tooltip"
-msgstr "Render QueueとRenderTypeが不透明を示していれば不透明として扱い、そうでなければテクスチャのアルファで判定します。"
+msgstr "Render QueueとRenderTypeが不透明を示していれば不透明として扱います。そうでなければテクスチャのアルファで判定します。"
 
 msgid "OcclusionMode:ForceOpaque"
-msgstr "常に不透明"
+msgstr "不透明"
 
 msgid "OcclusionMode:ForceOpaque:tooltip"
-msgstr "アルファに関係なく、面全体を不透明として扱います。"
+msgstr "アルファの値に関係なく、後ろにあるものを必ず隠します。"
 
 msgid "OcclusionMode:NeverOccludes"
-msgstr "遮蔽しない"
+msgstr "透過"
 
 msgid "OcclusionMode:NeverOccludes:tooltip"
-msgstr "このマテリアルは後ろにあるものを隠さないものとして扱います。"
+msgstr "後ろにあるものを一切隠しません。"
+
+msgid "MeshOptimizer:check"
+msgstr "レンダラーのマテリアルを解析"
+
+msgid "MeshOptimizer:check:tooltip"
+msgstr "常時表示のレンダラーの各マテリアルを「自動」がどう判定するかを表示します。上書きリストには何も追加しません。テクスチャの読み込みに少し時間がかかることがあります。"
+
+msgid "MeshOptimizer:override"
+msgstr "「{0}」にする"
+
+msgid "MeshOptimizer:override:tooltip"
+msgstr "このマテリアルを、判定と逆の設定で上書きリストに追加します。「自動」の判定が間違っているときだけ使ってください。"
+
+msgid "MeshOptimizer:verdict"
+msgstr "「自動」の判定"
+
+msgid "MeshOptimizer:verdict:tooltip"
+msgstr "このマテリアルに対する「自動」の判定で、ビルドと同じ方法で求めています。ビルド中に別のツールがマテリアルを差し替えると、結果が変わることがあります。"
+
+msgid "MeshOptimizer:verdict:opaque"
+msgstr "不透明"
+
+msgid "MeshOptimizer:verdict:opaque:tooltip"
+msgstr "Render QueueとRenderTypeが不透明を示しているので、後ろを隠します。レースやメッシュのように、メッシュにはないすき間が表面にあるなら「透過」にしてください。"
+
+msgid "MeshOptimizer:verdict:by-alpha"
+msgstr "{0}%が不透明"
+
+msgid "MeshOptimizer:verdict:by-alpha:tooltip"
+msgstr "テクスチャのこの割合が不透明、残りが透過と判定されています。テクスチャのアルファをテクセルごとに見て判定します。表面全体が不透明なら「不透明」にしてください。"
+
+msgid "MeshOptimizer:verdict:see-through"
+msgstr "透過"
+
+msgid "MeshOptimizer:verdict:see-through:tooltip"
+msgstr "透けている可能性があり、テクスチャからアルファを読み取れないため、何も隠しません。表面が不透明なら「不透明」にしてください。"
+
+msgid "MeshOptimizer:verdict:unchecked"
+msgstr "未解析"
+
+msgid "MeshOptimizer:verdict:unchecked:tooltip"
+msgstr "前回の解析の後に変更されています。もう一度「レンダラーのマテリアルを解析」を押してください。"
 
 msgid "MeshOptimizer:renderers"
 msgstr "レンダラーごとの設定"
@@ -99,31 +147,37 @@ msgid "RendererSettings:excludeFromDecimation"
 msgstr "ポリゴン削減から除外"
 
 msgid "RendererSettings:excludeFromDecimation:tooltip"
-msgstr "このレンダラーのポリゴンは削減しません。隠れたポリゴンの削除は行われます。"
+msgstr "このレンダラーはポリゴンを削減しません。隠れたポリゴンの削除は行われます。"
+
+msgid "MeshOptimizer:column:exclude"
+msgstr "除外"
+
+msgid "MeshOptimizer:column:exclude:tooltip"
+msgstr "このレンダラーはポリゴンを削減しません。隠れたポリゴンの削除は行われます。"
 
 msgid "RendererSettings:protection"
 msgstr "保護の強さ"
 
 msgid "RendererSettings:protection:tooltip"
-msgstr "このレンダラーの細部をどれだけ残すかです。目標に対して、このレンダラーの誤差をこの倍数で数えます。1が標準で、大きいほど多く残します。"
+msgstr "このレンダラーの細部をどれだけ残すかです。目標に対して誤差をこの倍率で数えるので、1が標準で、大きくするほど細部が残ります。"
 
 msgid "MeshOptimizer:faceFloor"
 msgstr "顔に残す割合"
 
 msgid "MeshOptimizer:faceFloor:tooltip"
-msgstr "リップシンクに使う顔のレンダラーが、目標に関係なく残すポリゴンの割合です。表情で最も大きく変形し、他のプレイヤーが最もよく見る部分なので、削減はまず他の部分で行われます。"
+msgstr "目標に関係なく、リップシンクに使う顔のメッシュが最低限残すポリゴンの割合です。顔は最も大きく変形し、他のプレイヤーからよく見られるので、削減はまず他の部分で行います。"
 
 msgid "MeshOptimizer:lockFingers"
 msgstr "指を保護する"
 
 msgid "MeshOptimizer:lockFingers:tooltip"
-msgstr "Humanoidのボーン割り当てから指を見つけ、指に乗っている頂点をすべて残します。指は関節ごとに曲がり、削減するとすぐに細くなってしまいます。"
+msgstr "Humanoidのボーン割り当てから指を見つけ、指の頂点は削除しません。指は関節ごとに曲がるので、削減するとすぐに崩れてしまいます。"
 
 msgid "MeshOptimizer:fingerWeight"
 msgstr "指のウェイト"
 
 msgid "MeshOptimizer:fingerWeight:tooltip"
-msgstr "指のボーンにこの値以上のウェイトを持つ頂点を、指の頂点として扱います。小さくするほど手の多くの部分が保護されます。"
+msgstr "指のボーンへのウェイトがこの値以上の頂点を、指の一部として扱います。小さくするほど手の広い範囲が保護されます。"
 
 msgid "MeshOptimizer:advanced"
 msgstr "詳細設定"
@@ -132,7 +186,7 @@ msgid "MeshOptimizer:preset"
 msgstr "プリセット"
 
 msgid "MeshOptimizer:preset:tooltip"
-msgstr "許容差の目安です。「細かい」は細部を最も多く残し、「粗い」は最も多く削減します。許容差を直接変更すると「カスタム」になります。"
+msgstr "許容差の目安です。「細かい」は細部を最も多く残し、「粗い」は最も多く削減します。許容差を自分で入力すると「カスタム」になります。"
 
 msgid "TolerancePreset:Fine"
 msgstr "細かい (0.5 mm)"
@@ -153,25 +207,25 @@ msgid "MeshOptimizer:preview"
 msgstr "削減をプレビュー"
 
 msgid "MeshOptimizer:preview:tooltip"
-msgstr "削減後のメッシュをシーンビューに表示します。最初のプレビューはすべてのメッシュを記録するため時間がかかることがあります。その後に目標を変えた場合は、切り直すだけで済みます。"
+msgstr "削減後のメッシュをシーンビューに表示します。初回はすべてのメッシュを処理するので数秒かかることがありますが、その後は目標を変えるとすぐに反映されます。"
 
 msgid "MeshOptimizer:preview:off"
 msgstr "プレビューはオフです。"
 
 msgid "MeshOptimizer:preview:pending"
-msgstr "プレビューを計算しています。"
+msgstr "プレビューを計算中です。"
 
 msgid "MeshOptimizer:preview:result"
 msgstr "ポリゴン数 {0} → {1}、誤差レベル {2} mm"
 
 msgid "MeshOptimizer:preview:failed"
-msgstr "プレビューに失敗しました: {0}"
+msgstr "プレビューに失敗しました。{0}"
 
 msgid "MeshOptimizer:preview:note:descriptor"
-msgstr "ポリゴン数はAvatar Descriptorの内容から見積もった値で、正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
+msgstr "ポリゴン数はAvatar Descriptorから見積もった値で、正確な数はビルドのレポートで確認できます。プレビューに出るのはポリゴン削減だけで、隠れたポリゴンはビルド時に削除されます。"
 
 msgid "MeshOptimizer:preview:note:every-key-live"
-msgstr "アバターのルートにAvatar Descriptorがないため、すべてのシェイプキーを動くものとして見積もっています。正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
+msgstr "アバターのルートにAvatar Descriptorがないため、すべてのシェイプキーを動くものとして見積もっています。正確な数はビルドのレポートで確認できます。プレビューに出るのはポリゴン削減だけで、隠れたポリゴンはビルド時に削除されます。"
 
 msgid "MeshOptimizer:preview:progress"
 msgstr "Mesh Optimizer プレビュー"
@@ -183,64 +237,64 @@ msgid "MeshOptimizer:diag:not-readable"
 msgstr "Mesh Optimizerが{1}を読み込めません"
 
 msgid "MeshOptimizer:diag:not-readable:description"
-msgstr "{0}は変更していません。メッシュ{1}はプレイモードでの読み込みが許可されていません。"
+msgstr "メッシュ{1}がプレイモードで読み込めないため、{0}は変更していません。"
 
 msgid "MeshOptimizer:diag:not-readable:hint"
-msgstr "モデルのインポート設定でRead/Writeを有効にするか、メッシュを読み込めるアップロード用ビルドで確認してください。"
+msgstr "モデルのインポート設定でRead/Writeを有効にするか、メッシュを読み込めるアップロード用のビルドで確認してください。"
 
 msgid "MeshOptimizer:diag:cloth"
 msgstr "Mesh OptimizerはClothのあるレンダラーをスキップしました"
 
 msgid "MeshOptimizer:diag:cloth:description"
-msgstr "{0}は変更していません。Clothコンポーネントがメッシュの頂点を番号で参照しているため、頂点を削除できません。"
+msgstr "{0}は変更していません。Clothコンポーネントがメッシュの頂点を番号で参照しているので、頂点を1つも削除できません。"
 
 msgid "MeshOptimizer:diag:cloth:hint"
-msgstr "このレンダラーのポリゴン数が問題でなければ対応は不要です。問題であれば、Clothを付ける前にメッシュを削減してください。"
+msgstr "このレンダラーのポリゴン数が気になる場合は、Clothを付ける前にメッシュを削減してください。そうでなければ対応は不要です。"
 
 msgid "MeshOptimizer:diag:renderer-failed"
 msgstr "Mesh Optimizerがレンダラーの処理に失敗しました"
 
 msgid "MeshOptimizer:diag:renderer-failed:description"
-msgstr "{0}の{1}で失敗しました: {2}。他のレンダラーは最適化されています。"
+msgstr "{0}は{1}の途中で失敗しました。他のレンダラーは最適化されています。{2}"
 
 msgid "MeshOptimizer:diag:renderer-failed:hint"
-msgstr "詳しいエラーはコンソールにあります。ExtractionかWritingで失敗したレンダラーは変更していません。Decimationで失敗したレンダラーは隠れたポリゴンの削除だけを行いました。"
+msgstr "詳しいエラーはコンソールに出ています。ExtractionかWritingで失敗したレンダラーは変更していません。Decimationで失敗したレンダラーも、隠れたポリゴンの削除は行われています。"
 
 msgid "MeshOptimizer:diag:occlusion-failed"
 msgstr "Mesh Optimizerが隠れたポリゴンを判定できませんでした"
 
 msgid "MeshOptimizer:diag:occlusion-failed:description"
-msgstr "隠れたポリゴンの判定に失敗したため、隠れていることを理由に削除したポリゴンはありません: {0}"
+msgstr "隠れたポリゴンの判定に失敗したため、何も削除していません。{0}"
 
 msgid "MeshOptimizer:diag:occlusion-failed:hint"
-msgstr "詳しいエラーはコンソールにあります。ポリゴン削減は行われました。"
+msgstr "詳しいエラーはコンソールに出ています。ポリゴン削減は行われました。"
 
 msgid "MeshOptimizer:diag:rejudge-failed"
 msgstr "Mesh Optimizerが削減後のメッシュで隠れたポリゴンを確認できませんでした"
 
 msgid "MeshOptimizer:diag:rejudge-failed:description"
-msgstr "ポリゴン削減で見えるようになった隠れたポリゴンがないかの確認に失敗したため、最初の判定のまま削除しています: {0}"
+msgstr "削減で見えるようになったポリゴンがないかの確認に失敗したため、削除したポリゴンはすべて削除したままです。{0}"
 
 msgid "MeshOptimizer:diag:rejudge-failed:hint"
-msgstr "詳しいエラーはコンソールにあります。常時表示のメッシュを粗く削減した箇所では、穴が見えることがあります。予算や許容誤差を緩めると起こりにくくなります。"
+msgstr "詳しいエラーはコンソールに出ています。常時表示のメッシュを削減した箇所では、穴が見えることがあります。目標ポリゴン数や許容差を緩めると起こりにくくなります。"
 
 msgid "MeshOptimizer:diag:budget-not-met"
 msgstr "Mesh Optimizerが目標ポリゴン数に届きませんでした"
 
 msgid "MeshOptimizer:diag:budget-not-met:description"
-msgstr "アバターのポリゴン数は{0}で、目標は{1}です。そのうち{2}は、削減で覆いがなくなったため書き戻した隠れポリゴンです。"
+msgstr "アバターのポリゴン数は{0}で、目標は{1}です。このうち{2}は、覆っていたものが削減で消えたために戻した隠れたポリゴンです。"
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションでスケール0から大きくなるボーンの頂点は削除されず、重なった服の層は隣の層との隙間の決まった割合より近くまでは削減されません。目標を上げるか、削減できるレンダラーを増やしてください。"
+msgstr "削減できないポリゴンもあります。除外したレンダラーや変更しなかったレンダラーはそのまま数えられます。顔は詳細設定で決めた割合を残します。指の頂点と、アニメーションでスケール0から大きくなるボーンの頂点も残ります。重なった服は、隣の層との隙間に応じた距離より近くまでは削減しません。目標を上げるか、削減できるレンダラーを増やしてください。"
 
 msgid "MeshOptimizer:diag:budget-ceiling-held"
 msgstr "Mesh Optimizerは誤差の上限で止まり、目標ポリゴン数に届きませんでした"
 
 msgid "MeshOptimizer:diag:budget-ceiling-held:description"
-msgstr "アバターのポリゴン数は{0}で、目標は{1}です。目標に届くには、誤差の上限の{2} mmを超えて形を動かす必要があります。"
+msgstr "アバターのポリゴン数は{0}で、目標は{1}です。目標まで減らすには、誤差の上限の{2} mmより大きく表面を動かす必要があります。"
 
 msgid "MeshOptimizer:diag:budget-ceiling-held:hint"
-msgstr "目標に合わせて形を崩すのではなく、上限の範囲で削減しています。上限の範囲で届くポリゴン数まで目標を上げてください。"
+msgstr "数に合わせて形を崩さないよう、上限の範囲で削減を止めています。届くところまで目標ポリゴン数を上げるか、最大誤差を上げてください。"
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "常時表示のレンダラーがオフになっています"
@@ -255,7 +309,7 @@ msgid "MeshOptimizer:diag:multiple-components"
 msgstr "アバターにMesh Optimizerが複数あります"
 
 msgid "MeshOptimizer:diag:multiple-components:description"
-msgstr "{0}が見つかりました。{1}の設定だけを使いました。"
+msgstr "{0}が見つかりました。使ったのは{1}の設定だけです。"
 
 msgid "MeshOptimizer:diag:multiple-components:hint"
 msgstr "Mesh Optimizerはアバターごとに1つにしてください。"
@@ -264,16 +318,16 @@ msgid "MeshOptimizer:diag:pass-failed"
 msgstr "Mesh Optimizerが失敗しました"
 
 msgid "MeshOptimizer:diag:pass-failed:description"
-msgstr "アバターは変更していません: {0}"
+msgstr "アバターは変更していません。{0}"
 
 msgid "MeshOptimizer:diag:pass-failed:hint"
-msgstr "詳しいエラーはコンソールにあります。"
+msgstr "詳しいエラーはコンソールに出ています。"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched"
-msgstr "「遮蔽しない」に設定したマテリアルがどれにも一致しません"
+msgstr "「透過」に設定したマテリアルがどれにも一致しません"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:description"
-msgstr "{0}は「遮蔽しない」に設定されていますが、アバターのどのレンダラーもこのマテリアルや同名の複製を使っていないため、この設定は効いていません。置き換わったマテリアルが背後のポリゴンを隠すことがあります。"
+msgstr "{0}は「透過」に設定されていますが、アバターのどのレンダラーもこのマテリアルや同じ名前の複製を使っていないため、この設定は効いていません。差し替え先のマテリアルが後ろのポリゴンを隠すことがあります。"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
 msgstr "ビルド時にレンダラーが使うマテリアルに設定し直すか、マテリアルがもう無ければ設定を削除してください。"
@@ -282,16 +336,16 @@ msgid "MeshOptimizer:diag:non-finite-vertex"
 msgstr "Mesh Optimizerは数値でない頂点を持つメッシュをスキップしました"
 
 msgid "MeshOptimizer:diag:non-finite-vertex:description"
-msgstr "{0}は変更していません。頂点{1}の位置かUVが有限の数値ではなく、最適化で測るどの誤差もゼロと読んでしまうためです。"
+msgstr "{0}は変更していません。頂点{1}の位置かUVが有限の数値でなく、最適化で測る誤差がすべてゼロになってしまうためです。"
 
 msgid "MeshOptimizer:diag:non-finite-vertex:hint"
-msgstr "元データからメッシュを書き出し直してください。壊れたエクスポートやボーンウェイトがこのような頂点を残すことがあります。"
+msgstr "元データからメッシュを書き出し直してください。エクスポートやボーンウェイトが壊れているとよく起こります。"
 
 msgid "MeshOptimizer:diag:non-finite-shape-key"
 msgstr "Mesh Optimizerは数値でないシェイプキーを持つメッシュをスキップしました"
 
 msgid "MeshOptimizer:diag:non-finite-shape-key:description"
-msgstr "{0}は変更していません。シェイプキー{1}が頂点{2}を有限の数値でない距離だけ動かし、最適化で測るどの誤差もゼロと読んでしまうためです。"
+msgstr "{0}は変更していません。シェイプキー{1}が頂点{2}を有限の数値でない距離だけ動かしていて、最適化で測る誤差がすべてゼロになってしまうためです。"
 
 msgid "MeshOptimizer:diag:non-finite-shape-key:hint"
 msgstr "元データでシェイプキーを直すか削除して、書き出し直してください。"
@@ -300,16 +354,16 @@ msgid "MeshOptimizer:diag:duplicate-shape-key"
 msgstr "Mesh Optimizerは同じ名前のシェイプキーが2つあるメッシュをスキップしました"
 
 msgid "MeshOptimizer:diag:duplicate-shape-key:description"
-msgstr "{0}は変更していません。{1}という名前のシェイプキーが複数あり、Unityはシェイプキーを名前で探すため、新しいメッシュに両方を残せません。"
+msgstr "{0}は変更していません。{1}という名前のシェイプキーが複数あり、Unityはシェイプキーを名前で探すので、新しいメッシュに両方を残せません。"
 
 msgid "MeshOptimizer:diag:duplicate-shape-key:hint"
-msgstr "元データでシェイプキーの名前が重ならないように変えて、書き出し直してください。"
+msgstr "元データで同じ名前のシェイプキーがなくなるように名前を変えてから、書き出し直してください。"
 
 msgid "MeshOptimizer:diag:gate-failed"
 msgstr "Mesh Optimizerはゲートを計測できませんでした"
 
 msgid "MeshOptimizer:diag:gate-failed:description"
-msgstr "このビルドで有効にしたゲートの計測に失敗したため、レポートにゲートの数値はありません。アバターは計測がない場合と同じく最適化されています: {0}"
+msgstr "このビルドで有効にしたゲートの計測に失敗したため、レポートにゲートの数値はありません。アバターは計測がない場合とまったく同じように最適化されています。{0}"
 
 msgid "MeshOptimizer:diag:gate-failed:hint"
-msgstr "詳しいエラーはコンソールにあります。ゲートは有効にしたときだけ動く計測なので、アバター側で直すものはありません。"
+msgstr "詳しいエラーはコンソールに出ています。ゲートは有効にしたときだけ動く計測なので、アバター側で直すところはありません。"

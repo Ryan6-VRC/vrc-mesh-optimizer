@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Extraction;
+using Ryan6Vrc.MeshOptimizer.Inspector;
+using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEngine;
 
@@ -277,6 +279,37 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Extraction
             var surface = AlphaReader.Read(material, OcclusionMode.Automatic);
 
             Assert.That(surface.Occludes, Is.EqualTo(occludes));
+        }
+
+        // The inspector tells a user what Automatic makes of a material so they can override a wrong reading; a verdict
+        // that differs from the build's own classification would send them to override a material the build reads right.
+        [Test]
+        public void TheInspectorsVerdict_IsTheBuildsClassification_ForEachKind()
+        {
+            var opaque = Standard(2000);
+            var byAlpha = Standard(3000);
+            byAlpha.SetTexture("_MainTex", Pattern());
+            var seeThrough = new Material(Shader.Find("Sprites/Default")) { renderQueue = 3000 };
+            _made.Add(seeThrough);
+
+            foreach (var (material, expected) in new[] { (opaque, VerdictKind.Opaque), (byAlpha, VerdictKind.ByAlpha), (seeThrough, VerdictKind.SeeThrough) })
+            {
+                var holder = new GameObject(material.name);
+                _made.Add(holder);
+                var renderer = holder.AddComponent<MeshRenderer>();
+                renderer.sharedMaterial = material;
+                var build = new OccluderMaterials(null).For(renderer, 1)[0];
+                var buildKind = build.Mode == Core.Occlusion.OccluderMode.NeverOccludes ? VerdictKind.SeeThrough
+                    : build.Alpha != null ? VerdictKind.ByAlpha
+                    : VerdictKind.Opaque;
+
+                var verdict = MaterialVerdicts.Of(material);
+
+                Assert.That(buildKind, Is.EqualTo(expected), $"{expected}: the build's classification");
+                Assert.That(verdict.Kind, Is.EqualTo(buildKind), $"{expected}: the inspector's verdict");
+            }
+            // Only the pattern's last texel reaches full alpha, the solid threshold of a blended material.
+            Assert.That(MaterialVerdicts.Of(byAlpha).SolidShare, Is.EqualTo(1f / 16f));
         }
 
         static void Apply(Material material, string settings)
