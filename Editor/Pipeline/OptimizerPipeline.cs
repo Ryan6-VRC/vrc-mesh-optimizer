@@ -973,8 +973,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// are then the whole mesh's pieces: a renderer's other pieces (a lining under its outer) keep clear of its removed
         /// triangles as of kept ones, and pieces joined only through removed triangles are one layer, as in the source.
         /// <see cref="PipelineInput.RemovedAsNeighbours"/> off leaves a removed triangle out, so nothing is held clear of
-        /// it and the renderer cut over one written back may cross it. A renderer off at build is in it like any other,
-        /// since whatever turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is
+        /// it and the renderer cut over one written back may cross it. A renderer off at build by its object or its
+        /// renderer is in it whole, like any other, since whatever turns it on shows it against the rest. One shown by a
+        /// clip growing a bone from zero scale is in it as nothing, since its triangles have no area as the avatar stands,
+        /// so its neighbours are held clear of nothing where it appears. One excluded from decimation is in it, unmoved. So is
         /// a renderer the pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be
         /// read: it is still drawn where it stands, whole, so its neighbours keep clear of its source.
         /// </summary>

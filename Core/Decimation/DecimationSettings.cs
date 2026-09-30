@@ -130,7 +130,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// the triangles the caller hands in, so one left out is held clear of by nothing, and if it is drawn after all it was
     /// never a neighbour and a layer may cross it. The pipeline hands in the triangles occlusion removed, which re-judging
     /// can write back, as neighbours of every other layer; its RemovedAsNeighbours switch off leaves them out, and a
-    /// layer may then cross one written back.
+    /// layer may then cross one written back. The pipeline hands in each renderer as the avatar stands: one off by its
+    /// object or its renderer stands in whole, but one shown by a clip growing a bone from zero scale has no area there
+    /// and stands in as nothing, so its neighbours are held clear of nothing where it appears.
     /// </summary>
     internal struct ClearanceSettings
     {
