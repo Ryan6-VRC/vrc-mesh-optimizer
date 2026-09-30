@@ -155,6 +155,15 @@ msgstr "アバターのポリゴン数は{0}で、目標は{1}です。"
 msgid "MeshOptimizer:diag:budget-not-met:hint"
 msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションでスケール0から大きくなるボーンの頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
 
+msgid "MeshOptimizer:diag:budget-ceiling-held"
+msgstr "Mesh Optimizerは誤差の上限で止まり、目標ポリゴン数に届きませんでした"
+
+msgid "MeshOptimizer:diag:budget-ceiling-held:description"
+msgstr "アバターのポリゴン数は{0}で、目標は{1}です。目標に届くには、誤差の上限の{2} mmを超えて形を動かす必要があります。"
+
+msgid "MeshOptimizer:diag:budget-ceiling-held:hint"
+msgstr "目標に合わせて形を崩すのではなく、上限の範囲で削減しています。上限の範囲で届くポリゴン数まで目標を上げてください。"
+
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "常時表示のレンダラーがオフになっています"
 
