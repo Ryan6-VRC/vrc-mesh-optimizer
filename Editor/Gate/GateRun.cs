@@ -334,7 +334,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     /// </summary>
     internal static class GateRun
     {
-        static readonly string[] FailureKeys = { DiagnosticKeys.RendererFailed, DiagnosticKeys.OcclusionFailed, DiagnosticKeys.RejudgeFailed, DiagnosticKeys.PassFailed };
+        /// <summary>
+        /// The keys of a stage that fell back and still wrote meshes. A pass that fails whole leaves no report for a gate to
+        /// read, so its key (<see cref="DiagnosticKeys.PassFailed"/>) is not among them.
+        /// </summary>
+        static readonly string[] FailureKeys = { DiagnosticKeys.RendererFailed, DiagnosticKeys.OcclusionFailed, DiagnosticKeys.RejudgeFailed };
 
         /// <summary>
         /// Hashes every report row's meshes, and measures crossing once over the report's renderers, as the avatar stands, in
