@@ -38,11 +38,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         [ReadOnly] internal NativeArray<int> NodeLayer;
         /// <summary>
         /// Per prim in leaf order, its clearance from every other layer, capped at <see cref="Reach"/>: the gap on this
-        /// side, where another layer comes near it.
+        /// side, where another layer comes near it. It is the gap to whichever layer is nearest, which need not be the
+        /// layer a query asks for; <see cref="PrimNearest"/> says which.
         /// </summary>
         [ReadOnly] internal NativeArray<float> PrimClearance;
         /// <summary>Per node, the largest <see cref="PrimClearance"/> under it.</summary>
         [ReadOnly] internal NativeArray<float> NodeClearance;
+        /// <summary>Per prim in leaf order, the layer its <see cref="PrimClearance"/> came from, or -1 when none is within <see cref="Reach"/>.</summary>
+        [ReadOnly] internal NativeArray<int> PrimNearest;
+        /// <summary>
+        /// Per node, the one layer every prim under it has as <see cref="PrimNearest"/>, prims with none aside: -1 when
+        /// none has one, -2 when they differ.
+        /// </summary>
+        [ReadOnly] internal NativeArray<int> NodeNearest;
+        /// <summary>
+        /// Per prim in leaf order, its clearance from every layer but its own and its <see cref="PrimNearest"/>, capped at
+        /// <see cref="Reach"/>: the gap to the next layer out, which a query from a pair sandwiched between nearer layers
+        /// most often asks for. <see cref="PrimSecondLayer"/> is the layer it came from, or -1 when none is within the reach.
+        /// </summary>
+        [ReadOnly] internal NativeArray<float> PrimSecond;
+        [ReadOnly] internal NativeArray<int> PrimSecondLayer;
         /// <summary>The cap on every clearance here, in metres.</summary>
         public float Reach;
 
@@ -58,6 +73,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             NodeLayer = new NativeArray<int>(0, allocator),
             PrimClearance = new NativeArray<float>(0, allocator),
             NodeClearance = new NativeArray<float>(0, allocator),
+            PrimNearest = new NativeArray<int>(0, allocator),
+            NodeNearest = new NativeArray<int>(0, allocator),
+            PrimSecond = new NativeArray<float>(0, allocator),
+            PrimSecondLayer = new NativeArray<int>(0, allocator),
         };
 
         public void Dispose()
@@ -68,6 +87,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             if (NodeLayer.IsCreated) NodeLayer.Dispose();
             if (PrimClearance.IsCreated) PrimClearance.Dispose();
             if (NodeClearance.IsCreated) NodeClearance.Dispose();
+            if (PrimNearest.IsCreated) PrimNearest.Dispose();
+            if (NodeNearest.IsCreated) NodeNearest.Dispose();
+            if (PrimSecond.IsCreated) PrimSecond.Dispose();
+            if (PrimSecondLayer.IsCreated) PrimSecondLayer.Dispose();
         }
 
         /// <summary>
@@ -112,12 +135,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 }.Run();
                 surface.PrimClearance = new NativeArray<float>(surface.Prims.Length, allocator);
                 surface.NodeClearance = new NativeArray<float>(surface.Nodes.Length, allocator);
+                surface.PrimNearest = new NativeArray<int>(surface.Prims.Length, allocator);
+                surface.NodeNearest = new NativeArray<int>(surface.Nodes.Length, allocator);
+                surface.PrimSecond = new NativeArray<float>(surface.Prims.Length, allocator);
+                surface.PrimSecondLayer = new NativeArray<int>(surface.Prims.Length, allocator);
                 new PrimClearanceJob
                 {
                     Nodes = surface.Nodes, Prims = surface.Prims, PrimLayer = surface.PrimLayer, NodeLayer = surface.NodeLayer,
-                    Reach = reach, Clearance = surface.PrimClearance,
+                    Reach = reach, Clearance = surface.PrimClearance, Nearest = surface.PrimNearest,
+                    Second = surface.PrimSecond, SecondLayer = surface.PrimSecondLayer,
                 }.Schedule(surface.Prims.Length, 128).Complete();
-                new NodeClearanceJob { Nodes = surface.Nodes, PrimClearance = surface.PrimClearance, NodeClearance = surface.NodeClearance }.Run();
+                new NodeClearanceJob
+                {
+                    Nodes = surface.Nodes, PrimClearance = surface.PrimClearance, PrimNearest = surface.PrimNearest,
+                    NodeClearance = surface.NodeClearance, NodeNearest = surface.NodeNearest,
+                }.Run();
                 return surface;
             }
             catch
@@ -140,12 +172,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             [ReadOnly] public NativeArray<int> NodeLayer;
             public float Reach;
             public NativeArray<float> Clearance;
+            public NativeArray<int> Nearest;
+            public NativeArray<float> Second;
+            public NativeArray<int> SecondLayer;
 
             public void Execute(int i)
             {
                 var tree = new ClearanceSurface { Nodes = Nodes, Prims = Prims, PrimLayer = PrimLayer, NodeLayer = NodeLayer };
                 var p = Prims[i];
-                Clearance[i] = tree.TriangleClearance(p.A, p.B, p.C, PrimLayer[i], Reach);
+                Clearance[i] = tree.TriangleClearance(p.A, p.B, p.C, PrimLayer[i], -1, Reach, out var nearest);
+                Nearest[i] = nearest;
+                var second = -1;
+                Second[i] = nearest < 0 ? Reach : tree.TriangleClearance(p.A, p.B, p.C, PrimLayer[i], nearest, Reach, out second);
+                SecondLayer[i] = second;
             }
         }
 
@@ -154,7 +193,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         {
             [ReadOnly] public NativeArray<TreeNode> Nodes;
             [ReadOnly] public NativeArray<float> PrimClearance;
+            [ReadOnly] public NativeArray<int> PrimNearest;
             public NativeArray<float> NodeClearance;
+            public NativeArray<int> NodeNearest;
 
             public void Execute()
             {
@@ -163,12 +204,24 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 {
                     var node = Nodes[i];
                     var most = 0f;
+                    var nearest = -1;
                     if (node.Count > 0)
-                        for (var k = node.Start; k < node.Start + node.Count; k++) most = math.max(most, PrimClearance[k]);
-                    else most = math.max(NodeClearance[node.Start], NodeClearance[node.Start + 1]);
+                        for (var k = node.Start; k < node.Start + node.Count; k++)
+                        {
+                            most = math.max(most, PrimClearance[k]);
+                            nearest = Join(nearest, PrimNearest[k]);
+                        }
+                    else
+                    {
+                        most = math.max(NodeClearance[node.Start], NodeClearance[node.Start + 1]);
+                        nearest = Join(NodeNearest[node.Start], NodeNearest[node.Start + 1]);
+                    }
                     NodeClearance[i] = most;
+                    NodeNearest[i] = nearest;
                 }
             }
+
+            static int Join(int x, int y) => x == -1 ? y : y == -1 || y == x ? x : -2;
         }
 
         [BurstCompile(CompileSynchronously = true)]
@@ -465,8 +518,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         /// The distance from triangle abc to the nearest triangle of any layer but <paramref name="layer"/>, or
         /// <paramref name="cap"/> when none is nearer. 0 when one touches or crosses it.
         /// </summary>
-        internal unsafe float TriangleClearance(float3 a, float3 b, float3 c, int layer, float cap)
+        internal float TriangleClearance(float3 a, float3 b, float3 c, int layer, float cap) => TriangleClearance(a, b, c, layer, -1, cap, out _);
+
+        /// <summary>
+        /// As the overload above, leaving out <paramref name="also"/>'s triangles too unless it is -1; <paramref name="nearest"/>
+        /// is the layer of the triangle found nearest, or -1 when none is nearer than <paramref name="cap"/>.
+        /// </summary>
+        internal unsafe float TriangleClearance(float3 a, float3 b, float3 c, int layer, int also, float cap, out int nearest)
         {
+            nearest = -1;
             var best = cap * cap;
             if (Nodes.Length == 0) return cap;
             var q = new Query(a, b, c);
@@ -476,17 +536,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             while (top > 0 && best > 0f)
             {
                 var i = stack[--top];
-                if (NodeLayer[i] == layer) continue;
+                if (NodeLayer[i] == layer || (also >= 0 && NodeLayer[i] == also)) continue;
                 var node = Nodes[i];
                 if (q.BoxBoxSq(node) >= best || q.BoxApart(node, math.sqrt(best))) continue;
                 if (node.Count > 0)
                 {
                     for (var k = node.Start; k < node.Start + node.Count; k++)
                     {
-                        if (PrimLayer[k] == layer) continue;
+                        if (PrimLayer[k] == layer || PrimLayer[k] == also) continue;
                         var prim = Prims[k];
                         if (q.PrimApart(prim, math.sqrt(best))) continue;
-                        best = math.min(best, TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C));
+                        var d = TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C);
+                        if (d < best)
+                        {
+                            best = d;
+                            nearest = PrimLayer[k];
+                        }
                     }
                     continue;
                 }
@@ -527,6 +592,39 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                         if (PrimLayer[k] != layer) continue;
                         var prim = Prims[k];
                         best = math.min(best, TriangleDistance.PointSq(p, prim.A, prim.B, prim.C));
+                    }
+                    continue;
+                }
+                stack[top++] = node.Start;
+                stack[top++] = node.Start + 1;
+            }
+            return math.sqrt(best);
+        }
+
+        /// <summary>The distance from triangle abc to <paramref name="layer"/>'s triangles alone, or <paramref name="cap"/> when none is nearer.</summary>
+        internal unsafe float TriangleToLayer(float3 a, float3 b, float3 c, int layer, float cap)
+        {
+            var best = cap * cap;
+            if (Nodes.Length == 0) return cap;
+            var q = new Query(a, b, c);
+            var stack = stackalloc int[TriangleTree.StackSize];
+            var top = 0;
+            stack[top++] = 0;
+            while (top > 0 && best > 0f)
+            {
+                var i = stack[--top];
+                var only = NodeLayer[i];
+                if (only >= 0 && only != layer) continue;
+                var node = Nodes[i];
+                if (q.BoxBoxSq(node) >= best || q.BoxApart(node, math.sqrt(best))) continue;
+                if (node.Count > 0)
+                {
+                    for (var k = node.Start; k < node.Start + node.Count; k++)
+                    {
+                        if (PrimLayer[k] != layer) continue;
+                        var prim = Prims[k];
+                        if (q.PrimApart(prim, math.sqrt(best))) continue;
+                        best = math.min(best, TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C));
                     }
                     continue;
                 }
@@ -584,14 +682,29 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 
         /// <summary>
         /// True when some triangle P of a layer other than <paramref name="layer"/> comes nearer to triangle abc than
-        /// <paramref name="keep"/> times the larger of P's own clearance and <paramref name="least"/>. P's clearance is
-        /// the gap where P is, measured on a triangle of the source as small as the source's own, so it does not shrink
-        /// as decimated triangles grow; <paramref name="least"/> is the gap on abc's side.
+        /// <paramref name="keep"/> times the gap between the two layers there. The gap is read on P's side, measured on a
+        /// triangle of the source as small as the source's own, so it does not shrink as decimated triangles grow, and on
+        /// abc's side, <paramref name="least"/>, the clearance of the source around abc's corners; the larger counts.
+        /// Where P's own clearance is to a third layer nearer it than abc's, that clearance and <paramref name="least"/>
+        /// are the gaps to other layers, not between this pair: P's distance to <paramref name="layer"/> alone and abc's
+        /// corners' distance to P's layer alone then count as well. abc's corners must lie on <paramref name="layer"/>'s
+        /// source, which bounds every gap read here by P's distance to a corner.
         /// </summary>
         internal unsafe bool AnyWithin(float3 a, float3 b, float3 c, int layer, float keep, float least)
         {
             if (Nodes.Length == 0 || !(keep > 0f)) return false;
             var q = new Query(a, b, c);
+            // The pair's gap at P is no more than P's distance to the corner nearest it, which is no more than d, P's
+            // distance to abc, plus the farthest any point of abc lies from its nearest corner: under the longest edge
+            // over sqrt(3). And no gap is more than the reach. So P is refused through the pair's gap only when
+            // d < keep * (d + edge / sqrt(3)), and never beyond this.
+            var edge = math.max(math.distance(a, b), math.max(math.distance(b, c), math.distance(c, a)));
+            var pairReach = keep * math.min(Reach, edge * 0.5774f / (1f - keep));
+            // The corners' distance to a layer is the same for every P of it, so each call reads it once per layer.
+            const int Sides = 4;
+            var sideLayer = stackalloc int[Sides];
+            var sideGap = stackalloc float[Sides];
+            var sides = 0;
             var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
@@ -600,7 +713,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 var i = stack[--top];
                 if (NodeLayer[i] == layer) continue;
                 var node = Nodes[i];
+                var nearest = NodeNearest[i];
                 var reach = keep * math.max(NodeClearance[i], least);
+                if (nearest != -1 && nearest != layer) reach = math.max(reach, pairReach);
                 if (!(reach > 0f) || q.BoxApart(node, reach)) continue;
                 if (node.Count > 0)
                 {
@@ -609,8 +724,45 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                         if (PrimLayer[k] == layer) continue;
                         var prim = Prims[k];
                         var r = keep * math.max(PrimClearance[k], least);
-                        if (!(r > 0f) || q.PrimApart(prim, r)) continue;
-                        if (TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C) < r * r) return true;
+                        var own = PrimNearest[k];
+                        if (own == -1 || own == layer)
+                        {
+                            if (!(r > 0f) || q.PrimApart(prim, r)) continue;
+                            if (TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C) < r * r) return true;
+                            continue;
+                        }
+                        // Both of the pair's gaps are at most P's distance to the corner nearest it.
+                        var corner = keep * math.sqrt(math.min(TriangleDistance.PointSq(a, prim.A, prim.B, prim.C),
+                            math.min(TriangleDistance.PointSq(b, prim.A, prim.B, prim.C), TriangleDistance.PointSq(c, prim.A, prim.B, prim.C))));
+                        var bound = math.max(r, corner);
+                        if (!(bound > 0f) || q.PrimApart(prim, bound)) continue;
+                        var d = TriangleDistance.TriangleSq(a, b, c, prim.A, prim.B, prim.C);
+                        if (d < r * r) return true;
+                        if (!(d < corner * corner)) continue;
+                        // The pair's gap on P's side: read at build when this layer is the next out from P, or none is
+                        // within the reach, which leaves P the reach from this one too.
+                        var next = PrimSecondLayer[k];
+                        var known = next == layer || next == -1;
+                        var pair = keep * PrimSecond[k];
+                        if (known && d < pair * pair) return true;
+                        var other = PrimLayer[k];
+                        var s = 0;
+                        while (s < sides && sideLayer[s] != other) s++;
+                        float side;
+                        if (s < sides) side = sideGap[s];
+                        else
+                        {
+                            side = keep * math.min(PointToLayer(a, other, Reach), math.min(PointToLayer(b, other, Reach), PointToLayer(c, other, Reach)));
+                            if (sides < Sides)
+                            {
+                                sideLayer[sides] = other;
+                                sideGap[sides++] = side;
+                            }
+                        }
+                        if (d < side * side) return true;
+                        if (known) continue;
+                        pair = keep * TriangleToLayer(prim.A, prim.B, prim.C, layer, Reach);
+                        if (d < pair * pair) return true;
                     }
                     continue;
                 }

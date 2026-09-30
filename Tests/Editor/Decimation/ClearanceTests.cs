@@ -114,9 +114,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         // Two layers 3 mm apart, each with a nearer layer on its far side: tights 0.2 mm over the skin, and a lining with
         // its outer 0.5 mm over it. Each must keep a share of the 3 mm between the pair. Read against its nearest layer of
         // any, each is held only to a share of its 0.2 or 0.5 mm, may cross nearly all 3 mm toward the other, and the two
-        // meet at 2 and 4 mm cuts.
-        [Test]
-        public void TwoLayersEachWithANearerLayerBeyond_KeepTheGapBetweenThem()
+        // meet at 2 and 4 mm cuts. The rule runs inside Burst jobs; managed code must keep the gap too.
+        [TestCase(false, TestName = "{m}(under Burst)")]
+        [TestCase(true, TestName = "{m}(as managed code)")]
+        public void TwoLayersEachWithANearerLayerBeyond_KeepTheGapBetweenThem(bool managed)
         {
             const float tight = 0.0002f, lining = 0.0032f, outer = 0.0037f;
             using var scene = new Scene();
@@ -127,8 +128,23 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             scene.BuildSurface();
             Assert.That(Crossing(scene.Builders[a], scene.Builders[b]), Is.Zero, "the source layers do not cross");
             // Each layer is judged against the others' sources, so the skin's and the outer's own cuts do not bear on the pair.
-            using var ta = scene.Decimate(a, true, out _);
-            using var tb = scene.Decimate(b, true, out _);
+            var held = Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled;
+            if (!managed) Assume.That(held, "Burst is off in this Editor");
+            CollapseSequence ta = default, tb = default;
+            ClearanceStats sa, sb;
+            try
+            {
+                if (managed) Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled = false;
+                ta = scene.Decimate(a, true, out sa);
+                tb = scene.Decimate(b, true, out sb);
+            }
+            finally
+            {
+                Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled = held;
+            }
+            using var _a = ta;
+            using var _b = tb;
+            TestContext.WriteLine($"refused {sa.Refused} on the tight layer, {sb.Refused} on the lining");
             var levels = new[] { 0.002f, 0.004f };
             var result = new Dictionary<(float, float), float>();
             foreach (var la in levels)
@@ -743,6 +759,77 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var tree = s.TriangleClearance(a0, a1, a2, int.MaxValue, 0.02f);
                 Assert.That(tree, Is.EqualTo(brute).Within(1e-6f), $"query {i}");
             }
+        }
+
+        // The pair's own gap is read with a query restricted to one layer, and the layer each source triangle's clearance
+        // came from is kept, and the gap to the next layer out: each against a brute-force search, over pieces of a few
+        // triangles each.
+        [Test]
+        public void TriangleToLayer_AndEachTrianglesNearestLayers_AgreeWithBruteForce()
+        {
+            var rng = new Random(13);
+            var o = new float3(0.2f, 1.1f, 0.3f);
+            var b = new MeshBuilder();
+            for (var i = 0; i < 120; i++)
+            {
+                // A fan of three triangles around one centre is one piece, so one layer.
+                var c = o + rng.NextFloat3(-0.02f, 0.02f);
+                var v0 = b.Add(c);
+                var v1 = b.Add(c + rng.NextFloat3(-0.004f, 0.004f));
+                var v2 = b.Add(c + rng.NextFloat3(-0.004f, 0.004f));
+                var v3 = b.Add(c + rng.NextFloat3(-0.004f, 0.004f));
+                b.Tri(v0, v1, v2);
+                b.Tri(v0, v2, v3);
+                b.Tri(v0, v3, v1);
+            }
+            using var scene = new Scene();
+            scene.Add(b);
+            scene.BuildSurface();
+            var p = b.Positions.ToArray();
+            var t = b.Triangles.ToArray();
+            var layerOf = scene.Layers[0].ToArray();
+            const float reach = 0.02f;
+            float Brute(float3 a0, float3 a1, float3 a2, System.Func<int, bool> take)
+            {
+                var best = float.PositiveInfinity;
+                for (var k = 0; k < t.Length; k++)
+                    if (take(layerOf[k])) best = math.min(best, TriangleDistance.TriangleSq(a0, a1, a2, p[t[k].x], p[t[k].y], p[t[k].z]));
+                return math.min(math.sqrt(best), reach);
+            }
+
+            var s = scene.Surface;
+            for (var i = 0; i < 200; i++)
+            {
+                var a0 = o + rng.NextFloat3(-0.02f, 0.02f);
+                var a1 = a0 + rng.NextFloat3(-0.01f, 0.01f);
+                var a2 = a0 + rng.NextFloat3(-0.01f, 0.01f);
+                var layer = layerOf[rng.NextInt(t.Length)];
+                Assert.That(s.TriangleToLayer(a0, a1, a2, layer, reach), Is.EqualTo(Brute(a0, a1, a2, l => l == layer)).Within(1e-6f), $"query {i}");
+            }
+            int withNearest = 0, withSecond = 0;
+            for (var k = 0; k < s.Prims.Length; k++)
+            {
+                var prim = s.Prims[k];
+                var own = s.PrimLayer[k];
+                var nearest = s.PrimNearest[k];
+                Assert.That(s.PrimClearance[k], Is.EqualTo(Brute(prim.A, prim.B, prim.C, l => l != own)).Within(1e-6f), $"prim {k}: its clearance");
+                if (nearest < 0)
+                {
+                    Assert.That(s.PrimClearance[k], Is.EqualTo(reach), $"prim {k}: no nearest layer, so nothing within the reach");
+                    continue;
+                }
+                Assert.That(nearest, Is.Not.EqualTo(own), $"prim {k}: its own layer");
+                Assert.That(Brute(prim.A, prim.B, prim.C, l => l == nearest), Is.EqualTo(s.PrimClearance[k]).Within(1e-6f), $"prim {k}: its clearance is to its nearest layer");
+                withNearest++;
+                var second = s.PrimSecondLayer[k];
+                Assert.That(s.PrimSecond[k], Is.EqualTo(Brute(prim.A, prim.B, prim.C, l => l != own && l != nearest)).Within(1e-6f), $"prim {k}: the next layer out");
+                if (second < 0) continue;
+                Assert.That(second, Is.Not.EqualTo(own).And.Not.EqualTo(nearest), $"prim {k}: the next layer out is a third one");
+                Assert.That(Brute(prim.A, prim.B, prim.C, l => l == second), Is.EqualTo(s.PrimSecond[k]).Within(1e-6f), $"prim {k}: the next layer out's gap is to it");
+                withSecond++;
+            }
+            Assert.That(withNearest, Is.GreaterThan(s.Prims.Length / 2), "most triangles have a layer within the reach");
+            Assert.That(withSecond, Is.GreaterThan(s.Prims.Length / 2), "and most a second one");
         }
     }
 }

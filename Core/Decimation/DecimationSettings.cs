@@ -114,16 +114,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// The clearance rule. Layers of clothing sit a millimetre or less apart, and a collapse that moves one layer's
     /// surface by less than the error level can still carry it through the next. So a collapse is refused when a
     /// triangle it makes comes nearer a source triangle of another layer than (1 - Share) of the gap there: the larger
-    /// of that triangle's own clearance and the clearance around the new triangle's corners. The gap is read on source
-    /// triangles, which stay as small as the source's own however far decimation goes, so it is the gap where the two
-    /// layers approach rather than the least gap anywhere under a grown triangle. The other layers are judged as they
-    /// were before decimation, which is what lets each mesh be decimated alone and in any order: with Share under one
-    /// half, two layers that each keep to their share of the gap between them cannot meet. Surface that already touches
+    /// of that triangle's own clearance and the clearance around the new triangle's corners. Each of those is the gap to
+    /// the nearest layer of any, so where the source triangle's nearest layer is a third one, the gap between the pair
+    /// counts too: that triangle's distance to the new triangle's layer, and the corners' distance to its layer. The gap
+    /// is read on source triangles, which stay as small as the source's own however far decimation goes, so it is the gap
+    /// where the two layers approach rather than the least gap anywhere under a grown triangle. The other layers are
+    /// judged as they were before decimation, which is what lets each mesh be decimated alone and in any order: with
+    /// Share under one half, two layers that each keep to their share of the gap between them cannot meet, and that
+    /// holds where each lies nearer a third layer on its far side (tights over skin, a lining under its outer), whose
+    /// gaps are not the pair's. Surface that already touches
     /// or crosses another layer has no clearance to keep; there a collapse is refused only when it lengthens the line
     /// along which the layers cross.
     ///
-    /// Limits: clearance is measured at rest; in a bend of the rig a collapse is held only to a share of that gap (see
-    /// <see cref="BendSettings.ClearanceShare"/>), and a shape key that moves two layers differently is not checked;
+    /// Limits: clearance is measured at rest, so the pair's gap is the gap at rest; in a bend of the rig a collapse is
+    /// held only to a share of the gap to the nearest layer of any (see <see cref="BendSettings.ClearanceShare"/>), and
+    /// a shape key that moves two layers differently is not checked;
     /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
     /// pieces meeting at one vertex) are one layer; the gap is read per source triangle, so where it changes by a
     /// large part of itself across one source triangle, the least of it stands for the whole; and the other layers are
