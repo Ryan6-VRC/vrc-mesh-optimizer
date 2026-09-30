@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
+using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEngine;
@@ -260,6 +261,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>User-facing problems, which the pass raises through NDMF's error report.</summary>
         public List<Diagnostic> Diagnostics { get; } = new List<Diagnostic>();
+
+        /// <summary>
+        /// The gate's figures on this build, measured once its meshes were applied, when the build was switched to measure
+        /// them (<see cref="BuildSettings.OverrideGate(bool)"/>); null otherwise, and when the measure threw
+        /// (<see cref="DiagnosticKeys.GateFailed"/>). Plain data, so it outlives the build's clone.
+        /// </summary>
+        internal GateResult Gate { get; set; }
 
         /// <summary>A few lines for the console.</summary>
         public string Summary()

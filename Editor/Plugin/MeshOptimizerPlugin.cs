@@ -86,8 +86,10 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                 // Only a build records its report, so the latest one is always what an avatar was built with.
                 OptimizationReports.Add(report);
                 OptimizerPipeline.Apply(report);
+                OptimizerPipeline.MeasureGate(report, input);
                 foreach (var d in report.Diagnostics) Report(d);
                 Debug.Log(report.Summary());
+                if (report.Gate != null) Debug.Log(report.Gate.Summary());
             }
             catch (Exception e)
             {

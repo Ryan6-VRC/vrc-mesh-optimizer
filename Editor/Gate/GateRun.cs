@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
@@ -171,9 +172,54 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public CrossingReport Crossing { get; internal set; }
         /// <summary>Null when the geometric channel was not asked for; a renderer whose measure threw is missing, and named in <see cref="Failures"/>.</summary>
         public IReadOnlyList<GeometryFigures> Geometry { get; internal set; }
+        /// <summary>Renderers whose geometric measure threw, each named in <see cref="Failures"/>.</summary>
+        public int GeometryFailed { get; internal set; }
         public double CrossingMs { get; internal set; }
         public double GeometryMs { get; internal set; }
         public double HashMs { get; internal set; }
+
+        /// <summary>
+        /// One line for the console beside the report's summary, in <see cref="Lines"/>' units and digits: any channel that
+        /// failed and any stage of the pass that fell back, first; new crossing as the avatar stands, all of it and the same-facing part, and how much of that is
+        /// between different renderers; the pose configuration with the most new crossing; the geometric channel's largest max
+        /// and where it was read; and the time the gate took.
+        /// </summary>
+        public string Summary()
+        {
+            var c = CultureInfo.InvariantCulture;
+            string Cm(double m) => (m * 100.0).ToString("0.0", c);
+            var sb = new StringBuilder($"[Mesh Optimizer] {AvatarName} gate:");
+            var failed = new List<string>();
+            if (Crossing == null) failed.Add("crossing channel");
+            if (GeometryFailed > 0) failed.Add($"geometric channel on {GeometryFailed} renderers");
+            var fellBack = Failures.Count - (Crossing == null ? 1 : 0) - GeometryFailed;
+            if (fellBack > 0) failed.Add($"{fellBack} stages of the pass, which fell back");
+            if (failed.Count > 0) sb.Append($" FAILED {string.Join(", ", failed)}, see the gate's lines.");
+
+            if (Crossing != null)
+            {
+                var standing = Crossing.Pairs.Where(p => p.Configuration == Crossing.Configurations[0]).ToList();
+                sb.Append($" crossing {Crossing.Configurations[0]} new {Cm(standing.Sum(p => p.Change.New))} cm, {Cm(standing.Sum(p => p.Change.NewSameFacing))} cm same-facing, " +
+                          $"{Cm(standing.Where(p => p.RendererA != p.RendererB).Sum(p => p.Change.NewSameFacing))} cm of it between renderers;");
+                var poses = Crossing.Pairs.Where(p => p.Configuration.StartsWith("pose ", StringComparison.Ordinal))
+                    .GroupBy(p => p.Configuration).Select(g => (name: g.Key, added: g.Sum(p => p.Change.New), sameFacing: g.Sum(p => p.Change.NewSameFacing)))
+                    .OrderByDescending(x => x.added).ToList();
+                sb.Append(poses.Count > 0
+                    ? $" worst {poses[0].name} new {Cm(poses[0].added)} cm, {Cm(poses[0].sameFacing)} cm same-facing;"
+                    : " no pose measured;");
+            }
+
+            if (Geometry == null) sb.Append(" geometry not asked for;");
+            else
+            {
+                var worst = Geometry.SelectMany(g => g.Kinds.Select(k => (g.Path, k))).OrderByDescending(x => x.k.Max).FirstOrDefault();
+                sb.Append(worst.Path != null
+                    ? $" geometry largest max {(worst.k.Max * 1000f).ToString("0.000", c)} mm on {worst.Path} ({worst.k.MaxAt});"
+                    : " geometry measured on no renderer;");
+            }
+            sb.Append($" {(HashMs + CrossingMs + GeometryMs).ToString("0", c)} ms.");
+            return sb.ToString();
+        }
 
         /// <summary>
         /// Stable lines: failures first, then the settings the build ran with, the report's figures, what was left out, how the
@@ -329,6 +375,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var crossingMs = sw.Elapsed.TotalMilliseconds;
 
             List<GeometryFigures> geometry = null;
+            var geometryFailed = 0;
             sw.Restart();
             if (options.Geometry)
             {
@@ -344,6 +391,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     catch (Exception e)
                     {
                         failures.Add($"FAILED geometric channel on {path}, no geometric figure for it: {e.GetType().Name}: {e.Message}");
+                        geometryFailed++;
                     }
                 }
             }
@@ -371,6 +419,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 LinkedConfigurations = inputs.Configurations.Count,
                 Crossing = crossing,
                 Geometry = geometry,
+                GeometryFailed = geometryFailed,
                 CrossingMs = crossingMs,
                 GeometryMs = sw.Elapsed.TotalMilliseconds,
                 HashMs = hashMs,

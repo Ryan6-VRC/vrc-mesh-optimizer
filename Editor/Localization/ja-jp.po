@@ -226,3 +226,12 @@ msgstr "{0}は変更していません。{1}という名前のシェイプキー
 
 msgid "MeshOptimizer:diag:duplicate-shape-key:hint"
 msgstr "元データでシェイプキーの名前が重ならないように変えて、書き出し直してください。"
+
+msgid "MeshOptimizer:diag:gate-failed"
+msgstr "Mesh Optimizerはゲートを計測できませんでした"
+
+msgid "MeshOptimizer:diag:gate-failed:description"
+msgstr "このビルドで有効にしたゲートの計測に失敗したため、レポートにゲートの数値はありません。アバターは計測がない場合と同じく最適化されています: {0}"
+
+msgid "MeshOptimizer:diag:gate-failed:hint"
+msgstr "詳しいエラーはコンソールにあります。ゲートは有効にしたときだけ動く計測なので、アバター側で直すものはありません。"

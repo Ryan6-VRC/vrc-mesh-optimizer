@@ -11,6 +11,7 @@ using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Decimation;
 using Ryan6Vrc.MeshOptimizer.Extraction;
+using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Runtime;
@@ -51,6 +52,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// surface holds only what occlusion kept, and a layer may cross a triangle written back.
         /// </summary>
         public bool RemovedAsNeighbours = BuildSettings.RemovedAsNeighbours;
+        /// <summary>
+        /// What the gate measures on the avatar once the meshes are applied (<see cref="OptimizerPipeline.MeasureGate"/>),
+        /// into <see cref="OptimizationReport.Gate"/>; null, the default, measures nothing.
+        /// </summary>
+        public GateRunOptions Gate = BuildSettings.Gate;
         /// <summary>Time the caller spent classifying liveness, for the report.</summary>
         public double LivenessMs;
         /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
@@ -75,11 +81,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>
-    /// The decimation settings a build runs with, whether it judges its removals again, and what stands in its clearance
-    /// surface. The component exposes none of them, and the decimation defaults live in
-    /// <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a measurement can hand a build other
-    /// values, since a build reaches the pipeline through NDMF and not through a caller. Nothing in the package overrides
-    /// them.
+    /// The decimation settings a build runs with, whether it judges its removals again, what stands in its clearance
+    /// surface, and what the gate measures once the meshes are applied. The component exposes none of them, and the
+    /// decimation defaults live in <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a
+    /// measurement can hand a build other values, since a build reaches the pipeline through NDMF and not through a caller.
+    /// Nothing in the package overrides them.
     /// </summary>
     internal static class BuildSettings
     {
@@ -114,6 +120,25 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             RemovedAsNeighbours = on;
             return new Scope(() => RemovedAsNeighbours = before);
         }
+
+        /// <summary>What a build measures with the gate once its meshes are applied (<see cref="PipelineInput.Gate"/>); null, measuring nothing, unless overridden.</summary>
+        internal static GateRunOptions Gate { get; private set; }
+
+        /// <summary>Every build until the returned scope is disposed measures the gate with <paramref name="options"/>, null for not at all; disposing restores what was before.</summary>
+        /// <remarks>Named apart from <see cref="OverrideGate(bool)"/>, since a runner reaching a scope by name alone would find two.</remarks>
+        internal static IDisposable OverrideGateWith(GateRunOptions options)
+        {
+            var before = Gate;
+            Gate = options;
+            return new Scope(() => Gate = before);
+        }
+
+        /// <summary>
+        /// Every build until the returned scope is disposed measures the gate, when <paramref name="on"/>, in the default pose
+        /// bank (<see cref="PoseBank.Default"/>) with the geometric channel on, or not at all; disposing restores what was before.
+        /// </summary>
+        internal static IDisposable OverrideGate(bool on) =>
+            OverrideGateWith(on ? new GateRunOptions { Poses = PoseBank.Default, Geometry = true } : null);
 
         sealed class Scope : IDisposable
         {
@@ -577,6 +602,29 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                         filter.sharedMesh = r.OutputMesh;
                         break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// When <see cref="PipelineInput.Gate"/> asks, measures the gate (<see cref="GateRun.Measure"/>) into
+        /// <see cref="OptimizationReport.Gate"/>; otherwise does nothing. Call it after <see cref="Apply"/>, on the avatar as
+        /// this pass leaves it: each renderer holding its written mesh. That is what this pass did, before any later plugin
+        /// runs; a runner measuring the finished build reads the same only where no later pass changes a renderer the report
+        /// names. The gate restores every mesh, weight and transform it moves, so the avatar is written as without it. A measure
+        /// that throws is named under <see cref="DiagnosticKeys.GateFailed"/> and leaves <see cref="OptimizationReport.Gate"/>
+        /// null; it never fails the build.
+        /// </summary>
+        public static void MeasureGate(OptimizationReport report, PipelineInput input)
+        {
+            if (input.Gate == null) return;
+            try
+            {
+                report.Gate = GateRun.Measure(report, input.Root, input.Gate);
+            }
+            catch (Exception e)
+            {
+                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.GateFailed, true, e.Message));
+                Debug.LogException(e);
             }
         }
 
