@@ -221,6 +221,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             TestContext.WriteLine($"wholly new: New - After.Length = {whole.New - whole.After.Length:E3} m over {after.Length} segments");
             Assert.That(whole.New, Is.EqualTo(whole.After.Length), "wholly new, exactly the after total");
             Assert.That(whole.NewSameFacing, Is.EqualTo(whole.After.SameFacingLength));
+            Assert.That(whole.Runs, Is.EqualTo(1), "one closed loop");
+            Assert.That(whole.LongestRun, Is.EqualTo(whole.New), "its one run is all of it, priced alike");
 
             // A before segment on the same line, behind the start, ending Nearness short of the middle: the first half of g is old.
             var g = after.OrderByDescending(s => s.Length).First();

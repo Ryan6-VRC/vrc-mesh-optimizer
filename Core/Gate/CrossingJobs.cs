@@ -152,6 +152,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public int Segment;
         public float T0;
         public float T1;
+        /// <summary>Metres: its share of the segment's own <see cref="CrossingSegment.Length"/>, (T1 - T0) of it.</summary>
+        public float Length;
     }
 
     /// <summary>
@@ -253,7 +255,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             }
 
             var runLength = new NativeArray<double>(pieces.Length, Allocator.Temp);
-            for (var i = 0; i < pieces.Length; i++) runLength[Find(parent, i)] += math.distance(pieces[i].A, pieces[i].B);
+            for (var i = 0; i < pieces.Length; i++) runLength[Find(parent, i)] += pieces[i].Length;
             var longest = -1;
             for (var i = 0; i < pieces.Length; i++)
             {
@@ -268,7 +270,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                 for (var i = 0; i < pieces.Length; i++)
                 {
                     if (Find(parent, i) != longest) continue;
-                    if (best < 0 || math.distance(pieces[i].A, pieces[i].B) > math.distance(pieces[best].A, pieces[best].B)) best = i;
+                    if (best < 0 || pieces[i].Length > pieces[best].Length) best = i;
                 }
                 var piece = pieces[best];
                 r.LongestRunAt = (piece.A + piece.B) * 0.5f;
@@ -292,9 +294,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         {
             var a = t0 == 0f ? g.Start : math.lerp(g.Start, g.End, t0);
             var b = t1 == 1f ? g.End : math.lerp(g.Start, g.End, t1);
-            pieces.Add(new CrossingPiece { A = a, B = b, Segment = s, T0 = t0, T1 = t1 });
             // The piece's share of the segment's own Length, so a segment wholly new counts exactly what the after total counts.
-            double length = (t1 - t0) * g.Length;
+            var length = (t1 - t0) * g.Length;
+            pieces.Add(new CrossingPiece { A = a, B = b, Segment = s, T0 = t0, T1 = t1, Length = length });
             r.New += length;
             if (g.SameFacing) r.NewSameFacing += length;
         }
