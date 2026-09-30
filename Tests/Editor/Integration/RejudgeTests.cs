@@ -335,6 +335,29 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
                 "fewer triangles come back than the rule, judging from where each stood, finds uncovered");
         }
 
+        // The garment of the case above, cut at 6 mm with removed triangles left out of the clearance surface, sinks past
+        // body it hid. With the setback switched off, no cut cover covers from behind, so the judge writes back every
+        // triangle the rule finds uncovered from where it stood, more than it writes back with the setback on.
+        [Test]
+        public void TheSetbackSwitchedOff_WritesBackEveryTriangleTheRuleFindsUncovered()
+        {
+            Build(garmentFrom: 0f);
+
+            var off = Run(TargetKind.Tolerance, 6f, rejudge: false, removedAsNeighbours: false);
+            var setback = Run(TargetKind.Tolerance, 6f, rejudge: true, removedAsNeighbours: false);
+            OptimizationReport none;
+            using (BuildSettings.OverrideSetback(false))
+                none = Run(TargetKind.Tolerance, 6f, rejudge: true, removedAsNeighbours: false);
+            Assert.That(new PipelineInput().Setback, Is.True, "on again once the scope is disposed");
+
+            var lost = CheckWritten(off).Violations.Select(v => v.Split(',')[0]).Distinct().Count();
+            Assert.That(none.RejudgePasses, Is.EqualTo(1));
+            Assert.That(none.HiddenRestored, Is.EqualTo(lost), "every triangle the rule finds uncovered comes back, and no other");
+            Assert.That(none.HiddenRestored, Is.GreaterThan(setback.HiddenRestored), "the setback held some of them");
+            var check = CheckWritten(none);
+            Assert.That(check.Ok, Is.True, check.ToString());
+        }
+
         // A closed garment cut at 2 mm still covers everything it covered: the judge runs, restores nothing, and every
         // mesh is written index for index as with re-judging off.
         [Test]
