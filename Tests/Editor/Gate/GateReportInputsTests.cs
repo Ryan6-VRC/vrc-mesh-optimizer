@@ -63,6 +63,34 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(crossing.Pairs.Max(p => p.Change.New), Is.Zero);
         }
 
+        // Two renderers of one name under different parents, as a base's body and a garment's: both channels name a renderer
+        // by the path its report row carries, so each line joins to its row by string equality and the two never merge.
+        [Test]
+        public void RenderersOfOneName_AreNamedInBothChannels_ByTheirReportRowsPaths()
+        {
+            var outfit = new GameObject("Outfit").transform;
+            outfit.SetParent(a.Root.transform, false);
+            outfit.localPosition = new Vector3(1f, 0f, 0f);
+            var chest = a.Bone("Armature/Hips/Chest");
+            var inner = a.Skinned("Body", a.Sphere(0.1f, 16, 32, name: "outfit body"), new[] { chest }, outfit);
+            a.Optimizer().alwaysOn.Add(a.Skinned("Garment", a.Sphere(0.105f, 24, 48, 60f, 180f, name: "outfit garment"), new[] { chest }, outfit));
+            var report = a.Run();
+            var rows = report.Renderers.ToDictionary(r => r.Renderer, r => r.Path);
+            Assert.That(rows[inner], Is.EqualTo("Outfit/Body"));
+
+            var inputs = GateReportInputs.From(report);
+            Assert.That(inputs.Geometry.Select(i => i.Renderer), Is.EquivalentTo(new Renderer[] { body, inner }), "both bodies lose what their bowls cover");
+            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
+
+            foreach (var i in inputs.Geometry)
+            {
+                var lines = GeometryGate.Measure(i.Renderer, a.Root.transform, i.Source, i.Optimized, i.RemovedTriangles, i.Liveness, null, SurfaceDistanceSettings.Default).Lines(GateCamera.Default);
+                foreach (var line in lines) Assert.That(line, Does.StartWith(rows[i.Renderer] + ", "));
+            }
+            Assert.That(crossing.Pairs.Where(p => p.RendererA == p.RendererB).Select(p => p.RendererA),
+                Is.EquivalentTo(inputs.Crossing.Select(i => rows[i.Renderer])), "every renderer against itself, once, by its row's path");
+        }
+
         // A renderer the pass left alone for a non-finite position still carries it, and the crossing channel refuses a
         // surface with one, so handed over it would cost every other renderer its figures.
         [Test]

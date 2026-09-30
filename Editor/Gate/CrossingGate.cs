@@ -161,7 +161,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 
             var surfaces = new Surfaces(inputs);
             var pairs = new List<PairCrossing>();
-            var paths = inputs.Select(i => PathOf(i.Renderer.transform, avatarRoot)).ToArray();
+            var paths = inputs.Select(i => RendererExtraction.PathOf(avatarRoot, i.Renderer)).ToArray();
             var state = new AvatarState(avatarRoot, inputs.Select(i => i.Skinned).Where(s => s != null));
             HumanPoseHandler handler = null;
             var scratch = new Mesh { name = "gate-bake" };
@@ -213,13 +213,6 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 }
             }
             return new CrossingReport(planned.Select(c => c.Name).ToArray(), pairs, skipped);
-        }
-
-        static string PathOf(Transform t, Transform root)
-        {
-            var path = t.name;
-            for (var p = t.parent; p != null && p != root; p = p.parent) path = p.name + "/" + path;
-            return path;
         }
 
         /// <summary>Every renderer's source and optimized surface, re-baked per configuration, with their bounds.</summary>
