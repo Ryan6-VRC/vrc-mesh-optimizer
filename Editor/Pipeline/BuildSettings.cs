@@ -45,6 +45,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return new Scope(() => RemovedAsNeighbours = before);
         }
 
+        /// <summary>Whether a build's re-judge lets a cut renderer cover from behind, within its recorded error (<see cref="PipelineInput.Setback"/>); on unless overridden.</summary>
+        internal static bool Setback { get; private set; } = true;
+
+        /// <summary>Every build until the returned scope is disposed runs with <see cref="Setback"/> as <paramref name="on"/> says; disposing restores what was before.</summary>
+        internal static IDisposable OverrideSetback(bool on)
+        {
+            var before = Setback;
+            Setback = on;
+            return new Scope(() => Setback = before);
+        }
+
         /// <summary>What a build measures with the gate once its meshes are applied (<see cref="PipelineInput.Gate"/>); null, measuring nothing, unless overridden.</summary>
         internal static GateRunOptions Gate { get; private set; }
 

@@ -25,7 +25,7 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         /// For an always-on renderer the cut decimated, its own recorded error at its step, not the common level: how far
         /// its faces may have moved past a sample they covered (<see cref="OcclusionMesh.Setback"/>). An undecimated layer
         /// did not move, so it never covers from behind, and one with protection below 1 moves further than the level.
-        /// Zero otherwise.
+        /// Zero otherwise, and on every renderer with <see cref="Pipeline.PipelineInput.Setback"/> off.
         /// </summary>
         public float Setback;
         /// <summary>What covered each side of each sample in the first solve (<see cref="OcclusionResult.CoveredBy"/>, <see cref="OcclusionResult.InteriorCoveredBy"/>).</summary>

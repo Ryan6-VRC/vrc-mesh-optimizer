@@ -40,6 +40,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// </summary>
         public bool RemovedAsNeighbours = BuildSettings.RemovedAsNeighbours;
         /// <summary>
+        /// Whether the re-judge lets an always-on renderer the cut decimated cover a removed triangle from as far behind as
+        /// its recorded error (<see cref="CutRenderer.Setback"/>). Off, every renderer's setback is 0: a triangle comes back
+        /// wherever the rule, judging from where it stood, finds it uncovered.
+        /// </summary>
+        public bool Setback = BuildSettings.Setback;
+        /// <summary>
         /// What the gate measures on the avatar once the meshes are applied (<see cref="OptimizerPipeline.MeasureGate"/>),
         /// into <see cref="OptimizationReport.Gate"/>; null, the default, measures nothing.
         /// </summary>

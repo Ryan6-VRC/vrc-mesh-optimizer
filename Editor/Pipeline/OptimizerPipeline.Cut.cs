@@ -300,7 +300,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     Removed = kept != null && job.HiddenCount > 0 ? job.Hidden : null,
                     Drawn = kept?.Triangles,
                     DrawnSource = kept?.Source,
-                    Setback = job.Occludes && job.Decimated ? job.Sequence.ErrorAt(pass.Steps[i]) : 0f,
+                    Setback = prepared.Input.Setback && job.Occludes && job.Decimated ? job.Sequence.ErrorAt(pass.Steps[i]) : 0f,
                     CoveredBy = job.CoveredBy,
                     InteriorCoveredBy = job.InteriorCoveredBy,
                 });
