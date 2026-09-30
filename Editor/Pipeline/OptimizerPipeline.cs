@@ -835,10 +835,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 // A recording reads the surface and its renderer's layers until it is done, so each is waited for before they go.
                 foreach (var recording in recordings) recording.Dispose();
                 surface.Dispose();
-                if (rig.Parent.IsCreated) rig.Parent.Dispose();
-                if (rig.Position.IsCreated) rig.Position.Dispose();
-                if (rig.Axis.IsCreated) rig.Axis.Dispose();
-                if (rig.Right.IsCreated) rig.Right.Dispose();
+                rig.Dispose();
                 // Only the clearance rule reads a renderer's layers, and only while its sequence is recorded.
                 foreach (var job in live)
                 {

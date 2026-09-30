@@ -279,21 +279,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             using var mesh = new Disposable<Core.Model.EvalMesh>(b.Build());
             var settings = DecimationSettings.Default;
             settings.Bend.Degrees = degrees;
-            var r = rig ? BendFixtures.Rig() : default;
-            try
-            {
-                return Decimator.Run(mesh.Value, settings, default, default, r, Allocator.Persistent, out _);
-            }
-            finally
-            {
-                if (rig)
-                {
-                    r.Parent.Dispose();
-                    r.Position.Dispose();
-                    r.Axis.Dispose();
-                    r.Right.Dispose();
-                }
-            }
+            using var r = rig ? BendFixtures.Rig() : default;
+            return Decimator.Run(mesh.Value, settings, default, default, r, Allocator.Persistent, out _);
         }
 
         sealed class Disposable<T> : IDisposable where T : IDisposable
@@ -359,22 +346,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             b.SetWeights(near, (0, 1e-7f), (1, 1f - 1e-7f));
             b.SetWeights(whole, (1, 1f));
             using var mesh = new Disposable<Core.Model.EvalMesh>(b.Build());
-            var rig = BendFixtures.Rig();
-            try
-            {
-                using var bends = Bends.Build(mesh.Value, rig, BendSettings.Default, Allocator.Persistent);
-                // Bone 0 bends everything, so every share on it is whole; bone 1 is the second bent.
-                Assert.That(bends.ShareOf(far, 1), Is.EqualTo(5e-5).Within(1e-9), "a small weight two metres from the joint");
-                Assert.That(bends.ShareOf(near, 1), Is.EqualTo(1.0), "a float rounding off whole, at the joint");
-                Assert.That(bends.ShareOf(whole, 1), Is.EqualTo(1.0));
-            }
-            finally
-            {
-                rig.Parent.Dispose();
-                rig.Position.Dispose();
-                rig.Axis.Dispose();
-                rig.Right.Dispose();
-            }
+            using var rig = BendFixtures.Rig();
+            using var bends = Bends.Build(mesh.Value, rig, BendSettings.Default, Allocator.Persistent);
+            // Bone 0 bends everything, so every share on it is whole; bone 1 is the second bent.
+            Assert.That(bends.ShareOf(far, 1), Is.EqualTo(5e-5).Within(1e-9), "a small weight two metres from the joint");
+            Assert.That(bends.ShareOf(near, 1), Is.EqualTo(1.0), "a float rounding off whole, at the joint");
+            Assert.That(bends.ShareOf(whole, 1), Is.EqualTo(1.0));
         }
 
         // Bends turned off with the rig given record the very sequence recorded without it, collapse for collapse.
@@ -403,10 +380,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
             finally
             {
-                r.Parent.Dispose();
-                r.Position.Dispose();
-                r.Axis.Dispose();
-                r.Right.Dispose();
+                r.Dispose();
             }
         }
 
