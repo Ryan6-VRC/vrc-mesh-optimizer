@@ -105,10 +105,11 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
         static Shared Prepare(Transform root, AvatarMeshOptimizer component, int renderers)
         {
             var title = L10n.Tr(InspectorKeys.PreviewProgress);
+            PipelineInput input = null;
             try
             {
                 EditorUtility.DisplayProgressBar(title, root.name, 0f);
-                var input = PreviewInput.For(root, component, out var liveness);
+                input = PreviewInput.For(root, component, out var liveness);
                 var stages = 0;
                 input.BeforeStage = (renderer, stage) =>
                     EditorUtility.DisplayProgressBar(title, string.Format(L10n.Tr(InspectorKeys.PreviewProgressInfo), renderer.name),
@@ -117,6 +118,9 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             }
             finally
             {
+                // The prepared avatar keeps this input, and a cut calls BeforeStage as it writes each renderer: left set, every
+                // cut would raise a progress bar that nothing clears.
+                if (input != null) input.BeforeStage = null;
                 EditorUtility.ClearProgressBar();
             }
         }
@@ -178,16 +182,34 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             static string F(float value) => value.ToString("R", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>One cut of a prepared avatar: its meshes, put on the proxies each frame, and destroyed with it.</summary>
+        /// <summary>The prepared avatar a node of this filter was cut from, or null; for tests of the node's lifecycle.</summary>
+        internal static PreparedAvatar PreparedOf(IRenderFilterNode node) => (node as Node)?.Shared?.Prepared;
+
+        /// <summary>
+        /// One cut of a prepared avatar: its meshes, put on the proxies each frame, and destroyed with it. NDMF disposes no
+        /// preview session before a domain reload, so every live node is disposed then, or its meshes and the prepared
+        /// avatar's native memory would outlive the domain that could free them.
+        /// </summary>
         sealed class Node : IRenderFilterNode
         {
+            static readonly HashSet<Node> Live = new HashSet<Node>();
+
+            [InitializeOnLoadMethod]
+            static void DisposeBeforeReload() => AssemblyReloadEvents.beforeAssemblyReload += () =>
+            {
+                foreach (var node in Live.ToList()) node.Dispose();
+            };
+
             readonly AvatarMeshOptimizer _component;
             readonly Shared _shared;
             readonly Keys _keys;
             readonly PreviewStatus _status;
             readonly Dictionary<Renderer, Mesh> _meshes = new Dictionary<Renderer, Mesh>();
+            bool _disposed;
 
             public RenderAspects WhatChanged => RenderAspects.Mesh;
+
+            public Shared Shared => _shared;
 
             public Node(AvatarMeshOptimizer component, Shared shared, Keys keys, PreviewStatus status)
             {
@@ -195,6 +217,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 _shared = shared;
                 _keys = keys;
                 _status = status;
+                Live.Add(this);
             }
 
             /// <summary>Cuts the prepared avatar at the component's target as it stands, and records what the cut reached.</summary>
@@ -221,14 +244,24 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 var node = new Node(component, shared, keys, status);
                 if (report != null)
                     foreach (var r in report.Renderers)
-                        if (r.OutputMesh != null && r.Renderer != null) node._meshes[r.Renderer] = r.OutputMesh;
+                    {
+                        if (r.OutputMesh == null) continue;
+                        // A renderer destroyed since preparing has no proxy to show its mesh on, so nothing else would free it.
+                        if (r.Renderer != null) node._meshes[r.Renderer] = r.OutputMesh;
+                        else Object.DestroyImmediate(r.OutputMesh);
+                    }
                 PreviewStatus.Set(component, status);
                 return node;
             }
 
+            /// <summary>
+            /// A change to the target alone cuts the same prepared avatar again. Anything NDMF reports changed on a renderer
+            /// (its mesh, materials, textures, shape-key weights or bones) was read by preparing, as was every other setting,
+            /// so either prepares the avatar anew.
+            /// </summary>
             public Task<IRenderFilterNode> Refresh(IEnumerable<(Renderer, Renderer)> proxyPairs, ComputeContext context, RenderAspects updatedAspects)
             {
-                if (_shared == null) return Task.FromResult<IRenderFilterNode>(null);
+                if (_shared == null || updatedAspects != 0) return Task.FromResult<IRenderFilterNode>(null);
                 var keys = Keys.Observe(context, _component, proxyPairs.Select(p => p.Item1).ToList());
                 if (keys.Preparing != _keys.Preparing) return Task.FromResult<IRenderFilterNode>(null);
                 if (keys.Cutting.Equals(_keys.Cutting)) return Task.FromResult<IRenderFilterNode>(this);
@@ -251,6 +284,9 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
 
             public void Dispose()
             {
+                if (_disposed) return;
+                _disposed = true;
+                Live.Remove(this);
                 foreach (var mesh in _meshes.Values) Object.DestroyImmediate(mesh);
                 _meshes.Clear();
                 _shared?.Release();

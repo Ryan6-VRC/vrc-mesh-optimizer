@@ -1,4 +1,5 @@
 using System.Linq;
+using nadena.dev.ndmf.preview;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
@@ -124,6 +125,64 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(coarse.Sum(), Is.LessThan(fine.Sum()), "a coarser tolerance cuts deeper");
             Assert.That(fine, Is.EqualTo(Fresh(1f)));
             Assert.That(coarse, Is.EqualTo(Fresh(3f)));
+        }
+
+        // The filter's node lifecycle, driven as NDMF drives it but without a preview session: a target change re-cuts the one
+        // prepared avatar, a changed renderer or any other setting prepares anew, and the prepared avatar and every mesh are
+        // freed only when the last node cut from it is disposed.
+        [Test]
+        public void ATargetChange_ReCutsThePreparedAvatar_WhichTheLastNodeFrees()
+        {
+            var one = Ball("One", Vector3.zero);
+            var two = Ball("Two", new Vector3(1, 0, 0));
+            a.Root.AddComponent<VRCAvatarDescriptor>();
+            var c = a.Optimizer(decimate: true);
+            c.target = TargetKind.Tolerance;
+            c.tolerance = 1f;
+            var pairs = new[] { one, two }.Select(r =>
+            {
+                var proxy = a.Made(new GameObject(r.name + " proxy")).AddComponent<SkinnedMeshRenderer>();
+                return ((Renderer)r, (Renderer)proxy);
+            }).ToList();
+            var group = RenderGroup.For(pairs.Select(p => p.Item1));
+            var filter = new DecimationPreview();
+            ComputeContext Context() => new ComputeContext("preview test");
+            Mesh Shown(IRenderFilterNode node)
+            {
+                node.OnFrame(pairs[0].Item1, pairs[0].Item2);
+                return ((SkinnedMeshRenderer)pairs[0].Item2).sharedMesh;
+            }
+
+            var first = filter.Instantiate(group, pairs, Context()).Result;
+            var prepared = DecimationPreview.PreparedOf(first);
+            Assert.That(prepared, Is.Not.Null);
+            Assert.That(prepared.Input.BeforeStage, Is.Null, "no cut may raise the preparing progress bar again");
+            var fine = PreviewStatus.Of(c);
+            Assert.That(fine.Failure, Is.Null);
+            var fineMesh = Shown(first);
+            Assert.That(fineMesh, Is.Not.Null.And.Not.SameAs(one.sharedMesh));
+
+            Assert.That(first.Refresh(pairs, Context(), 0).Result, Is.SameAs(first), "nothing changed");
+            c.tolerance = 3f;
+            var second = first.Refresh(pairs, Context(), 0).Result;
+            Assert.That(second, Is.Not.Null.And.Not.SameAs(first));
+            Assert.That(DecimationPreview.PreparedOf(second), Is.SameAs(prepared), "a target change re-cuts, it does not re-prepare");
+            Assert.That(PreviewStatus.Of(c).TrianglesAfter, Is.LessThan(fine.TrianglesAfter));
+
+            Assert.That(second.Refresh(pairs, Context(), RenderAspects.Shapes).Result, Is.Null, "a changed renderer prepares anew");
+            c.faceFloor = 0.8f;
+            Assert.That(second.Refresh(pairs, Context(), 0).Result, Is.Null, "another setting prepares anew");
+
+            first.Dispose();
+            Assert.That(fineMesh == null, Is.True, "the first cut's meshes go with its node");
+            Assert.That(prepared.Disposed, Is.False, "the second node still holds the prepared avatar");
+            Assert.That(PreviewStatus.Of(c), Is.Not.Null, "the status is the second node's");
+            var coarseMesh = Shown(second);
+            second.Dispose();
+            second.Dispose();
+            Assert.That(coarseMesh == null, Is.True, "the last cut's meshes go with its node");
+            Assert.That(prepared.Disposed, Is.True, "the last node frees the prepared avatar");
+            Assert.That(PreviewStatus.Of(c), Is.Null);
         }
 
         string Path(Renderer r) => nadena.dev.ndmf.runtime.RuntimeUtil.RelativePath(a.Root, r.gameObject);
