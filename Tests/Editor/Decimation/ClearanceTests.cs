@@ -4,7 +4,9 @@ using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Geometry;
+using Unity.Burst;
 using Unity.Collections;
+using Unity.Jobs;
 using Unity.Mathematics;
 using static Ryan6Vrc.MeshOptimizer.Tests.Decimation.LayerFixtures;
 
@@ -505,6 +507,75 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(crossings, Is.GreaterThan(pairs / 10));
             Assert.That(worstFlip, Is.LessThanOrEqualTo(rounding), "a verdict off the oracle's farther from Touch than rounding");
             Assert.That(dLength, Is.LessThanOrEqualTo(tolerance));
+            Assert.That(dReach, Is.LessThanOrEqualTo(tolerance));
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        struct IntersectJob : IJob
+        {
+            /// <summary>Six corners per pair, a's then b's.</summary>
+            [ReadOnly] public NativeArray<float3> Corners;
+            public NativeArray<bool> Crosses;
+            public NativeArray<Intersection> Found;
+
+            public void Execute()
+            {
+                for (var i = 0; i < Crosses.Length; i++)
+                {
+                    var k = 6 * i;
+                    Crosses[i] = TriangleDistance.Intersect(Corners[k], Corners[k + 1], Corners[k + 2], Corners[k + 3], Corners[k + 4], Corners[k + 5], TriangleDistance.Touch, out var x);
+                    Found[i] = x;
+                }
+            }
+        }
+
+        // The clearance rule and the gate both run the one routine inside Burst jobs, and the tests above call it as
+        // managed code. Over the same pairs, Burst must give the managed verdict except within rounding of Touch, and the
+        // same crossing within rounding.
+        [Test]
+        public void Intersect_GivesUnderBurstWhatItGivesAsManagedCode()
+        {
+            Assume.That(Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled, "Burst is off in this Editor, so there is no compiled code to compare");
+            const double rounding = 1e-7;
+            const double tolerance = 1e-6;
+            var touch = TriangleDistance.Touch;
+            var pairs = CrossingPairs(4000).ToArray();
+            using var corners = new NativeArray<float3>(pairs.SelectMany(p => p.a.Concat(p.b)).ToArray(), Allocator.Persistent);
+            using var crosses = new NativeArray<bool>(pairs.Length, Allocator.Persistent);
+            using var found = new NativeArray<Intersection>(pairs.Length, Allocator.Persistent);
+            new IntersectJob { Corners = corners, Crosses = crosses, Found = found }.Run();
+
+            int crossings = 0, flips = 0, identical = 0;
+            double worstFlip = 0, dLength = 0, dEnds = 0, dReach = 0;
+            for (var i = 0; i < pairs.Length; i++)
+            {
+                var (a, b) = pairs[i];
+                var managed = TriangleDistance.Intersect(a[0], a[1], a[2], b[0], b[1], b[2], touch, out var m);
+                var x = found[i];
+                if (managed != crosses[i])
+                {
+                    flips++;
+                    var reachA = Reach(a[0], a[1], a[2], b[0], b[1], b[2]);
+                    var reachB = Reach(b[0], b[1], b[2], a[0], a[1], a[2]);
+                    var oracle = IntersectionLength(a[0], a[1], a[2], b[0], b[1], b[2]);
+                    worstFlip = math.max(worstFlip, math.min(math.abs(reachA - touch), math.min(math.abs(reachB - touch), math.abs(oracle - touch))));
+                    continue;
+                }
+                if (!managed) continue;
+                crossings++;
+                if (math.all(math.asuint(x.Start) == math.asuint(m.Start)) && math.all(math.asuint(x.End) == math.asuint(m.End)) &&
+                    math.asuint(x.Length) == math.asuint(m.Length) && math.asuint(x.ReachA) == math.asuint(m.ReachA) && math.asuint(x.ReachB) == math.asuint(m.ReachB))
+                    identical++;
+                Assert.That(x.SameFacing, Is.EqualTo(m.SameFacing), $"pair {i}: facing");
+                dLength = math.max(dLength, math.abs(x.Length - m.Length));
+                dEnds = math.max(dEnds, math.max(math.distance(x.Start, m.Start), math.distance(x.End, m.End)));
+                dReach = math.max(dReach, math.max(math.abs(x.ReachA - m.ReachA), math.abs(x.ReachB - m.ReachB)));
+            }
+            TestContext.WriteLine($"{pairs.Length} pairs, {crossings} crossing both ways, {identical} of them bit for bit; {flips} verdicts differ, the farthest {worstFlip:E3} m from Touch; largest deviation {dLength:E3} m in length, {dEnds:E3} m in the ends, {dReach:E3} m in reach");
+            Assert.That(crossings, Is.GreaterThan(pairs.Length / 10));
+            Assert.That(worstFlip, Is.LessThanOrEqualTo(rounding), "a verdict Burst gives otherwise farther from Touch than rounding");
+            Assert.That(dLength, Is.LessThanOrEqualTo(tolerance));
+            Assert.That(dEnds, Is.LessThanOrEqualTo(tolerance));
             Assert.That(dReach, Is.LessThanOrEqualTo(tolerance));
         }
 
