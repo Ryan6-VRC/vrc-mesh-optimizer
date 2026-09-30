@@ -55,8 +55,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         /// <summary>Stop once the live triangle count reaches this. 0 records the whole sequence.</summary>
         public int TargetTriangleCount;
-        /// <summary>Stop before a collapse whose error, in metres, would exceed this.</summary>
-        public float MaxError;
 
         /// <summary>Keeps each layer clear of the others; acts only when the decimator is given the other layers.</summary>
         public ClearanceSettings Clearance;
@@ -79,7 +77,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             FlipCosine = 0.25f,
             DegenerateRatio = 1e-3f,
             TargetTriangleCount = 0,
-            MaxError = float.PositiveInfinity,
         };
     }
 

@@ -56,8 +56,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var tTopology = sw.Elapsed.TotalSeconds;
                 var afterTopology = memory.CurrentValue;
 
+                using var none = Bends.None(Allocator.Persistent);
                 sw.Restart();
-                var bank = QuadricBank.Build(mesh, topology, settings, Allocator.Persistent);
+                var bank = QuadricBank.Build(mesh, topology, settings, none, Allocator.Persistent);
                 var tBank = sw.Elapsed.TotalSeconds;
                 var afterBank = memory.CurrentValue;
                 var bankBytes = bank.ByteSize;
@@ -68,7 +69,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 CollapseStats stats;
                 try
                 {
-                    using var none = Bends.None(Allocator.Persistent);
                     seq = Decimator.Collapse(mesh, topology, ref bank, settings, default, default, default, none, Allocator.Persistent, out stats);
                 }
                 finally

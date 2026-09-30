@@ -33,10 +33,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public DeclineCounts Declined;
         public OcclusionStats OcclusionStats;
         /// <summary>
-        /// What the occlusion solve read beyond the renderers, kept so a cut judges its removals again by the same rule: its
-        /// settings, and the avatar's bone table with the unstable bones marked as vanishing. Set only once occlusion ran.
+        /// The avatar's bone table as the occlusion solve read it, with the unstable bones marked as vanishing, kept so a cut
+        /// judges its removals again by the same rule. Set only once occlusion ran.
         /// </summary>
-        public OcclusionSettings OcclusionSettings;
         public int[] BoneParents;
         public bool[] VanishingBones;
         public readonly List<string> UnstableBones = new List<string>();
@@ -106,7 +105,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public NativeArray<int> Layers;
         public CollapseSequence Sequence;
         public bool Decimated;
-        public int SequenceLength;
+        public int SequenceLength => Decimated ? Sequence.Length : 0;
         public int NearVertices;
         public long ClearanceRefused;
 

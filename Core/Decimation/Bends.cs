@@ -38,7 +38,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// The avatar's skeleton, per avatar-wide bone id (see <see cref="BoneInfluence.Bone"/>), in the evaluation meshes'
     /// space. Unassigned, a mesh has no bends.
     /// </summary>
-    public struct BendRig
+    public struct BendRig : IDisposable
     {
         /// <summary>Per bone, its parent's id, or -1.</summary>
         public NativeArray<int> Parent;
@@ -53,6 +53,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public NativeArray<float3> Right;
 
         public bool IsCreated => Parent.IsCreated && Position.IsCreated && Axis.IsCreated && Right.IsCreated && Parent.Length > 0;
+
+        public void Dispose()
+        {
+            if (Parent.IsCreated) Parent.Dispose();
+            if (Position.IsCreated) Position.Dispose();
+            if (Axis.IsCreated) Axis.Dispose();
+            if (Right.IsCreated) Right.Dispose();
+        }
     }
 
     /// <summary>

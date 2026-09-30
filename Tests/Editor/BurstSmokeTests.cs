@@ -169,10 +169,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             finally
             {
                 mesh.Dispose();
-                rig.Parent.Dispose();
-                rig.Position.Dispose();
-                rig.Axis.Dispose();
-                rig.Right.Dispose();
+                rig.Dispose();
             }
         }
     }

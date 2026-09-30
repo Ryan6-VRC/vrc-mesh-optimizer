@@ -450,7 +450,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                     InteriorCoveredBy = job.InteriorCoveredBy,
                 });
             }
-            var restored = Rejudging.Restored(renderers, prepared.BoneParents, prepared.VanishingBones, prepared.OcclusionSettings, out var count);
+            var restored = Rejudging.Restored(renderers, prepared.BoneParents, prepared.VanishingBones, prepared.Input.Occlusion, out var count);
             pass.Restored = new bool[jobs.Count][];
             for (var k = 0; k < live.Count; k++) pass.Restored[jobs.IndexOf(live[k])] = restored[k];
             pass.RestoredCount = count;
@@ -617,6 +617,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         {
             skip = SkipReason.Failed;
             detail = $"{stage}: {e.Message}";
+            NameFailure(renderer, diagnostics, stage, e);
+        }
+
+        /// <summary>Names a renderer's failure at a stage, and logs it.</summary>
+        static void NameFailure(Renderer renderer, List<Diagnostic> diagnostics, PipelineStage stage, Exception e)
+        {
             diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, renderer, stage.ToString(), e.Message));
             Debug.LogException(e);
         }
@@ -755,7 +761,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 results = OcclusionSolver.Solve(meshes, boneTable, input.Occlusion, Allocator.Persistent, out var stats);
                 prepared.OcclusionRan = true;
                 prepared.OcclusionStats = stats;
-                prepared.OcclusionSettings = input.Occlusion;
                 prepared.BoneParents = bones.Parents.ToArray();
                 prepared.VanishingBones = (bool[])unstable.Clone();
                 var declined = new DeclineCounts();
@@ -835,10 +840,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 // A recording reads the surface and its renderer's layers until it is done, so each is waited for before they go.
                 foreach (var recording in recordings) recording.Dispose();
                 surface.Dispose();
-                if (rig.Parent.IsCreated) rig.Parent.Dispose();
-                if (rig.Position.IsCreated) rig.Position.Dispose();
-                if (rig.Axis.IsCreated) rig.Axis.Dispose();
-                if (rig.Right.IsCreated) rig.Right.Dispose();
+                rig.Dispose();
                 // Only the clearance rule reads a renderer's layers, and only while its sequence is recorded.
                 foreach (var job in live)
                 {
@@ -960,7 +962,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// Starts recording one renderer's sequence, beside any already started; <see cref="FinishRecording"/> waits for it.
-        /// Null, with the failure recorded, when it cannot start.
+        /// Null, with the failure recorded, when it cannot start. A failed renderer is left at what occlusion kept.
         /// </summary>
         static Recording StartRecording(PreparedRenderer job, PipelineInput input, Protection protection, in ClearanceInput clearance, in BendRig rig, PreparedAvatar prepared)
         {
@@ -987,7 +989,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             catch (Exception e)
             {
                 recording.Dispose();
-                RecordingFailed(job, e, prepared);
+                NameFailure(job.Renderer, prepared.Diagnostics, PipelineStage.Decimation, e);
                 return null;
             }
         }
@@ -1000,26 +1002,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 job.Sequence = recording.Pending.Complete(Allocator.Persistent, out var clearanceStats);
                 job.Decimated = true;
-                job.SequenceLength = job.Sequence.Length;
                 job.NearVertices = clearanceStats.NearVertices;
                 job.ClearanceRefused = clearanceStats.Refused;
             }
             catch (Exception e)
             {
-                RecordingFailed(job, e, prepared);
+                NameFailure(job.Renderer, prepared.Diagnostics, PipelineStage.Decimation, e);
             }
             finally
             {
                 recording.Dispose();
             }
-        }
-
-        static void RecordingFailed(PreparedRenderer job, Exception e, PreparedAvatar prepared)
-        {
-            // Decimation failing on one renderer leaves it at what occlusion kept.
-            job.SequenceLength = 0;
-            prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, job.Renderer, PipelineStage.Decimation.ToString(), e.Message));
-            Debug.LogException(e);
         }
 
         /// <summary>

@@ -59,19 +59,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             weight[bones.Id(hand)] = 500f;
             weight[bones.Id(upper.Find("Ribbon0/Ribbon1"))] = 20f;
 
-            var rig = BendRigs.Of(bones, weight);
-            try
-            {
-                var axis = rig.Axis[bones.Id(upper)];
-                Assert.That(math.dot(axis, new float3(-1f, 0f, 0f)), Is.GreaterThan(0.99f), $"the upper arm runs along {axis}");
-            }
-            finally
-            {
-                rig.Parent.Dispose();
-                rig.Position.Dispose();
-                rig.Axis.Dispose();
-                rig.Right.Dispose();
-            }
+            using var rig = BendRigs.Of(bones, weight);
+            var axis = rig.Axis[bones.Id(upper)];
+            Assert.That(math.dot(axis, new float3(-1f, 0f, 0f)), Is.GreaterThan(0.99f), $"the upper arm runs along {axis}");
         }
     }
 }

@@ -125,10 +125,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 foreach (var m in Meshes) m.Dispose();
                 foreach (var l in Layers) l.Dispose();
                 foreach (var o in _owned) o.Dispose();
-                if (Rig.Parent.IsCreated) Rig.Parent.Dispose();
-                if (Rig.Position.IsCreated) Rig.Position.Dispose();
-                if (Rig.Axis.IsCreated) Rig.Axis.Dispose();
-                if (Rig.Right.IsCreated) Rig.Right.Dispose();
+                Rig.Dispose();
             }
         }
 
