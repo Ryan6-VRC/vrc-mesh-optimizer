@@ -45,6 +45,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// Off, every mesh is written with the removals as occlusion first judged them.
         /// </summary>
         public bool Rejudge = BuildSettings.Rejudging;
+        /// <summary>
+        /// Whether a triangle occlusion removed stands in the clearance surface as a neighbour of the other layers
+        /// (<see cref="OptimizerPipeline.ClearanceSurfaceOf"/>), so one re-judging writes back comes back clear. Off, the
+        /// surface holds only what occlusion kept.
+        /// </summary>
+        public bool RemovedAsNeighbours = BuildSettings.RemovedAsNeighbours;
+        /// <summary>
+        /// Whether the clearance surface holds only renderers on at build, as the hierarchy and the renderer say, each one
+        /// off at build being decimated as if it alone were turned on (<see cref="OptimizerPipeline.ClearanceSurfaceOf"/>).
+        /// Off, a renderer off at build is a neighbour like any other.
+        /// </summary>
+        public bool ActiveOnlyNeighbours = BuildSettings.ActiveOnlyNeighbours;
         /// <summary>Time the caller spent classifying liveness, for the report.</summary>
         public double LivenessMs;
         /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
@@ -69,10 +81,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     }
 
     /// <summary>
-    /// The decimation settings a build runs with, and whether it judges its removals again. The component exposes none of
-    /// them, and the decimation defaults live in <see cref="DecimationSettings.Default"/> alone; this is the one place a
-    /// test or a measurement can hand a build other values, since a build reaches the pipeline through NDMF and not
-    /// through a caller. Nothing in the package overrides them.
+    /// The decimation settings a build runs with, whether it judges its removals again, and what stands in its clearance
+    /// surface. The component exposes none of them, and the decimation defaults live in
+    /// <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a measurement can hand a build other
+    /// values, since a build reaches the pipeline through NDMF and not through a caller. Nothing in the package overrides
+    /// them.
     /// </summary>
     internal static class BuildSettings
     {
@@ -95,6 +108,28 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var before = Rejudging;
             Rejudging = rejudging;
             return new Scope(() => Rejudging = before);
+        }
+
+        /// <summary>Whether a build's clearance surface holds the triangles occlusion removed (<see cref="PipelineInput.RemovedAsNeighbours"/>); off unless overridden.</summary>
+        internal static bool RemovedAsNeighbours { get; private set; }
+
+        /// <summary>Whether a build's clearance surface holds only renderers on at build (<see cref="PipelineInput.ActiveOnlyNeighbours"/>); off unless overridden.</summary>
+        internal static bool ActiveOnlyNeighbours { get; private set; }
+
+        /// <summary>Every build until the returned scope is disposed runs with <see cref="RemovedAsNeighbours"/> as <paramref name="on"/> says; disposing restores what was before.</summary>
+        internal static IDisposable OverrideRemovedAsNeighbours(bool on)
+        {
+            var before = RemovedAsNeighbours;
+            RemovedAsNeighbours = on;
+            return new Scope(() => RemovedAsNeighbours = before);
+        }
+
+        /// <summary>Every build until the returned scope is disposed runs with <see cref="ActiveOnlyNeighbours"/> as <paramref name="on"/> says; disposing restores what was before.</summary>
+        internal static IDisposable OverrideActiveOnlyNeighbours(bool on)
+        {
+            var before = ActiveOnlyNeighbours;
+            ActiveOnlyNeighbours = on;
+            return new Scope(() => ActiveOnlyNeighbours = before);
         }
 
         sealed class Scope : IDisposable
@@ -737,7 +772,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 if (!alwaysOn.Contains(job.Renderer)) continue;
                 // Listed as always on but off as the avatar loads: it covers nothing until something turns it on.
-                if (!job.Renderer.enabled || !job.Renderer.gameObject.activeInHierarchy)
+                if (!OnAtBuild(job.Renderer))
                 {
                     prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.AlwaysOnIsOff, false, job.Renderer));
                     continue;
@@ -811,7 +846,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
             var stage = Stopwatch.StartNew();
             input.BeforeStep?.Invoke(AvatarStep.Clearance);
-            var surface = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : default;
+            var surfaces = input.Decimation.Clearance.Enabled ? ClearanceSurfaceOf(live, all, input, bones, input.Decimation.Clearance.Reach) : null;
             BendRig rig = default;
             var recordings = new List<Recording>();
             try
@@ -830,7 +865,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                         job.ExcludedFromDecimation = true;
                         continue;
                     }
-                    var recording = StartRecording(job, input, protection, new ClearanceInput { Surface = surface, TriangleLayer = job.Layers }, rig, prepared);
+                    var recording = StartRecording(job, input, protection, new ClearanceInput { Surface = surfaces?.For(job) ?? default, TriangleLayer = job.Layers }, rig, prepared);
                     if (recording != null) recordings.Add(recording);
                 }
                 foreach (var recording in recordings) FinishRecording(recording, prepared);
@@ -840,7 +875,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             {
                 // A recording reads the surface and its renderer's layers until it is done, so each is waited for before they go.
                 foreach (var recording in recordings) recording.Dispose();
-                surface.Dispose();
+                surfaces?.Dispose();
                 rig.Dispose();
                 // Only the clearance rule reads a renderer's layers, and only while its sequence is recorded.
                 foreach (var job in live)
@@ -874,49 +909,84 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and
-        /// each renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>. Kept means what occlusion left: a triangle
-        /// it removed is not in it, so nothing is held clear of it. Re-judging (<see cref="Cut"/>) writes such a triangle back
-        /// where the cut took its cover, and it was never a neighbour, so the renderer cut over it may cross it there. A
-        /// renderer off at build is in it like any other, since whatever
-        /// turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is a renderer the
-        /// pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be read: it is still
-        /// drawn where it stands, whole, so its neighbours keep clear of its source.
+        /// Every renderer's kept surface as one clearance surface, each connected piece of each mesh its own layer, and each
+        /// renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>; the one place that decides what stands in
+        /// it. Kept means what occlusion left: a triangle it removed is not in it, so nothing is held clear of it. Re-judging
+        /// (<see cref="Cut"/>) writes such a triangle back where the cut took its cover, and it was never a neighbour, so the
+        /// renderer cut over it may cross it there. With <see cref="PipelineInput.RemovedAsNeighbours"/> a removed triangle
+        /// is in it too, in the piece it belongs to in the whole mesh, so that piece's own decimation passes it by while every
+        /// other layer keeps its share of the gap to it, and one written back comes back clear; pieces joined only through
+        /// removed triangles are then one layer. A renderer off at build is in it like any other, since whatever turns it on
+        /// shows it against the rest, unless <see cref="PipelineInput.ActiveOnlyNeighbours"/> leaves it out: then nothing is
+        /// held clear of it, and it is decimated as if it alone were turned on, against a surface of its own that holds what
+        /// is on at build and itself. It needs its own because the gap the rule reads on the far side is that layer's
+        /// clearance from the rest of the surface, which would not see it. One excluded from decimation is in it too,
+        /// unmoved. So is a renderer the pass left as it was (for Cloth, a failed extraction, or its shape keys' names)
+        /// whose mesh can be read: it is still drawn where it stands, whole, so its neighbours keep clear of its source.
         /// </summary>
-        static ClearanceSurface ClearanceSurfaceOf(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, float reach)
+        static ClearanceSurfaces ClearanceSurfaceOf(List<PreparedRenderer> live, List<PreparedRenderer> all, PipelineInput input, AvatarBones bones, float reach)
         {
-            var sources = new List<ClearanceLayerSource>();
+            var sources = new List<(ClearanceLayerSource source, PreparedRenderer job, bool stands)>();
             var owned = new List<IDisposable>();
+            var surfaces = new ClearanceSurfaces();
+            bool Stands(Renderer r) => !input.ActiveOnlyNeighbours || OnAtBuild(r);
+            List<ClearanceLayerSource> Holding(Func<(ClearanceLayerSource source, PreparedRenderer job, bool stands), bool> which) =>
+                sources.Where(which).Select(s => s.source).ToList();
             try
             {
                 var next = 0;
                 foreach (var job in live)
                 {
                     var eval = job.Eval;
-                    var hidden = HiddenMask(job);
+                    var hidden = input.RemovedAsNeighbours ? default : HiddenMask(job);
                     if (hidden.IsCreated) owned.Add(hidden);
                     job.Layers = Layers.Pieces(eval.Positions, eval.Triangles, hidden, Allocator.Persistent, out var pieces);
                     for (var i = 0; i < job.Layers.Length; i++)
                         if (job.Layers[i] >= 0) job.Layers[i] += next;
                     next += pieces;
-                    sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = eval.Triangles, TriangleLayer = job.Layers, Excluded = hidden });
+                    sources.Add((new ClearanceLayerSource { Positions = eval.Positions, Triangles = eval.Triangles, TriangleLayer = job.Layers, Excluded = hidden }, job, Stands(job.Renderer)));
                 }
                 foreach (var job in all)
                 {
                     if (job.Extracted || job.Source == null || job.TrianglesBefore == 0 || !CanRead(job.Source, Application.isPlaying)) continue;
-                    if (!TryExtractUnchanged(job, input, bones, out var eval)) continue;
+                    // One off at build is left out, and since it is never decimated it needs no surface of its own either.
+                    if (!Stands(job.Renderer) || !TryExtractUnchanged(job, input, bones, out var eval)) continue;
                     owned.Add(eval);
                     var layers = Layers.Pieces(eval.Positions, eval.Triangles, Allocator.Persistent, out var pieces);
                     owned.Add(layers);
                     for (var i = 0; i < layers.Length; i++) layers[i] += next;
                     next += pieces;
-                    sources.Add(new ClearanceLayerSource { Positions = eval.Positions, Triangles = eval.Triangles, TriangleLayer = layers });
+                    sources.Add((new ClearanceLayerSource { Positions = eval.Positions, Triangles = eval.Triangles, TriangleLayer = layers }, job, true));
                 }
-                return ClearanceSurface.Build(sources, reach, Allocator.Persistent);
+                surfaces.Shared = ClearanceSurface.Build(Holding(s => s.stands), reach, Allocator.Persistent);
+                foreach (var off in sources.Where(s => !s.stands).Select(s => s.job))
+                    surfaces.Own[off] = ClearanceSurface.Build(Holding(s => s.stands || s.job == off), reach, Allocator.Persistent);
+                return surfaces;
+            }
+            catch
+            {
+                surfaces.Dispose();
+                throw;
             }
             finally
             {
                 foreach (var o in owned) o.Dispose();
+            }
+        }
+
+        /// <summary>The clearance surfaces a build decimates against (<see cref="ClearanceSurfaceOf"/>): one shared, and one of its own for each renderer that needs one.</summary>
+        sealed class ClearanceSurfaces : IDisposable
+        {
+            public ClearanceSurface Shared;
+            public readonly Dictionary<PreparedRenderer, ClearanceSurface> Own = new Dictionary<PreparedRenderer, ClearanceSurface>();
+
+            public ClearanceSurface For(PreparedRenderer job) => Own.TryGetValue(job, out var own) ? own : Shared;
+
+            public void Dispose()
+            {
+                Shared.Dispose();
+                foreach (var s in Own.Values) s.Dispose();
+                Own.Clear();
             }
         }
 
@@ -941,6 +1011,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>The triangles occlusion removed, as the mask decimation and the clearance surface leave them out by; unset when it removed none. The caller owns it.</summary>
         static NativeArray<bool> HiddenMask(PreparedRenderer job) => job.Hidden == null ? default : new NativeArray<bool>(job.Hidden, Allocator.Persistent);
+
+        /// <summary>Whether a renderer is drawn as the avatar loads, as its hierarchy and its own switch say; no animator is read.</summary>
+        static bool OnAtBuild(Renderer r) => r.enabled && r.gameObject.activeInHierarchy;
 
         /// <summary>
         /// One renderer's sequence while a worker thread records it, with the arrays the recording reads that the renderer

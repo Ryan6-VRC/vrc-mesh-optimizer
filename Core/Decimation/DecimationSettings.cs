@@ -128,8 +128,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// pieces meeting at one vertex) are one layer; the gap is read per source triangle, so where it changes by a
     /// large part of itself across one source triangle, the least of it stands for the whole; and the other layers are
     /// the triangles the caller hands in, so one left out is held clear of by nothing, and if it is drawn after all (the
-    /// pipeline leaves out a triangle occlusion removed, and re-judging can write it back) it was never a neighbour and a
-    /// layer may cross it.
+    /// pipeline leaves out a triangle occlusion removed unless told to hold it, and re-judging can write it back) it was
+    /// never a neighbour and a layer may cross it.
     /// </summary>
     public struct ClearanceSettings
     {

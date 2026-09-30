@@ -11,8 +11,8 @@ using static Ryan6Vrc.MeshOptimizer.Tests.Integration.AvatarFixture;
 namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 {
     // A body sphere and a garment a millimetre over it, decimated to two millimetres: without the clearance rule the
-    // garment's chords cut through the body. The pass supplies the rule with what Core cannot know: every renderer's
-    // kept surface, shown or not.
+    // garment's chords cut through the body. The pass supplies the rule with what Core cannot know: by default every
+    // renderer's kept surface, shown or not; two switches on the input change which.
     public class ClearancePipelineTests
     {
         const float BodyRadius = 0.1f;
@@ -52,7 +52,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         static float3[] Pos(Mesh m) => m.vertices.Select(v => (float3)v).ToArray();
 
-        // A garment toggled off at build is still a neighbour: whatever turns it on shows it against the body.
+        // A garment toggled off at build is still a neighbour by default: whatever turns it on shows it against the body.
         [TestCase(true)]
         [TestCase(false)]
         public void AGarmentOffAtBuild_IsKeptClearOfLikeOneThatIsOn(bool active)
@@ -69,6 +69,30 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Of(report, body).NearVertices, Is.GreaterThan(Of(report, body).TrianglesBefore / 4), "the body sees the garment");
             Assert.That(without.crossing, Is.GreaterThan(0.01f), "without the rule the garment cuts through the body");
             Assert.That(Crossing(Drawn(report, body), Drawn(report, garment)), Is.Zero, "with it, it does not");
+        }
+
+        // With only renderers on at build as neighbours, one off at build, by its object or by its own switch, constrains
+        // nothing: the body sees none of it. It is decimated as if it alone were turned on, which here is exactly as with
+        // the switch off, where it constrains the body as in the test above.
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ARendererOffAtBuild_ConstrainsNothing_OnlyWithActiveOnlyNeighbours(bool byItsOwnSwitch)
+        {
+            var garment = Garment();
+            if (byItsOwnSwitch) garment.enabled = false;
+            else garment.gameObject.SetActive(false);
+
+            var off = a.Run(apply: false);
+            var on = a.Run(tweak: i => i.ActiveOnlyNeighbours = true, apply: false);
+
+            TestContext.WriteLine($"body near vertices {Of(off, body).NearVertices} with the switch off, {Of(on, body).NearVertices} on; garment near vertices {Of(off, garment).NearVertices} and {Of(on, garment).NearVertices}, triangles {Of(off, garment).TrianglesAfter} and {Of(on, garment).TrianglesAfter}");
+            Assert.That(Of(off, body).NearVertices, Is.GreaterThan(Of(off, body).TrianglesBefore / 4), "off, the body sees the garment");
+            Assert.That(Of(on, body).NearVertices, Is.Zero, "on, the body sees nothing of it");
+            Assert.That(Of(on, garment).NearVertices, Is.GreaterThan(Of(on, garment).TrianglesBefore / 8), "the garment still sees the body");
+            Assert.That(Of(on, garment).TrianglesAfter, Is.LessThan(Of(on, garment).TrianglesBefore), "the garment was decimated");
+            Assert.That(Of(on, garment).NearVertices, Is.EqualTo(Of(off, garment).NearVertices));
+            Assert.That(Of(on, garment).ClearanceRefused, Is.EqualTo(Of(off, garment).ClearanceRefused));
+            Assert.That(Of(on, garment).TrianglesAfter, Is.EqualTo(Of(off, garment).TrianglesAfter), "the garment is decimated as it is with the switch off");
         }
 
         (OptimizationReport report, float crossing) RunWithoutTheRule()
@@ -109,8 +133,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         // so it holds nothing back; kept, the same body is a neighbour to the whole garment. Re-judging is off: where the
         // cut garment both uncovers and crosses the deleted body, re-judging writes some of it back where it stands, crossed
         // by the garment, since the rule never saw it; what is measured here is what the rule saw. A build re-judges by
-        // default, and with the switch on this fixture writes back about 130 body triangles and the last assertion reads
-        // about 7 cm of crossing, so what ships is not what this test checks; the test after it does.
+        // default; re-judging, this fixture writes back about 130 body triangles and the last assertion reads
+        // about 7 cm of crossing, so what ships is not what this test checks; the written-back twin below does.
         [Test]
         public void BodyDeletedUnderTheGarment_IsNoNeighbour()
         {
@@ -129,17 +153,49 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(Crossing(Drawn(removed, body), Drawn(removed, garment)), Is.Zero, "what is kept of the body is still kept clear of");
         }
 
-        // The rule's stated limit, on the path a build takes. Re-judging writes back body the cut garment drew away from,
-        // at its source corners; it was never a neighbour, so the garment may cross it, and only it: every crossing between
-        // the two lies on a triangle written back, and what occlusion kept is still kept clear of.
+        // The test above with removed triangles as neighbours: body deleted under the garment stands in the surface, so it
+        // holds the garment back exactly as the whole body does.
         [Test]
-        public void BodyWrittenBackByReJudging_WasNoNeighbour_AndIsTheOnlyBodyTheGarmentCrosses()
+        public void BodyDeletedUnderTheGarment_IsANeighbour_WithRemovedAsNeighbours()
+        {
+            var garment = Garment(60f);
+            var optimizer = a.Root.GetComponent<AvatarMeshOptimizer>();
+            optimizer.alwaysOn.Add(garment);
+
+            optimizer.removeHiddenTriangles = false;
+            var kept = a.Run(apply: false);
+            optimizer.removeHiddenTriangles = true;
+            var removed = a.Run(tweak: i =>
+            {
+                i.Rejudge = false;
+                i.RemovedAsNeighbours = true;
+            });
+
+            Assert.That(Of(removed, body).HiddenRemoved, Is.GreaterThan(0), "occlusion deleted the body under the garment");
+            TestContext.WriteLine($"garment near vertices {Of(kept, garment).NearVertices} with the body whole, {Of(removed, garment).NearVertices} with it deleted underneath; refused {Of(kept, garment).ClearanceRefused} and {Of(removed, garment).ClearanceRefused}; garment triangles {Of(kept, garment).TrianglesAfter} and {Of(removed, garment).TrianglesAfter}");
+            Assert.That(Of(removed, garment).NearVertices, Is.EqualTo(Of(kept, garment).NearVertices), "the deleted body holds the garment back as the whole body does");
+            Assert.That(Of(removed, garment).ClearanceRefused, Is.EqualTo(Of(kept, garment).ClearanceRefused));
+            Assert.That(Crossing(Drawn(removed, body), Drawn(removed, garment)), Is.Zero, "what is kept of the body is still kept clear of");
+        }
+
+        // The rule's stated limit, on the path a build takes. Re-judging writes back body the cut garment drew away from,
+        // at its source corners, and every crossing between the two lies on a triangle written back: what occlusion kept is
+        // kept clear of. By default a written-back triangle was never a neighbour, so the garment may cross it: 130 are
+        // written back, crossed along about 7.4 cm. With removed triangles as neighbours it was one, and comes back clear:
+        // 110 are written back, crossed along 0, and the garment keeps 1,292 triangles where it keeps 492 by default.
+        [TestCase(false)]
+        [TestCase(true)]
+        public void BodyWrittenBackByReJudging_IsTheOnlyBodyTheGarmentCrosses(bool removedAsNeighbours)
         {
             var garment = Garment(60f);
             a.Root.GetComponent<AvatarMeshOptimizer>().alwaysOn.Add(garment);
 
-            var first = a.Run(tweak: i => i.Rejudge = false, apply: false);
-            var report = a.Run(apply: false);
+            var first = a.Run(tweak: i =>
+            {
+                i.Rejudge = false;
+                i.RemovedAsNeighbours = removedAsNeighbours;
+            }, apply: false);
+            var report = a.Run(tweak: i => i.RemovedAsNeighbours = removedAsNeighbours, apply: false);
 
             var r = Of(report, body);
             Assert.That(r.HiddenRestored, Is.GreaterThan(0), "re-judging wrote body back");
@@ -158,8 +214,26 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             float CrossingOf(bool onRestored) =>
                 LayerFixtures.CrossingLength(bodyAt, written.Where(t => Restored(t) == onRestored).ToArray(), Pos(garmentMesh), Tris(garmentMesh));
             var crossing = CrossingOf(true);
-            TestContext.WriteLine($"{r.HiddenRestored} body triangles written back; the garment crosses them along {crossing * 100:0.0} cm");
+            TestContext.WriteLine($"{r.HiddenRestored} body triangles written back; the garment crosses them along {crossing * 100:0.0} cm and keeps {Of(report, garment).TrianglesAfter} triangles");
             Assert.That(CrossingOf(false), Is.Zero, "the garment crosses no body triangle but those written back");
+            if (removedAsNeighbours) Assert.That(crossing, Is.Zero, "a triangle written back was a neighbour, and comes back clear");
+        }
+
+        // A build reaches the pipeline through NDMF, so a measurement hands it the two switches from outside, for a scope.
+        [Test]
+        public void TheNeighbourSwitches_AreOffUnlessOverridden_AndHoldForTheirScope()
+        {
+            Assert.That(new PipelineInput().RemovedAsNeighbours, Is.False, "off unless overridden");
+            Assert.That(new PipelineInput().ActiveOnlyNeighbours, Is.False, "off unless overridden");
+            using (BuildSettings.OverrideRemovedAsNeighbours(true))
+            {
+                Assert.That(new PipelineInput().RemovedAsNeighbours, Is.True);
+                Assert.That(new PipelineInput().ActiveOnlyNeighbours, Is.False, "each alone");
+                using (BuildSettings.OverrideActiveOnlyNeighbours(true))
+                    Assert.That(new PipelineInput().ActiveOnlyNeighbours, Is.True);
+                Assert.That(new PipelineInput().ActiveOnlyNeighbours, Is.False);
+            }
+            Assert.That(new PipelineInput().RemovedAsNeighbours, Is.False);
         }
     }
 }
