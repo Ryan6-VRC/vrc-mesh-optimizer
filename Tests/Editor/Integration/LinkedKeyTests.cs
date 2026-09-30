@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
-using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Gate;
@@ -255,7 +254,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(configuration.Weights[tights], Is.EqualTo(new[] { 100f }));
             Assert.That(configuration.Weights.ContainsKey(boot), Is.False, "a renderer with no member stands as it is");
 
-            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, inputs.Configurations, CrossingSettings.Default);
+            var crossing = GateRun.Measure(report, a.Root.transform, null).Crossing;
             Assert.That(crossing.Configurations, Has.Member("linked Body:heels, Tights:heels at 1"));
             Assert.That(crossing.Pairs.Any(p => p.Configuration == configuration.Name), "the pairs are measured in it");
         }
