@@ -256,8 +256,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
             for (var i = 0; i < jobs.Count; i++) report.Renderers.Add(ReportOf(jobs[i], pass.Steps[i], pass.Outcomes[i]));
             if (settings.target == TargetKind.TriangleBudget) report.TargetMet = report.TrianglesAfter <= settings.triangleBudget;
+            // The ceiling is named only when the pass was over the budget before writing: one it held short of an allocation
+            // reduced by a reserve can still meet the budget, and a write that fails is then what leaves it unmet.
             if (settings.decimate && !report.TargetMet)
-                report.Diagnostics.Add(pass.CeilingHeld
+                report.Diagnostics.Add(pass.CeilingHeld && pass.TrianglesAfter(jobs) > settings.triangleBudget
                     ? new Diagnostic(DiagnosticKeys.BudgetCeilingHeld, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString(),
                         (input.Decimation.BudgetErrorCeiling * 1000f).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
                     : new Diagnostic(DiagnosticKeys.BudgetNotMet, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString()));

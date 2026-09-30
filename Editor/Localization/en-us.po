@@ -162,7 +162,7 @@ msgid "MeshOptimizer:diag:budget-ceiling-held:description"
 msgstr "The avatar has {0} triangles against a target of {1}: reaching it would move the surface further than the {2} mm the error ceiling allows."
 
 msgid "MeshOptimizer:diag:budget-ceiling-held:hint"
-msgstr "The meshes are cut as far as the ceiling allows, rather than distorted to meet the count. Raise the target to an amount the avatar reaches within the ceiling."
+msgstr "The meshes are cut no further than the ceiling allows, rather than distorted to meet the count. Raise the target to an amount the avatar reaches within the ceiling."
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "An always-on renderer is off"
