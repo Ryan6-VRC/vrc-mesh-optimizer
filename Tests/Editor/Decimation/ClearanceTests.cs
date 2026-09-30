@@ -242,6 +242,45 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             foreach (var kv in on) Assert.That(kv.Value, Is.Zero, $"new crossing, skin cut at {kv.Key * 1000} mm");
         }
 
+        // Two fine layers crossing along a ring at about 7 degrees, both cut. The gate reads one cut against the other, and
+        // each cut may stand CrossingDrift off its own source where it crosses the other's, so the two drifts add: by the
+        // drift alone the crossing may move about 8 mm here, past the gate's 5 mm, which it holds from about 11.5 degrees.
+        // Read at every pair of cuts from 0.5 to 4 mm, under Burst and as managed code alike, it moves under 4 mm: the new
+        // crossing is 0 at the gate's 5 mm and at 4 mm, and at most 1.2 mm of it lies more than 3 mm from the source's.
+        // The drift is not what holds it: the same readings come with CrossingDrift at 4 mm, so this case shows the
+        // combined case within the gate here and does not test the drift's bound.
+        [Test]
+        public void TwoFineLayersCrossingAtAbout7Degrees_BothCut_GainNoNewCrossing()
+        {
+            using var scene = new Scene();
+            scene.Add(SkinTube());
+            scene.Add(LayerTube((a, y) => Skin(a, y) + math.lerp(-0.012f, 0.012f, y / Length)));
+            scene.BuildSurface();
+            var held = Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled;
+            Assume.That(held, "Burst is off in this Editor, so there is no compiled code to compare");
+            var off = NewCrossingAtLevels(scene, false);
+            var burst = NewCrossingAtLevels(scene, true);
+            Dictionary<(float, float), float> managed;
+            try
+            {
+                Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled = false;
+                managed = NewCrossingAtLevels(scene, true);
+            }
+            finally
+            {
+                Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled = held;
+            }
+            string Mm(Dictionary<(float, float), float> r) =>
+                string.Join(", ", r.Select(kv => $"{kv.Key.Item1 * 1000:0.#}/{kv.Key.Item2 * 1000:0.#} mm: {kv.Value * 1000:0.000} mm"));
+            TestContext.WriteLine($"new crossing without the rule: {Mm(off)}");
+            TestContext.WriteLine($"new crossing with the rule, under Burst: {Mm(burst)}");
+            TestContext.WriteLine($"new crossing with the rule, as managed code: {Mm(managed)}");
+            Assert.That(off.Values.Max(), Is.GreaterThan(0.005f), "without the rule the cuts cross anew");
+            foreach (var (path, on) in new[] { ("under Burst", burst), ("as managed code", managed) })
+            foreach (var kv in on)
+                Assert.That(kv.Value, Is.Zero, $"new crossing {path}, one layer cut at {kv.Key.Item1 * 1000} mm and the other at {kv.Key.Item2 * 1000} mm");
+        }
+
         // Occlusion deletes the skin under a garment, leaving a hole with an open border that the garment passes over.
         // A border collapse straightens the border across the hole, off the skin's source, where only the garment's own
         // source was judged; the garment may sag there. The two must still not meet.
