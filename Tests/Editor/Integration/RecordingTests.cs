@@ -98,6 +98,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             }
         }
 
+        // A build measures each collapse in bends of the avatar's own rig: the garment, across the hips-chest joint, records
+        // another sequence than it does with bends turned off.
+        [Test]
+        public void ARendererAcrossAJoint_RecordsWithBends_WhatItDoesNotWithout()
+        {
+            var flat = BuildSettings.Decimation;
+            flat.Bend.Degrees = 0f;
+            using var bent = Prepare();
+            PreparedAvatar without;
+            using (BuildSettings.Override(flat)) without = Prepare();
+            using (without)
+            {
+                var (x, y) = (Of(bent, garment), Of(without, garment));
+                TestContext.WriteLine($"garment: {x.SequenceLength} steps with bends to error {x.Sequence.Steps[x.SequenceLength - 1].Error * 1000:0.000} mm, {y.SequenceLength} without to {y.Sequence.Steps[y.SequenceLength - 1].Error * 1000:0.000} mm");
+                Assert.That(x.SequenceLength, Is.GreaterThan(100), "the garment decimates");
+                Assert.That(x.Sequence.Steps.Select(s => math.asuint(s.Error)), Is.Not.EqualTo(y.Sequence.Steps.Select(s => math.asuint(s.Error))), "bends change the sequence");
+            }
+        }
+
         // The seam is called on the main thread before the renderer is recorded, so a throw there leaves it unrecorded,
         // named, and the renderers recorded before and after it as they would be.
         [Test]
