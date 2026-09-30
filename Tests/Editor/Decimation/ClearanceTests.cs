@@ -111,6 +111,142 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(kv.Value, Is.Zero, $"with the rule, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
         }
 
+        // The stated limit, on record: two layers 3 mm apart, each with a nearer layer on its far side (tights 0.2 mm over
+        // the skin; a lining with its outer 0.5 mm over it). Each is held to a share of its 0.2 or 0.5 mm, not of the 3 mm
+        // between the pair, and the two cut against each other cross. The limit bounds how deep: by no more than the sum of
+        // the two cuts' errors. The gate's reading, the length of new crossing line, is no depth and has no bound in the
+        // errors: the line runs round the tube wherever the two cuts pass through each other, 16.6, 46.2, 201 and 397 mm
+        // at 2/2, 2/4, 4/2 and 4/4 mm cuts, against depths of 0.14, 0.62, 0.80 and 1.00 mm under sums of 3.9 to 7.8 mm. So
+        // the test bounds the depth, and pins the length above zero as the case the rule leaves open, under Burst and as
+        // managed code alike. A rule that reads the gap between the pair closes it (the length reads 0), and turns that
+        // assertion round.
+        [TestCase(false, TestName = "{m}(under Burst)")]
+        [TestCase(true, TestName = "{m}(as managed code)")]
+        public void TwoLayersEachWithANearerLayerBeyond_CrossByNoMoreThanTheirErrors(bool managed)
+        {
+            const float tight = 0.0002f, lining = 0.0032f, outer = 0.0037f;
+            using var scene = new Scene();
+            scene.Add(SkinTube());
+            var a = scene.Add(LayerTube(Over(tight)));
+            var b = scene.Add(Tube(64, 40, Length, Over(lining)));
+            scene.Add(LayerTube(Over(outer)));
+            scene.BuildSurface();
+            Assert.That(Crossing(scene.Builders[a], scene.Builders[b]), Is.Zero, "the source layers do not cross");
+            // Each layer is judged against the others' sources, so the skin's and the outer's own cuts do not bear on the pair.
+            var held = Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled;
+            if (!managed) Assume.That(held, "Burst is off in this Editor");
+            CollapseSequence ta, tb;
+            try
+            {
+                if (managed) Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled = false;
+                ta = scene.Decimate(a, true, out _);
+                tb = scene.Decimate(b, true, out _);
+            }
+            finally
+            {
+                Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled = held;
+            }
+            using var _a = ta;
+            using var _b = tb;
+            var pa = scene.Builders[a].Positions.ToArray();
+            var pb = scene.Builders[b].Positions.ToArray();
+            var readings = new List<(float la, float lb, float ea, float eb, float length, float depth)>();
+            foreach (var la in new[] { 0.002f, 0.004f })
+            foreach (var lb in new[] { 0.002f, 0.004f })
+            {
+                int ka = Fixtures.CutAtError(ta, la), kb = Fixtures.CutAtError(tb, lb);
+                using var ca = ta.Cut(ka, Allocator.Persistent);
+                using var cb = tb.Cut(kb, Allocator.Persistent);
+                var xa = Fixtures.ToArray(ca.Triangles);
+                var xb = Fixtures.ToArray(cb.Triangles);
+                readings.Add((la, lb, ta.ErrorAt(ka), tb.ErrorAt(kb), NewCrossing(scene.Builders[a], xa, scene.Builders[b], xb), RadialOverlap(pa, xa, pb, xb)));
+            }
+            var read = string.Join("; ", readings.Select(r =>
+                $"{r.la * 1000}/{r.lb * 1000} mm: errors {r.ea * 1000:0.000} + {r.eb * 1000:0.000} mm, depth {r.depth * 1000:0.000} mm, new crossing {r.length * 1000:0.0} mm"));
+            TestContext.WriteLine($"the tight layer against the lining, cut against cut: {read}");
+            foreach (var r in readings)
+            {
+                Assert.That(r.depth, Is.LessThanOrEqualTo(r.ea + r.eb), $"crossing depth within the sum of the errors, tight layer cut at {r.la * 1000} mm and the lining at {r.lb * 1000} mm; {read}");
+                Assert.That(r.length, Is.GreaterThan(0f), $"the case the limit states, tight layer cut at {r.la * 1000} mm and the lining at {r.lb * 1000} mm; {read}");
+            }
+        }
+
+        /// <summary>
+        /// How far two cut tubes around the Y axis pass through each other: the most by which the first stands outside the
+        /// second along any ray out from the axis, over a grid of rays inside the tubes' length; 0 where it stands inside.
+        /// </summary>
+        static float RadialOverlap(float3[] pa, int3[] ta, float3[] pb, int3[] tb)
+        {
+            var inner = RadialHits(pa, ta, true);
+            var outer = RadialHits(pb, tb, false);
+            var most = 0f;
+            for (var i = 0; i < inner.Length; i++)
+                if (!float.IsNaN(inner[i]) && !float.IsNaN(outer[i])) most = math.max(most, inner[i] - outer[i]);
+            return most;
+        }
+
+        const int RayAngles = 1440, RayHeights = 400, BinAngles = 360, BinHeights = 50;
+
+        /// <summary>Per ray of <see cref="RadialOverlap"/>'s grid, the farthest or the nearest distance at which it meets the surface; NaN where it meets none.</summary>
+        static float[] RadialHits(float3[] p, int3[] t, bool farthest)
+        {
+            var bins = new List<int>[BinAngles * BinHeights];
+            for (var k = 0; k < t.Length; k++)
+            {
+                float3 v0 = p[t[k].x], v1 = p[t[k].y], v2 = p[t[k].z];
+                var an = new[] { math.atan2(v0.z, v0.x), math.atan2(v1.z, v1.x), math.atan2(v2.z, v2.x) };
+                if (an.Max() - an.Min() > math.PI)
+                    for (var i = 0; i < 3; i++)
+                        if (an[i] < 0f) an[i] += 2f * math.PI;
+                var a0 = (int)math.floor((an.Min() + math.PI) / (2f * math.PI) * BinAngles);
+                var a1 = (int)math.floor((an.Max() + math.PI) / (2f * math.PI) * BinAngles);
+                var h0 = math.clamp((int)math.floor(math.min(v0.y, math.min(v1.y, v2.y)) / Length * BinHeights), 0, BinHeights - 1);
+                var h1 = math.clamp((int)math.floor(math.max(v0.y, math.max(v1.y, v2.y)) / Length * BinHeights), 0, BinHeights - 1);
+                for (var ai = a0; ai <= a1; ai++)
+                for (var hi = h0; hi <= h1; hi++)
+                    (bins[(ai % BinAngles + BinAngles) % BinAngles * BinHeights + hi] ??= new List<int>()).Add(k);
+            }
+            var result = new float[RayAngles * RayHeights];
+            for (var i = 0; i < RayAngles; i++)
+            {
+                var angle = -math.PI + 2f * math.PI * (i + 0.5f) / RayAngles;
+                var d = new double3(math.cos(angle), 0, math.sin(angle));
+                var ai = i * BinAngles / RayAngles;
+                for (var j = 0; j < RayHeights; j++)
+                {
+                    var y = Length * (j + 0.5f) / RayHeights;
+                    var hit = double.NaN;
+                    var list = bins[ai * BinHeights + j * BinHeights / RayHeights];
+                    if (list != null)
+                        foreach (var k in list)
+                        {
+                            var r = RayTriangle(new double3(0, y, 0), d, p[t[k].x], p[t[k].y], p[t[k].z]);
+                            if (!double.IsNaN(r) && (double.IsNaN(hit) || (farthest ? r > hit : r < hit))) hit = r;
+                        }
+                    result[i * RayHeights + j] = (float)hit;
+                }
+            }
+            return result;
+        }
+
+        /// <summary>Distance along the ray at which it meets the triangle, in double precision; NaN where it misses.</summary>
+        static double RayTriangle(double3 o, double3 d, double3 v0, double3 v1, double3 v2)
+        {
+            var e1 = v1 - v0;
+            var e2 = v2 - v0;
+            var h = math.cross(d, e2);
+            var det = math.dot(e1, h);
+            if (math.abs(det) < 1e-18) return double.NaN;
+            var s = o - v0;
+            var u = math.dot(s, h) / det;
+            if (u < 0 || u > 1) return double.NaN;
+            var q = math.cross(s, e1);
+            var v = math.dot(d, q) / det;
+            if (v < 0 || u + v > 1) return double.NaN;
+            var r = math.dot(e2, q) / det;
+            return r >= 0 ? r : double.NaN;
+        }
+
         /// <summary>
         /// A layer whose gap to the skin runs linearly from <paramref name="from"/> at the bottom to <paramref name="to"/>
         /// at the top: through zero, it crosses the skin along a ring, as a boot crosses the tights inside it; from
