@@ -112,6 +112,32 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             StringAssert.Contains("left out of both channels: NonFinite", inputs.LeftOut.Single(l => l.path == "Broken").reason);
         }
 
+        // A renderer the pass skips before its numbers are read, as Cloth, never gets the non-finite check, so it reaches the
+        // crossing channel measured unchanged with its NaN; the channel leaves it out by name and measures the rest.
+        [Test]
+        public void ARendererSkippedBeforeItsNumbersAreRead_WithANonFinitePosition_IsLeftOutOfCrossingByName()
+        {
+            var mesh = a.Sphere(0.1f, 16, 32, name: "broken");
+            var broken = a.Skinned("Broken", mesh, new[] { a.Bone("Armature/Hips/Chest") });
+            // Cloth reads the mesh once, when added; given the NaN then, Unity logs its refusal.
+            broken.gameObject.AddComponent<Cloth>();
+            var vertices = mesh.vertices;
+            vertices[40] = new Vector3(float.NaN, 0f, 0f);
+            mesh.vertices = vertices;
+            var report = a.Run();
+            Assert.That(Of(report, broken).Skip, Is.EqualTo(SkipReason.Cloth), "the fixture must be skipped before its numbers are read");
+
+            var inputs = GateReportInputs.From(report);
+            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
+
+            Assert.That(crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
+            Assert.That(crossing.Pairs.Where(p => p.RendererA == "Broken" || p.RendererB == "Broken"), Is.Empty);
+            var left = crossing.LeftOut.Single();
+            Assert.That(left.path, Is.EqualTo("Broken"));
+            StringAssert.Contains("in as it stands: surface source vertex 40", left.reason);
+            StringAssert.Contains("not a finite position", left.reason);
+        }
+
         [Test]
         public void ReportWhoseMeshesAreDestroyed_IsRefusedByName()
         {

@@ -185,20 +185,28 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// <summary>Refuses, by name, a surface a gate measure cannot read.</summary>
         internal static void Validate(in Surface s, string side)
         {
+            var problem = Unreadable(s, side);
+            if (problem != null) throw new ArgumentException(problem, side);
+        }
+
+        /// <summary>Why a gate measure cannot read a surface, naming the first thing wrong with it; null when it can.</summary>
+        internal static string Unreadable(in Surface s, string side)
+        {
             if (!s.Positions.IsCreated || !s.Triangles.IsCreated)
-                throw new ArgumentException($"surface {side} needs Positions and Triangles", side);
+                return $"surface {side} needs Positions and Triangles";
             if (s.Excluded.IsCreated && s.Excluded.Length != s.Triangles.Length)
-                throw new ArgumentException($"surface {side} has {s.Excluded.Length} Excluded flags for {s.Triangles.Length} triangles", side);
+                return $"surface {side} has {s.Excluded.Length} Excluded flags for {s.Triangles.Length} triangles";
             var n = s.Positions.Length;
             for (var t = 0; t < s.Triangles.Length; t++)
             {
                 var tri = s.Triangles[t];
                 if (math.any(tri < 0) || math.any(tri >= n))
-                    throw new ArgumentException($"surface {side} triangle {t} names vertex {tri}, outside 0..{n - 1}", side);
+                    return $"surface {side} triangle {t} names vertex {tri}, outside 0..{n - 1}";
             }
             for (var v = 0; v < n; v++)
                 if (!math.all(math.isfinite(s.Positions[v])))
-                    throw new ArgumentException($"surface {side} vertex {v} is at {s.Positions[v]}, which is not a finite position", side);
+                    return $"surface {side} vertex {v} is at {s.Positions[v]}, which is not a finite position";
+            return null;
         }
 
         /// <summary>

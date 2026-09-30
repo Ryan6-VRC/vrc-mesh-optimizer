@@ -70,12 +70,19 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <summary>Every pair the broad phase let through, in every configuration; a pair left out cannot cross in it.</summary>
         public readonly IReadOnlyList<PairCrossing> Pairs;
         public readonly IReadOnlyList<SkippedConfiguration> Skipped;
+        /// <summary>
+        /// Each renderer whose surface could not be read in some configuration, by path, with the configurations and why: it
+        /// takes part in no pair in those, and every other renderer is still measured.
+        /// </summary>
+        public readonly IReadOnlyList<(string path, string reason)> LeftOut;
 
-        public CrossingReport(IReadOnlyList<string> configurations, IReadOnlyList<PairCrossing> pairs, IReadOnlyList<SkippedConfiguration> skipped)
+        public CrossingReport(IReadOnlyList<string> configurations, IReadOnlyList<PairCrossing> pairs, IReadOnlyList<SkippedConfiguration> skipped,
+            IReadOnlyList<(string path, string reason)> leftOut)
         {
             Configurations = configurations;
             Pairs = pairs;
             Skipped = skipped;
+            LeftOut = leftOut;
         }
 
         /// <summary>The pair and configuration with the most new crossing, the first on a tie; -1 when nothing was measured.</summary>
@@ -87,10 +94,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             return worst;
         }
 
-        /// <summary>One line per pair and configuration where anything crosses, most new crossing first, then one per skip.</summary>
+        /// <summary>One line per pair and configuration where anything crosses, most new crossing first, then one per skip and one per renderer left out.</summary>
         public string[] Lines() => Pairs.Where(p => p.Change.Before.Length > 0 || p.Change.After.Length > 0)
             .OrderByDescending(p => p.Change.New).Select(p => p.ToString())
-            .Concat(Skipped.Select(s => $"{s.Name}: not measured, {s.Reason}")).ToArray();
+            .Concat(Skipped.Select(s => $"{s.Name}: not measured, {s.Reason}"))
+            .Concat(LeftOut.Select(l => $"{l.path}: {l.reason}")).ToArray();
     }
 
     /// <summary>
@@ -105,7 +113,9 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <remarks>
         /// Configurations, in order: as it stands; live keys at zero, when some renderer holds a live key off zero; each pose
         /// as it stands, and again with live keys at zero; then <paramref name="configurations"/>. A pair is measured when the two
-        /// renderers' bounds overlap before or after, and every renderer is measured against itself. The avatar is left
+        /// renderers' bounds overlap before or after, and every renderer is measured against itself. A renderer whose baked
+        /// surface cannot be read in a configuration, as one with a non-finite position, takes part in no pair in it and is
+        /// named in <see cref="CrossingReport.LeftOut"/> rather than failing the avatar. The avatar is left
         /// as it was found, every blendshape weight, every transform and every renderer's mesh, when this throws too.
         /// </remarks>
         public static CrossingReport Measure(Transform avatarRoot, IReadOnlyList<GateInput> inputs, IReadOnlyList<GatePose> poses,
@@ -169,6 +179,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var scratch = new Mesh { name = "gate-bake" };
             var before = new NativeList<CrossingSegment>(Allocator.Persistent);
             var after = new NativeList<CrossingSegment>(Allocator.Persistent);
+            var unreadable = new string[inputs.Count];
+            var left = new SortedDictionary<int, (string reason, List<string> configurations)>();
             try
             {
                 if (humanoid != null) handler = new HumanPoseHandler(humanoid.avatar, humanoid.transform);
@@ -180,10 +192,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     {
                         var weights = configuration.Weights.TryGetValue(inputs[i].Renderer, out var w) ? w : standing[i];
                         surfaces.Bake(i, inputs[i], weights, scratch, avatarRoot);
+                        // A surface the channel cannot read, as a non-finite position a skip before the pass read the mesh let through, costs only its own pairs.
+                        unreadable[i] = SurfaceDistance.Unreadable(surfaces.Source[i], "source") ?? SurfaceDistance.Unreadable(surfaces.Optimized[i], "optimized");
+                        if (unreadable[i] == null) continue;
+                        if (!left.TryGetValue(i, out var l)) left[i] = l = (unreadable[i], new List<string>());
+                        l.configurations.Add(configuration.Name);
                     }
                     for (var i = 0; i < inputs.Count; i++)
                     for (var j = i; j < inputs.Count; j++)
                     {
+                        if (unreadable[i] != null || unreadable[j] != null) continue;
                         if (i != j && !surfaces.MayTouch(i, j, settings.Touch)) continue;
                         if (i == j)
                         {
@@ -214,7 +232,9 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     surfaces.Dispose();
                 }
             }
-            return new CrossingReport(planned.Select(c => c.Name).ToArray(), pairs, skipped);
+            var leftOut = left.Select(kv => (paths[kv.Key],
+                $"left out of the crossing channel in {string.Join(", ", kv.Value.configurations)}: {kv.Value.reason}")).ToArray();
+            return new CrossingReport(planned.Select(c => c.Name).ToArray(), pairs, skipped, leftOut);
         }
 
         /// <summary>Every renderer's source and optimized surface, re-baked per configuration, with their bounds.</summary>
