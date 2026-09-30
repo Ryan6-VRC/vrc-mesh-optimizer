@@ -13,8 +13,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 {
     /// <summary>
     /// Wall-clock of one configuration on face-, body- and avatar-sized synthetic meshes, and of a whole gate run on a
-    /// body-sized skinned renderer. Explicit, for running by name; the headless runner runs Explicit tests in an
-    /// unfiltered run too, so each is one timed pass and a few seconds.
+    /// body-sized skinned renderer. A measurement: a whole gate run leaves out every fixture named *Benchmark; run it
+    /// by filter. Each is one timed pass and a few seconds.
     /// </summary>
     public class GateBenchmark
     {

@@ -10,7 +10,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
 {
     /// <summary>
     /// Wall-clock of each stage on a face-sized synthetic mesh: about 50,000 triangles, 150 sparse live frames,
-    /// four bones. Explicit, so the gate skips it; run it by name.
+    /// four bones. A measurement: a whole gate run leaves out every fixture named *Benchmark; run it by filter.
     /// </summary>
     public class DecimationBenchmark
     {

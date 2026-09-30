@@ -10,7 +10,8 @@ using static Ryan6Vrc.MeshOptimizer.Tests.Decimation.LayerFixtures;
 namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
 {
     /// <summary>
-    /// What the clearance rule costs, in time and in triangles. Explicit, so the gate skips it; run it by name.
+    /// What the clearance rule costs, in time and in triangles. A measurement: a whole gate run leaves out every fixture
+    /// named *Benchmark; run it by filter.
     /// </summary>
     public class ClearanceBenchmark
     {

@@ -14,8 +14,9 @@ using Random = System.Random;
 namespace Ryan6Vrc.MeshOptimizer.Tests.Writing
 {
     // A face can carry hundreds of shape keys; the writer runs once per renderer per build, so it has to stay
-    // in seconds and in memory proportional to the mesh. Run by name; it reports rather than asserts a budget.
-    public class MeshWriterTimingTests
+    // in seconds and in memory proportional to the mesh. A measurement: it reports rather than asserts a budget, and a
+    // whole gate run leaves out every fixture named *Benchmark; run it by filter.
+    public class MeshWriterBenchmark
     {
         const int Vertices = 30000;
         const int ShapeKeys = 900;

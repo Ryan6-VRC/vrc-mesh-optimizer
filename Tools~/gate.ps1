@@ -4,6 +4,11 @@
   venue. Exit 0 only when the suite completed with no failure, no skip (unless -AllowSkips) and at
   least one test.
 
+  A whole run, one without -Filter, leaves out every fixture whose name ends in Benchmark: those are
+  measurements, not checks. Run one on purpose with -Filter naming it. -Venue takes a full path
+  only, because a relative one would resolve against the directory the gate is run from and
+  provision a venue there; left out, it is TestEditor-MeshOpt under the workspace root.
+
   The venue, its provisioner and the runner belong to the Atelier workspace this repo is developed
   in (https://github.com/Ryan6-VRC/atelier), and have no version to ship, so the gate reaches up for them through -AtelierRoot and refuses
   by name when the workspace is absent. Outside that workspace, run the suite from Unity's Test
@@ -40,7 +45,13 @@ foreach ($f in @($setup, $runner)) {
     exit 1
   }
 }
+$AtelierRoot = (Resolve-Path -LiteralPath $AtelierRoot).Path
 if (-not $Venue) { $Venue = Join-Path $AtelierRoot 'TestEditor-MeshOpt' }
+if (-not [IO.Path]::IsPathFullyQualified($Venue)) {
+  Write-Error ("-Venue '$Venue' is not a full path, and a relative one would resolve against '$PWD' and provision a " +
+               "venue there. Pass the venue's full path, such as '$(Join-Path $AtelierRoot $Venue)'.")
+  exit 1
+}
 $manifestPath = Join-Path $Venue 'Packages/manifest.json'
 
 if (-not (Test-Path -LiteralPath $manifestPath)) {
@@ -81,7 +92,11 @@ Write-Host "[gate] venue: $Venue"
 $before = @(& git -C $root status --porcelain --untracked-files=all)
 $runArgs = @('-NoProfile', '-File', $runner, '-Project', $Venue, '-Assemblies', $Assembly,
              '-Tag', $Tag, '-TimeoutSec', $TimeoutSec)
-if ($Filter) { $runArgs += @('-Filter', $Filter) }
+# Unity's runner runs [Explicit] tests in an unfiltered run, so a whole run excludes the measurement
+# fixtures by name instead: a leading "!" makes a -testFilter regex exclude what it matches. Under an
+# exclusion an [Explicit] test is no longer run, so one not named *Benchmark is a skip, and fails here.
+if (-not $Filter) { $Filter = '!Benchmark\b'; Write-Host "[gate] whole run: fixtures named *Benchmark left out" }
+$runArgs += @('-Filter', $Filter)
 & pwsh @runArgs 2>&1 | Tee-Object -Variable out | Out-Host
 $code = $LASTEXITCODE
 

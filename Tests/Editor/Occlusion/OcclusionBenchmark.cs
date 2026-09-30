@@ -6,8 +6,9 @@ using Unity.Mathematics;
 namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 {
     // An avatar-sized load: eight limbs, each a body sphere under a garment shell on its bone, about 100k
-    // body vertices under about 100k garment triangles, with 20 live frames on the garments. Explicit, so
-    // the gate skips it; run it by filter and read the numbers from the test output.
+    // body vertices under about 100k garment triangles, with 20 live frames on the garments. A measurement:
+    // a whole gate run leaves out every fixture named *Benchmark; run it by filter and read the numbers from the
+    // test output.
     public class OcclusionBenchmark
     {
         const int Limbs = 8;
