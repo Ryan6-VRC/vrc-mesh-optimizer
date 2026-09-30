@@ -191,8 +191,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             return math.max(0, math.min(aHi, bHi) - math.max(aLo, bLo));
         }
 
+        /// <summary>How far triangle t stands past the plane of triangle p on its lesser side, in metres; at or below 0 when it does not straddle it.</summary>
+        public static double Reach(float3 t0, float3 t1, float3 t2, float3 p0, float3 p1, float3 p2)
+        {
+            var n = math.normalize(math.cross((double3)p1 - p0, (double3)p2 - p0));
+            double d0 = math.dot(n, t0 - (double3)p0), d1 = math.dot(n, t1 - (double3)p0), d2 = math.dot(n, t2 - (double3)p0);
+            return math.min(math.max(d0, math.max(d1, d2)), -math.min(d0, math.min(d1, d2)));
+        }
+
         /// <summary>Where triangle t meets the plane (n, o), as an interval along dir; false when it lies to one side.</summary>
-        static bool Interval(double3[] t, double3 n, double3 o, double3 dir, out double lo, out double hi)
+        public static bool Interval(double3[] t, double3 n, double3 o, double3 dir, out double lo, out double hi)
         {
             lo = double.PositiveInfinity;
             hi = double.NegativeInfinity;

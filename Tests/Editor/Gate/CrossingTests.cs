@@ -189,7 +189,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(stats.Length, Is.EqualTo(0.01).Within(1e-6));
         }
 
-        static CrossingSegment Segment(float3 start, float3 end) => new CrossingSegment { Start = start, End = end, SameFacing = true };
+        static CrossingSegment Segment(float3 start, float3 end) => new CrossingSegment { Start = start, End = end, Length = math.distance(start, end), SameFacing = true };
 
         [Test]
         public void NewCrossingRunningAwayFromAShippedOne_IsNewFromWhereItLeavesNearness()
@@ -203,6 +203,34 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(far.New, Is.EqualTo(0.015).Within(1e-6));
             Assert.That(far.Runs, Is.EqualTo(1), "one run across the two segments");
             Assert.That(far.LongestRun, Is.EqualTo(0.015).Within(1e-6));
+        }
+
+        // New crossing is priced as its share of each segment's own Length, the figure the after total sums, so a wholly
+        // new crossing reads exactly that total. At avatar-sized coordinates a segment's two ends lose precision its
+        // Length keeps, so the distance between them is not the figure to price by.
+        [Test]
+        public void NewCrossing_IsPricedAlongEachSegmentsOwnLength()
+        {
+            var at = new float3(0.3f, 1.2f, -0.4f);
+            (float3[] p, int3[] t) Moved((float3[] p, int3[] t) s) => (s.p.Select(x => x + at).ToArray(), s.t);
+            var after = Cross(Moved(Sheet(0f, patch: 0.002f)), Moved(Outer())).segments;
+            Assert.That(after.Any(s => math.distance(s.Start, s.End) != s.Length),
+                "somewhere the distance between a segment's ends differs from its Length by rounding, or this test tells nothing");
+
+            var whole = Compare(new CrossingSegment[0], after);
+            TestContext.WriteLine($"wholly new: New - After.Length = {whole.New - whole.After.Length:E3} m over {after.Length} segments");
+            Assert.That(whole.New, Is.EqualTo(whole.After.Length), "wholly new, exactly the after total");
+            Assert.That(whole.NewSameFacing, Is.EqualTo(whole.After.SameFacingLength));
+            Assert.That(whole.Runs, Is.EqualTo(1), "one closed loop");
+            Assert.That(whole.LongestRun, Is.EqualTo(whole.New), "its one run is all of it, priced alike");
+
+            // A before segment on the same line, behind the start, ending Nearness short of the middle: the first half of g is old.
+            var g = after.OrderByDescending(s => s.Length).First();
+            var dir = math.normalize(g.End - g.Start);
+            var end = g.Start + dir * (g.Length / 2f - Settings.Nearness);
+            var half = Compare(new[] { Segment(end - dir * 0.01f, end) }, new[] { g });
+            TestContext.WriteLine($"half new: New - Length / 2 = {half.New - g.Length / 2.0:E3} m of {g.Length * 1000:0.###} mm");
+            Assert.That(half.New, Is.EqualTo(g.Length / 2.0).Within(1e-6), "the half past Nearness");
         }
 
         [Test]
@@ -254,7 +282,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
         static uint[] Bits(CrossingSegment[] segments) => segments.SelectMany(s => new[]
         {
-            math.asuint(s.Start.x), math.asuint(s.Start.y), math.asuint(s.Start.z), math.asuint(s.End.x), math.asuint(s.End.y), math.asuint(s.End.z),
+            math.asuint(s.Start.x), math.asuint(s.Start.y), math.asuint(s.Start.z), math.asuint(s.End.x), math.asuint(s.End.y), math.asuint(s.End.z), math.asuint(s.Length),
             (uint)s.TriangleA, (uint)s.TriangleB, math.asuint(s.ReachA), math.asuint(s.ReachB),
         }).ToArray();
     }

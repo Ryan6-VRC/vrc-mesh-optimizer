@@ -4,7 +4,9 @@ using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Geometry;
+using Unity.Burst;
 using Unity.Collections;
+using Unity.Jobs;
 using Unity.Mathematics;
 using static Ryan6Vrc.MeshOptimizer.Tests.Decimation.LayerFixtures;
 
@@ -376,35 +378,205 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
         }
 
-        // The rule counts crossing length to decide whether a collapse lengthens a crossing; the gate judges the rule's
-        // output with its own measure. They must agree on what crosses: a triangle meeting another along a shared edge,
-        // resting an edge or a corner on it, or lying in its plane touches and does not cross.
-        [Test]
-        public void CrossingLength_AgreesWithTheGate_OnTouchingAndCrossing()
+        // The clearance rule and the gate find crossings with one routine. A triangle meeting another along a shared edge,
+        // resting an edge or a corner on it, lying in its plane, or reaching a micrometre through it touches and does not
+        // cross; a pair passing through each other crosses along the length the double-precision oracle gives.
+        static readonly float3 At = new float3(0.3f, 1.2f, -0.4f); // avatar-sized coordinates
+        static readonly float3[] Face = { At, At + new float3(0.01f, 0, 0), At + new float3(0, 0.01f, 0) };
+
+        static readonly Dictionary<string, float3[]> Against = new Dictionary<string, float3[]>
         {
-            var o = new float3(0.3f, 1.2f, -0.4f); // avatar-sized coordinates
-            var cases = new (string name, float3[] a, float3[] b)[]
+            ["crossing"] = new[] { At + new float3(0.002f, 0.002f, -0.005f), At + new float3(0.002f, 0.002f, 0.005f), At + new float3(0.006f, 0.003f, 0) },
+            ["shared edge"] = new[] { At, At + new float3(0.01f, 0, 0), At + new float3(0.004f, 0.003f, 0.006f) },
+            ["edge resting on the face"] = new[] { At + new float3(0.001f, 0.002f, 0), At + new float3(0.006f, 0.002f, 0), At + new float3(0.003f, 0.004f, 0.005f) },
+            ["corner on the face"] = new[] { At + new float3(0.002f, 0.002f, 0), At + new float3(0.004f, 0.002f, 0.005f), At + new float3(0.002f, 0.005f, 0.005f) },
+            ["coplanar overlap"] = new[] { At + new float3(0.002f, 0.002f, 0), At + new float3(0.012f, 0.002f, 0), At + new float3(0.002f, 0.012f, 0) },
+            ["grazing, a micrometre through"] = new[] { At + new float3(0.001f, 0.002f, -1e-6f), At + new float3(0.006f, 0.002f, -1e-6f), At + new float3(0.003f, 0.004f, 0.005f) },
+        };
+
+        [TestCase("shared edge")]
+        [TestCase("edge resting on the face")]
+        [TestCase("corner on the face")]
+        [TestCase("coplanar overlap")]
+        [TestCase("grazing, a micrometre through")]
+        public void Intersect_TouchingIsNotCrossing(string name)
+        {
+            var b = Against[name];
+            Assert.That(TriangleDistance.Intersect(Face[0], Face[1], Face[2], b[0], b[1], b[2], TriangleDistance.Touch, out _), Is.False);
+            Assert.That(TriangleDistance.Intersect(b[0], b[1], b[2], Face[0], Face[1], Face[2], TriangleDistance.Touch, out _), Is.False, "either way round");
+        }
+
+        [Test]
+        public void Intersect_CrossingPair_HasTheOraclesLength()
+        {
+            var b = Against["crossing"];
+            var oracle = IntersectionLength(Face[0], Face[1], Face[2], b[0], b[1], b[2]);
+
+            Assert.That(TriangleDistance.Intersect(Face[0], Face[1], Face[2], b[0], b[1], b[2], TriangleDistance.Touch, out var x), Is.True);
+            TestContext.WriteLine($"{x.Length * 1000:0.######} mm, the oracle {oracle * 1000:0.######} mm");
+            Assert.That(oracle, Is.GreaterThan(0.001), "a crossing of millimetres");
+            Assert.That(x.Length, Is.EqualTo(oracle).Within(1e-6));
+            Assert.That(math.distance(x.Start, x.End), Is.EqualTo(oracle).Within(1e-6));
+        }
+
+        /// <summary>
+        /// Pairs of centimetre triangles at avatar-sized coordinates: the first <paramref name="count"/> at random around one
+        /// point, the next <paramref name="count"/> moved to sit within a few <see cref="TriangleDistance.Touch"/> of the
+        /// crossing line on one of its three conditions (b reaching past a's plane, a past b's, the two cuts overlapping),
+        /// half of them within float resolution of it.
+        /// </summary>
+        static IEnumerable<(float3[] a, float3[] b)> CrossingPairs(int count)
+        {
+            var rng = new Random(23);
+            for (var i = 0; i < 2 * count;)
             {
-                ("crossing", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
-                    new[] { o + new float3(0.002f, 0.002f, -0.005f), o + new float3(0.002f, 0.002f, 0.005f), o + new float3(0.006f, 0.003f, 0) }),
-                ("shared edge", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
-                    new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0.004f, 0.003f, 0.006f) }),
-                ("edge resting on the face", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
-                    new[] { o + new float3(0.001f, 0.002f, 0), o + new float3(0.006f, 0.002f, 0), o + new float3(0.003f, 0.004f, 0.005f) }),
-                ("corner on the face", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
-                    new[] { o + new float3(0.002f, 0.002f, 0), o + new float3(0.004f, 0.002f, 0.005f), o + new float3(0.002f, 0.005f, 0.005f) }),
-                ("coplanar overlap", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
-                    new[] { o + new float3(0.002f, 0.002f, 0), o + new float3(0.012f, 0.002f, 0), o + new float3(0.002f, 0.012f, 0) }),
-                ("grazing, a micrometre through", new[] { o, o + new float3(0.01f, 0, 0), o + new float3(0, 0.01f, 0) },
-                    new[] { o + new float3(0.001f, 0.002f, -1e-6f), o + new float3(0.006f, 0.002f, -1e-6f), o + new float3(0.003f, 0.004f, 0.005f) }),
-            };
-            foreach (var (name, a, b) in cases)
-            {
-                var mine = TriangleDistance.IntersectionLength(a[0], a[1], a[2], b[0], b[1], b[2]);
-                var gate = Core.Gate.TriangleCrossing.Cross(a[0], a[1], a[2], b[0], b[1], b[2], Core.Gate.CrossingSettings.Default.Touch, out var s) ? s.Length : 0f;
-                TestContext.WriteLine($"{name}: {mine * 1000:0.####} mm by the rule, {gate * 1000:0.####} mm by the gate");
-                Assert.That(mine, Is.EqualTo(gate).Within(1e-6f), name);
+                var o = new float3(rng.NextFloat(-0.8f, 0.8f), rng.NextFloat(0f, 1.8f), rng.NextFloat(-0.8f, 0.8f));
+                var a = new[] { o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f) };
+                var b = new[] { o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f), o + rng.NextFloat3(-0.01f, 0.01f) };
+                if (i < count)
+                {
+                    i++;
+                    yield return (a, b);
+                    continue;
+                }
+                var h = TriangleDistance.Touch * (1.0 + (rng.NextBool() ? rng.NextDouble(-1.0, 3.0) : rng.NextDouble(-0.01, 0.01)));
+                var A = new[] { (double3)a[0], (double3)a[1], (double3)a[2] };
+                var B = new[] { (double3)b[0], (double3)b[1], (double3)b[2] };
+                var nA = math.normalize(math.cross(A[1] - A[0], A[2] - A[0]));
+                var nB = math.normalize(math.cross(B[1] - B[0], B[2] - B[0]));
+                double3 shift;
+                var moveB = true;
+                switch (rng.NextInt(3))
+                {
+                    case 0: // b reaches past a's plane by h on its lesser side
+                        shift = nA * Onto(B, nA, A[0], h, rng.NextBool());
+                        break;
+                    case 1: // a reaches past b's plane by h
+                        shift = nB * Onto(A, nB, B[0], h, rng.NextBool());
+                        moveB = false;
+                        break;
+                    default: // the two cuts overlap by h along the common line
+                        var dir = math.normalize(math.cross(nA, nB));
+                        if (!Interval(A, nB, B[0], dir, out var aLo, out var aHi) || !Interval(B, nA, A[0], dir, out var bLo, out var bHi)) continue;
+                        shift = dir * (rng.NextBool() ? aHi - h - bLo : aLo + h - bHi);
+                        break;
+                }
+                var moved = moveB ? b : a;
+                for (var k = 0; k < 3; k++) moved[k] = (float3)((double3)moved[k] + shift);
+                i++;
+                yield return (a, b);
             }
+        }
+
+        /// <summary>The move along unit n that leaves triangle t standing past the plane (n, o) by h on its lesser side, below it or above.</summary>
+        static double Onto(double3[] t, double3 n, double3 o, double h, bool below)
+        {
+            double d0 = math.dot(n, t[0] - o), d1 = math.dot(n, t[1] - o), d2 = math.dot(n, t[2] - o);
+            return below ? -h - math.min(d0, math.min(d1, d2)) : h - math.max(d0, math.max(d1, d2));
+        }
+
+        // The one crossing routine against the double-precision oracle, over random pairs and pairs built to sit within a
+        // few Touch of the crossing line: the same verdict except where the pair lies within rounding of Touch on some
+        // condition, and the same length and reaches within rounding.
+        [Test]
+        public void Intersect_AgreesWithTheDoubleOracle_OnRandomAndNearTouchingPairs()
+        {
+            const double rounding = 1e-7; // a hundredth of Touch, above the rounding of corner-relative arithmetic on centimetre triangles
+            const double tolerance = 1e-6;
+            var touch = TriangleDistance.Touch;
+            int pairs = 0, crossings = 0, flips = 0;
+            double worstFlip = 0, dLength = 0, dReach = 0;
+            foreach (var (a, b) in CrossingPairs(4000))
+            {
+                pairs++;
+                var one = TriangleDistance.Intersect(a[0], a[1], a[2], b[0], b[1], b[2], touch, out var x);
+                var reachA = Reach(a[0], a[1], a[2], b[0], b[1], b[2]);
+                var reachB = Reach(b[0], b[1], b[2], a[0], a[1], a[2]);
+                var oracle = IntersectionLength(a[0], a[1], a[2], b[0], b[1], b[2]);
+                if (one != (reachA > touch && reachB > touch && oracle > touch))
+                {
+                    flips++;
+                    worstFlip = math.max(worstFlip, math.min(math.abs(reachA - touch), math.min(math.abs(reachB - touch), math.abs(oracle - touch))));
+                }
+                if (!one) continue;
+                crossings++;
+                dLength = math.max(dLength, math.abs(x.Length - oracle));
+                dReach = math.max(dReach, math.max(math.abs(x.ReachA - reachA), math.abs(x.ReachB - reachB)));
+            }
+            TestContext.WriteLine($"{pairs} pairs, {crossings} crossing; {flips} verdicts off the oracle's, the farthest {worstFlip:E3} m from Touch; largest deviation {dLength:E3} m in length, {dReach:E3} m in reach");
+            Assert.That(crossings, Is.GreaterThan(pairs / 10));
+            Assert.That(worstFlip, Is.LessThanOrEqualTo(rounding), "a verdict off the oracle's farther from Touch than rounding");
+            Assert.That(dLength, Is.LessThanOrEqualTo(tolerance));
+            Assert.That(dReach, Is.LessThanOrEqualTo(tolerance));
+        }
+
+        [BurstCompile(CompileSynchronously = true)]
+        struct IntersectJob : IJob
+        {
+            /// <summary>Six corners per pair, a's then b's.</summary>
+            [ReadOnly] public NativeArray<float3> Corners;
+            public NativeArray<bool> Crosses;
+            public NativeArray<Intersection> Found;
+
+            public void Execute()
+            {
+                for (var i = 0; i < Crosses.Length; i++)
+                {
+                    var k = 6 * i;
+                    Crosses[i] = TriangleDistance.Intersect(Corners[k], Corners[k + 1], Corners[k + 2], Corners[k + 3], Corners[k + 4], Corners[k + 5], TriangleDistance.Touch, out var x);
+                    Found[i] = x;
+                }
+            }
+        }
+
+        // The clearance rule and the gate both run the one routine inside Burst jobs, and the tests above call it as
+        // managed code. Over the same pairs, Burst must give the managed verdict except within rounding of Touch, and the
+        // same crossing within rounding.
+        [Test]
+        public void Intersect_GivesUnderBurstWhatItGivesAsManagedCode()
+        {
+            Assume.That(Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobCompilerEnabled, "Burst is off in this Editor, so there is no compiled code to compare");
+            const double rounding = 1e-7;
+            const double tolerance = 1e-6;
+            var touch = TriangleDistance.Touch;
+            var pairs = CrossingPairs(4000).ToArray();
+            using var corners = new NativeArray<float3>(pairs.SelectMany(p => p.a.Concat(p.b)).ToArray(), Allocator.Persistent);
+            using var crosses = new NativeArray<bool>(pairs.Length, Allocator.Persistent);
+            using var found = new NativeArray<Intersection>(pairs.Length, Allocator.Persistent);
+            new IntersectJob { Corners = corners, Crosses = crosses, Found = found }.Run();
+
+            int crossings = 0, flips = 0, identical = 0;
+            double worstFlip = 0, dLength = 0, dEnds = 0, dReach = 0;
+            for (var i = 0; i < pairs.Length; i++)
+            {
+                var (a, b) = pairs[i];
+                var managed = TriangleDistance.Intersect(a[0], a[1], a[2], b[0], b[1], b[2], touch, out var m);
+                var x = found[i];
+                if (managed != crosses[i])
+                {
+                    flips++;
+                    var reachA = Reach(a[0], a[1], a[2], b[0], b[1], b[2]);
+                    var reachB = Reach(b[0], b[1], b[2], a[0], a[1], a[2]);
+                    var oracle = IntersectionLength(a[0], a[1], a[2], b[0], b[1], b[2]);
+                    worstFlip = math.max(worstFlip, math.min(math.abs(reachA - touch), math.min(math.abs(reachB - touch), math.abs(oracle - touch))));
+                    continue;
+                }
+                if (!managed) continue;
+                crossings++;
+                if (math.all(math.asuint(x.Start) == math.asuint(m.Start)) && math.all(math.asuint(x.End) == math.asuint(m.End)) &&
+                    math.asuint(x.Length) == math.asuint(m.Length) && math.asuint(x.ReachA) == math.asuint(m.ReachA) && math.asuint(x.ReachB) == math.asuint(m.ReachB))
+                    identical++;
+                Assert.That(x.SameFacing, Is.EqualTo(m.SameFacing), $"pair {i}: facing");
+                dLength = math.max(dLength, math.abs(x.Length - m.Length));
+                dEnds = math.max(dEnds, math.max(math.distance(x.Start, m.Start), math.distance(x.End, m.End)));
+                dReach = math.max(dReach, math.max(math.abs(x.ReachA - m.ReachA), math.abs(x.ReachB - m.ReachB)));
+            }
+            TestContext.WriteLine($"{pairs.Length} pairs, {crossings} crossing both ways, {identical} of them bit for bit; {flips} verdicts differ, the farthest {worstFlip:E3} m from Touch; largest deviation {dLength:E3} m in length, {dEnds:E3} m in the ends, {dReach:E3} m in reach");
+            Assert.That(crossings, Is.GreaterThan(pairs.Length / 10));
+            Assert.That(worstFlip, Is.LessThanOrEqualTo(rounding), "a verdict Burst gives otherwise farther from Touch than rounding");
+            Assert.That(dLength, Is.LessThanOrEqualTo(tolerance));
+            Assert.That(dEnds, Is.LessThanOrEqualTo(tolerance));
+            Assert.That(dReach, Is.LessThanOrEqualTo(tolerance));
         }
 
         // The pruning that settles most pairs without the exact distance must never settle one wrongly: slivers and

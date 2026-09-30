@@ -38,6 +38,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     {
         public float3 Start;
         public float3 End;
+        /// <summary>
+        /// Metres from <see cref="Start"/> to <see cref="End"/>, as the clearance rule reads the same crossing: taken along
+        /// the planes' common line relative to a corner, so it keeps a precision the two ends lose far from the origin, and
+        /// <c>distance(Start, End)</c> matches it only to that rounding.
+        /// </summary>
+        public float Length;
         public int TriangleA;
         public int TriangleB;
         /// <summary>
@@ -52,8 +58,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         /// only where both sides are drawn.
         /// </summary>
         public bool SameFacing;
-
-        public float Length => math.distance(Start, End);
     }
 
     public struct CrossingStats
