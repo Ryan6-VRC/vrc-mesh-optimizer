@@ -147,23 +147,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
         }
 
         // The loop with the clearance rule on, over the scenes the side-by-side test uses: near layers over a joint, measured in
-        // bends, and a crossing, where the rule compares crossing lengths Burst and managed code round differently. It runs with a
-        // crossing allowance of 1e-7 m. At the default, 1e-9, the two paths part: where a collapse leaves a crossing as it was, the
+        // bends, and a crossing, where the rule compares crossing lengths Burst and managed code round differently. It runs at the
+        // default crossing allowance, 1e-7 m. At 1e-9 the two paths part: where a collapse leaves a crossing as it was, the
         // rule compares two sums of segment lengths equal but for rounding, the paths put that margin apart by up to about 1.5e-8 m,
         // and at step 1,381 of the crossing scene's skin Burst refuses a collapse managed code makes, so from there the two record
         // different meshes. At 1e-7 every crossing check decides alike, and the crossing scene must record bit for bit the same on
         // both paths. The bent layers' records part among collapses of near-equal cost with the rule on or off, from rounding in the
         // bends rather than the crossing check, so they are held only to the comparison above.
-        const float CrossingAllowance = 1e-7f;
-
         [Test]
         public void TheCollapseLoop_WithTheClearanceRule_RecordsUnderBurstWhatItRecordsAsManagedCode()
         {
-            Ryan6Vrc.MeshOptimizer.Core.Decimation.DecimationSettings Allowed(Ryan6Vrc.MeshOptimizer.Core.Decimation.DecimationSettings s)
-            {
-                s.Clearance.CrossingAllowance = CrossingAllowance;
-                return s;
-            }
             using var bent = BentLayers();
             using var crossing = SlopedCrossing();
             var held = JobsUtility.JobCompilerEnabled;
@@ -177,9 +170,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
                         Ryan6Vrc.MeshOptimizer.Core.Clearance.ClearanceStats burstStats, managedStats;
                         try
                         {
-                            burst = scene.Decimate(m, true, out burstStats, Allowed);
+                            burst = scene.Decimate(m, true, out burstStats);
                             JobsUtility.JobCompilerEnabled = false;
-                            managed = scene.Decimate(m, true, out managedStats, Allowed);
+                            managed = scene.Decimate(m, true, out managedStats);
                         }
                         finally
                         {

@@ -150,10 +150,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>
         /// In metres: how much a collapse may add to the line along which its surface crosses another layer and still
         /// count as not lengthening it, beyond a millionth of that line. The two lengths compared are sums of float
-        /// segment lengths, which Burst and managed code round differently by up to about 1e-7 m, so where a collapse
-        /// leaves a crossing as it was, an allowance below that rounding can let the two decide it differently and
-        /// record different sequences. Each collapse may lengthen a crossing by up to this, so it adds up over the
-        /// collapses on one crossing. The default, 1e-9, is the rule as first built.
+        /// segment lengths, which Burst and managed code round differently, so where a collapse leaves a crossing as it
+        /// was, an allowance below that rounding can let the two decide it differently and record different sequences.
+        /// The default, 1e-7, clears that rounding and no more: on the test scenes the two paths put such a near-zero
+        /// margin apart by up to about 1.5e-8 m, every allowance from 3e-8 to 3e-7 records one mesh on both paths where
+        /// 1e-9 parts them, and 1e-6 already admits real lengthening. Each collapse may lengthen a crossing by up to
+        /// this, so it adds up over the collapses on one crossing.
         /// </summary>
         public float CrossingAllowance;
 
@@ -162,7 +164,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             Enabled = true,
             Share = 0.4f,
             Reach = 0.02f,
-            CrossingAllowance = 1e-9f,
+            CrossingAllowance = 1e-7f,
         };
     }
 
