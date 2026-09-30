@@ -6,7 +6,7 @@ Status: in development, not yet released.
 
 ## Target
 
-A component added fresh targets a tolerance of 1 mm: each mesh is reduced as far as it can go while its surface stays within a millimetre of the original, and the triangle count is whatever that leaves. On the real avatars it was measured on, 1 mm removed about 45% of their triangles with no hole to see through and little new clipping between layers, while holding a heavily dressed avatar to a fixed 70,000 triangles forced errors over 6 mm. A triangle count remains available as the target, starting at 70,000, the PC line between the Poor and Very Poor performance ranks. A component saved with either target keeps it.
+A component added fresh targets a tolerance of 1 mm: each mesh is reduced as far as it can go while its surface stays within a millimetre of the original, and the triangle count is whatever that leaves. On the real avatars it was measured on, 1 mm removed about 45% of their triangles with no hole to see through and little new clipping between layers, while holding a heavily dressed avatar to a fixed 70,000 triangles forced errors over 6 mm. A triangle count remains available as the target, starting at 70,000, the PC line between the Poor and Very Poor performance ranks. A count is cut no further than Max error, 5 mm unless set otherwise: one reachable only past it is reported unmet rather than reached by distorting the avatar, and 0 turns the limit off. A component saved with either target keeps it, and one saved before Max error existed reads 5 mm.
 
 ## Ancestors
 

@@ -25,6 +25,13 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         public TargetKind target = TargetKind.Tolerance;
         /// <summary>Triangles for the whole avatar, used when <see cref="target"/> is a budget.</summary>
         [Min(0)] public int triangleBudget = 70000;
+        /// <summary>
+        /// The most surface deviation a budget may spend, in millimetres, used when <see cref="target"/> is a budget and read
+        /// as a tolerance is read: a budget reachable only past it is cut to it and reported unmet. 0 turns it off. A
+        /// component saved before this field existed reads the default too, so a saved budget stops here rather than cutting
+        /// to its count at any error.
+        /// </summary>
+        [Min(0)] public float maxError = 5f;
         /// <summary>Largest surface deviation allowed, in millimetres, used when <see cref="target"/> is a tolerance.</summary>
         [Min(0)] public float tolerance = 1f;
 

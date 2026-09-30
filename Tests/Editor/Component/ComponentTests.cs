@@ -78,6 +78,28 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
+        // A budget stops at 5 mm of error unless the user sets the ceiling otherwise. Unlike outlinesShowInside, a component
+        // saved before the field existed, as the fixture was, reads the same 5: the field's initializer stands where the saved
+        // data holds nothing, so a saved budget stops at the ceiling too.
+        [Test]
+        public void MaxError_IsFiveMillimetres_FreshAndForAComponentSavedBeforeIt()
+        {
+            Assert.That(System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture)), Does.Not.Contain("maxError"),
+                "the fixture stands for a component saved before the field");
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Fixture);
+            Assert.That(prefab.GetComponent<AvatarMeshOptimizer>().maxError, Is.EqualTo(5f));
+
+            var fresh = new GameObject("Fresh");
+            try
+            {
+                Assert.That(fresh.AddComponent<AvatarMeshOptimizer>().maxError, Is.EqualTo(5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+            }
+        }
+
         // The decimation defaults a build runs with, which the component does not expose: the normal term's weight, the
         // clearance rule on at its share, bends at their swing and share of the gap, and re-judging on. Each is a measured
         // choice, tuned on real avatars against the triangles it costs, so changing one is a decision to measure again and

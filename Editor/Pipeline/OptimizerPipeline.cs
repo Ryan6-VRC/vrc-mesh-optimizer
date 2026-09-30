@@ -234,11 +234,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// Before writing, every triangle occlusion removed is judged again against what the always-on renderers are written
         /// with, since decimation moves the faces that covered it, and one no longer covered is written back
         /// (<see cref="PipelineInput.Rejudge"/>); a budget pays for those by cutting deeper, never past
-        /// <see cref="DecimationSettings.BudgetErrorCeiling"/>, and one the ceiling stops short is reported unmet under
+        /// the component's <see cref="AvatarMeshOptimizer.maxError"/>, and one the ceiling stops short is reported unmet under
         /// <see cref="DiagnosticKeys.BudgetCeilingHeld"/> rather than <see cref="DiagnosticKeys.BudgetNotMet"/>.
         /// Reads <paramref name="prepared"/> and changes nothing in it; whatever of it the report holds and a cut reads is a
         /// copy, so nothing done to one report changes the next cut. A renderer whose writing fails is left as it was.
-        /// Throws once <paramref name="prepared"/> is disposed.
+        /// Throws once <paramref name="prepared"/> is disposed, and, decimating to a budget, when the max error is negative or
+        /// not finite.
         /// </summary>
         public static OptimizationReport Cut(PreparedAvatar prepared)
         {
@@ -246,6 +247,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             if (prepared.Disposed) throw new ObjectDisposedException(nameof(PreparedAvatar), "a disposed prepared avatar has nothing left to cut; prepare the avatar again");
             var input = prepared.Input;
             var settings = input.Settings;
+            if (settings.decimate && settings.target == TargetKind.TriangleBudget && (!(settings.maxError >= 0f) || float.IsPositiveInfinity(settings.maxError)))
+                throw new ArgumentException($"max error {settings.maxError} mm must be finite and 0 or more; 0 turns the ceiling off");
             var total = Stopwatch.StartNew();
             var report = new OptimizationReport
             {
@@ -286,7 +289,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             if (settings.decimate && !report.TargetMet)
                 report.Diagnostics.Add(pass.CeilingHeld && pass.TrianglesAfter(jobs) > settings.triangleBudget
                     ? new Diagnostic(DiagnosticKeys.BudgetCeilingHeld, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString(),
-                        (input.Decimation.BudgetErrorCeiling * 1000f).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
+                        settings.maxError.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
                     : new Diagnostic(DiagnosticKeys.BudgetNotMet, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString()));
             report.Times.Total = prepared.PrepareMs + total.Elapsed.TotalMilliseconds + input.LivenessMs;
             return report;
@@ -382,7 +385,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             if (settings.decimate)
             {
                 input.BeforeStep?.Invoke(AvatarStep.Allocation);
-                pass.Level = Allocate(jobs, settings, input.Decimation.BudgetErrorCeiling, reserve, pass.Steps, out pass.CeilingHeld);
+                pass.Level = Allocate(jobs, settings, reserve, pass.Steps, out pass.CeilingHeld);
                 report.Times.Allocation += stage.Elapsed.TotalMilliseconds;
             }
 
@@ -938,10 +941,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// Spends the target over the recorded sequences at one common error level, writing each renderer's step into
         /// <paramref name="steps"/> (0 for one not decimated), and returns the level. A budget is spent less
         /// <paramref name="reserve"/> triangles, held back for removed triangles re-judging writes back, and no higher than
-        /// <paramref name="ceiling"/> metres of weighted error when that is above 0; <paramref name="ceilingHeld"/> says the
-        /// ceiling stopped it short.
+        /// the component's <see cref="AvatarMeshOptimizer.maxError"/> millimetres of weighted error when that is above 0;
+        /// <paramref name="ceilingHeld"/> says the ceiling stopped it short.
         /// </summary>
-        static float Allocate(List<PreparedRenderer> all, AvatarMeshOptimizer settings, float ceiling, int reserve, int[] steps, out bool ceilingHeld)
+        static float Allocate(List<PreparedRenderer> all, AvatarMeshOptimizer settings, int reserve, int[] steps, out bool ceilingHeld)
         {
             ceilingHeld = false;
             var decimated = all.Where(j => j.Decimated).ToList();
@@ -953,7 +956,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var entries = decimated.Select(j => AllocationEntry.From(j.Sequence, j.FloorTriangles, j.Weight)).ToList();
             if (entries.Count == 0) return 0f;
             var result = settings.target == TargetKind.TriangleBudget
-                ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles - reserve), ceiling)
+                ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles - reserve), settings.maxError / 1000f)
                 : BudgetAllocator.ForTolerance(entries, settings.tolerance / 1000f);
             for (var i = 0; i < decimated.Count; i++) steps[all.IndexOf(decimated[i])] = result.Cuts[i];
             ceilingHeld = result.CeilingHeld;

@@ -35,6 +35,12 @@ msgstr "目標ポリゴン数"
 msgid "MeshOptimizer:triangleBudget:tooltip"
 msgstr "最適化後のアバター全体のポリゴン数です。"
 
+msgid "MeshOptimizer:maxError"
+msgstr "最大誤差 (mm)"
+
+msgid "MeshOptimizer:maxError:tooltip"
+msgstr "目標がポリゴン数のときに使います。目標に届くために、最適化後の表面が元の形からずれてよい最大の距離です。単位はミリメートルです。これを超えないと届かない場合は、目標に届かないままになります。0にすると上限はありません。"
+
 msgid "MeshOptimizer:tolerance"
 msgstr "許容差 (mm)"
 
