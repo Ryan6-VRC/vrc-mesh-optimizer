@@ -56,6 +56,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>Stop once the live triangle count reaches this. 0 records the whole sequence.</summary>
         public int TargetTriangleCount;
 
+        /// <summary>
+        /// In metres: the highest error level a triangle budget may spend, read as the budget's allocation reads its
+        /// level, each renderer's error times its weight. A budget reachable only above it is cut to it and reported
+        /// unmet. 0 turns it off; a tolerance target never reads it. The allocation reads it; the decimator only refuses
+        /// a value that is negative or not finite.
+        /// </summary>
+        public float BudgetErrorCeiling;
+
         /// <summary>Keeps each layer clear of the others; acts only when the decimator is given the other layers.</summary>
         public ClearanceSettings Clearance;
 

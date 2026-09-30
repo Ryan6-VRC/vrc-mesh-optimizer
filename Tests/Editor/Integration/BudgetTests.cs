@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Decimation;
@@ -171,6 +172,43 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(f.TrianglesAfter, Is.GreaterThanOrEqualTo(f.FloorTriangles));
             Assert.That(Kept(Of(report, twin)), Is.LessThan(Protection.FaceFloor), "the same sphere, unnamed, is cut deeper");
             Assert.That(report.TargetMet, Is.False, "the floor stops the budget");
+        }
+
+        // The same face and twin: a budget of 100 is out of reach at any level. Without a ceiling the pass cuts as deep as
+        // the sequences go and reports the budget not met; with one at a quarter of that level, it cuts every renderer to
+        // no more than the ceiling, as a tolerance of the ceiling would, and names the ceiling as what held.
+        [Test]
+        public void ACeiling_StopsABudgetItCannotReach_AtTheCeiling_AndNamesIt()
+        {
+            var face = Ball("Face", new Vector3(1, 0, 0));
+            var twin = Ball("Twin", new Vector3(2, 0, 0));
+            a.Root.AddComponent<VRCAvatarDescriptor>().VisemeSkinnedMesh = face;
+            var c = Budget(100);
+            var free = a.Run(apply: false);
+            Assert.That(free.Diagnostics.Select(d => d.Key), Has.Member(DiagnosticKeys.BudgetNotMet).And.No.Member(DiagnosticKeys.BudgetCeilingHeld));
+            var ceiling = free.ErrorLevel / 4;
+
+            var held = a.Run(apply: false, tweak: input =>
+            {
+                var s = input.Decimation;
+                s.BudgetErrorCeiling = ceiling;
+                input.Decimation = s;
+            });
+
+            Assert.That(held.TargetMet, Is.False);
+            Assert.That(held.ErrorLevel, Is.LessThanOrEqualTo(ceiling));
+            Assert.That(held.TrianglesAfter, Is.GreaterThan(free.TrianglesAfter));
+            foreach (var r in held.Renderers) Assert.That(r.Error * r.Weight, Is.LessThanOrEqualTo(ceiling), r.Path);
+            Assert.That(held.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.BudgetNotMet));
+            var named = held.Diagnostics.Where(d => d.Key == DiagnosticKeys.BudgetCeilingHeld).ToList();
+            Assert.That(named, Has.Count.EqualTo(1));
+            Assert.That(named[0].Args, Is.EqualTo(new object[]
+                { held.TrianglesAfter.ToString(), "100", (ceiling * 1000f).ToString("0.###", CultureInfo.InvariantCulture) }));
+            c.target = TargetKind.Tolerance;
+            c.tolerance = ceiling * 1000f;
+            var tolerance = a.Run(apply: false);
+            foreach (var r in new Renderer[] { face, twin })
+                Assert.That(Of(held, r).TrianglesAfter, Is.EqualTo(Of(tolerance, r).TrianglesAfter), r.name + " ships what a tolerance of the ceiling ships");
         }
 
         // A dense patch on the right hand: the half at +X rides the index finger, the rest the hand. Fingers are

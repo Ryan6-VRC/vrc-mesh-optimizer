@@ -125,7 +125,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return mesh;
         }
 
-        OptimizationReport Run(TargetKind target, float value, bool rejudge, bool removedAsNeighbours = true)
+        OptimizationReport Run(TargetKind target, float value, bool rejudge, bool removedAsNeighbours = true, float ceiling = 0f)
         {
             var c = a.Optimizer(decimate: true);
             c.target = target;
@@ -135,6 +135,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             {
                 input.Rejudge = rejudge;
                 input.RemovedAsNeighbours = removedAsNeighbours;
+                var s = input.Decimation;
+                s.BudgetErrorCeiling = ceiling;
+                input.Decimation = s;
             });
         }
 
@@ -403,6 +406,31 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(on.TrianglesAfter - on.HiddenRestored, Is.LessThan(off.TrianglesAfter), "the cut keeps fewer to pay for them");
             Assert.That(on.Diagnostics.Any(d => d.Key == DiagnosticKeys.BudgetNotMet), Is.False);
             var check = CheckWritten(on, setback: true);
+            Assert.That(check.Ok, Is.True, check.ToString());
+        }
+
+        // The same budget with the error ceiling at the first cut's level: the deeper pass that would pay for what the first
+        // restores stops where the first did, so it is the last pass, nothing is cut past the ceiling, the avatar is still
+        // written covered, and the budget is reported unmet with the ceiling named.
+        [Test]
+        public void ABudgetWhoseDeeperPassTheCeilingHolds_StopsThere_Covered_AndNamesTheCeiling()
+        {
+            Build(garmentFrom: 60f, rings: 32, bodyDecimated: true);
+            var first = Run(TargetKind.TriangleBudget, 800, rejudge: false);
+            var free = Run(TargetKind.TriangleBudget, 800, rejudge: true);
+            Assert.That(first.ErrorLevel, Is.GreaterThan(0f), "a ceiling of 0 is none");
+            Assert.That(free.ErrorLevel, Is.GreaterThan(first.ErrorLevel), "meeting the budget cuts deeper than the first pass");
+
+            var held = Run(TargetKind.TriangleBudget, 800, rejudge: true, ceiling: first.ErrorLevel);
+
+            Assert.That(held.RejudgePasses, Is.EqualTo(2), "the pass the ceiling holds is the last");
+            Assert.That(held.ErrorLevel, Is.EqualTo(first.ErrorLevel));
+            foreach (var r in held.Renderers) Assert.That(r.Error * r.Weight, Is.LessThanOrEqualTo(first.ErrorLevel), r.Path);
+            Assert.That(held.HiddenRestored, Is.GreaterThan(0));
+            Assert.That(held.TargetMet, Is.False);
+            Assert.That(held.Diagnostics.Count(d => d.Key == DiagnosticKeys.BudgetCeilingHeld), Is.EqualTo(1));
+            Assert.That(held.Diagnostics.Any(d => d.Key == DiagnosticKeys.BudgetNotMet), Is.False);
+            var check = CheckWritten(held, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 

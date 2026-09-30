@@ -41,9 +41,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
         /// <summary>The weighted error level every cut reaches, in metres.</summary>
         public float Level;
         public int TotalTriangles;
-        /// <summary>False when floors, locks or the recorded sequences stop short of the target; the cuts are
-        /// then as deep as those allow.</summary>
+        /// <summary>False when floors, locks, the recorded sequences or the error ceiling stop short of the target; the
+        /// cuts are then as deep as those allow.</summary>
         public bool TargetMet;
+        /// <summary>True when the error ceiling stopped a budget short: steps were left that would have cut deeper, each
+        /// above the ceiling. False when the target was met, or when floors, locks or the sequences ran out first.</summary>
+        public bool CeilingHeld;
     }
 
     /// <summary>
@@ -53,9 +56,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
     /// </summary>
     public static class BudgetAllocator
     {
-        /// <summary>The lowest common weighted error level whose cuts total at most <paramref name="triangleBudget"/>.</summary>
-        public static AllocationResult ForBudget(IReadOnlyList<AllocationEntry> entries, int triangleBudget)
+        /// <summary>
+        /// The lowest common weighted error level whose cuts total at most <paramref name="triangleBudget"/>. Above 0,
+        /// <paramref name="errorCeiling"/> (metres) is the highest weighted level it may reach: no step whose weighted
+        /// error exceeds it is taken, so a budget reachable only above it is cut as a tolerance of the ceiling would cut
+        /// it, and reported unmet (<see cref="AllocationResult.CeilingHeld"/>). 0 is no ceiling.
+        /// </summary>
+        public static AllocationResult ForBudget(IReadOnlyList<AllocationEntry> entries, int triangleBudget, float errorCeiling = 0f)
         {
+            if (!(errorCeiling >= 0f) || float.IsPositiveInfinity(errorCeiling))
+                throw new ArgumentException($"budget error ceiling {errorCeiling} m must be finite and 0 or more; 0 turns it off");
             var n = entries.Count;
             var cuts = new int[n];
             var limit = new int[n];
@@ -71,11 +81,13 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
             // error is non-decreasing, so this merge takes exactly the steps at or below the final level. A
             // common level means every step at or below it, so it goes on to take the steps that tie with the
             // level reached (many at zero, on flat meshes) rather than leaving them to entry order; a step never
-            // adds triangles, so once the total fits it stays fitted.
+            // adds triangles, so once the total fits it stays fitted. A ceiling ends the merge at the first step above
+            // it: every step left is at least that step's error, so every step at or below the ceiling is taken.
             var queue = new SortedSet<(float key, int entry)>();
             for (var i = 0; i < n; i++)
                 if (limit[i] > 0) queue.Add((Key(entries[i], 0), i));
-            while (queue.Count > 0 && (total > triangleBudget || queue.Min.key <= level))
+            var ceilinged = errorCeiling > 0f;
+            while (queue.Count > 0 && (!ceilinged || queue.Min.key <= errorCeiling) && (total > triangleBudget || queue.Min.key <= level))
             {
                 var (key, i) = queue.Min;
                 queue.Remove(queue.Min);
@@ -85,7 +97,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
                 level = Math.Max(level, key);
                 if (cuts[i] < limit[i]) queue.Add((Key(e, cuts[i]), i));
             }
-            return new AllocationResult { Cuts = cuts, Level = level, TotalTriangles = total, TargetMet = total <= triangleBudget };
+            return new AllocationResult
+            {
+                Cuts = cuts, Level = level, TotalTriangles = total, TargetMet = total <= triangleBudget,
+                // Without a ceiling the merge ends over the budget only once the queue is empty.
+                CeilingHeld = total > triangleBudget && queue.Count > 0,
+            };
         }
 
         /// <summary>Every renderer cut as deep as its weighted error stays within <paramref name="tolerance"/> metres.</summary>

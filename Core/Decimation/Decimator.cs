@@ -58,6 +58,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         internal static PendingSequence Schedule(in EvalMesh mesh, NativeArray<bool> excluded, in DecimationSettings settings, in VertexProtection protection,
             in ClearanceInput clearance, in BendRig rig)
         {
+            if (!(settings.BudgetErrorCeiling >= 0f) || float.IsPositiveInfinity(settings.BudgetErrorCeiling))
+                throw new System.ArgumentException($"budget error ceiling {settings.BudgetErrorCeiling} m must be finite and 0 or more; 0 turns it off");
             var pending = new PendingSequence();
             try
             {

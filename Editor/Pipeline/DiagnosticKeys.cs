@@ -18,6 +18,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public const string RejudgeFailed = "MeshOptimizer:diag:rejudge-failed";
         /// <summary>{0} the triangles reached, {1} the budget.</summary>
         public const string BudgetNotMet = "MeshOptimizer:diag:budget-not-met";
+        /// <summary>{0} the triangles reached, {1} the budget, {2} the error ceiling in millimetres, which stopped the cut first.</summary>
+        public const string BudgetCeilingHeld = "MeshOptimizer:diag:budget-ceiling-held";
         /// <summary>{0} the renderer.</summary>
         public const string AlwaysOnIsOff = "MeshOptimizer:diag:always-on-is-off";
         /// <summary>{0} the paths of every component found, {1} the one used.</summary>
@@ -36,7 +38,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         public static readonly string[] All =
         {
-            NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
+            NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, BudgetCeilingHeld, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
             NonFiniteVertex, NonFiniteShapeKey, DuplicateShapeKey,
         };
     }

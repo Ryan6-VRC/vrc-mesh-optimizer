@@ -155,6 +155,15 @@ msgstr "The avatar has {0} triangles against a target of {1}."
 msgid "MeshOptimizer:diag:budget-not-met:hint"
 msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, and vertices on fingers or on bones an animation grows from zero scale are never removed. Raise the target, or allow more renderers to be decimated."
 
+msgid "MeshOptimizer:diag:budget-ceiling-held"
+msgstr "Mesh Optimizer stopped at its error ceiling before the triangle count"
+
+msgid "MeshOptimizer:diag:budget-ceiling-held:description"
+msgstr "The avatar has {0} triangles against a target of {1}: reaching it would move the surface further than the {2} mm the error ceiling allows."
+
+msgid "MeshOptimizer:diag:budget-ceiling-held:hint"
+msgstr "The meshes are cut no further than the ceiling allows, rather than distorted to meet the count. Raise the target to an amount the avatar reaches within the ceiling."
+
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "An always-on renderer is off"
 
