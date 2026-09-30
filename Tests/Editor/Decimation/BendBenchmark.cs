@@ -9,8 +9,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
 {
     /// <summary>
     /// What bends cost on a limb-sized mesh: about 100,000 triangles on a rippled tube skinned along a chain of bones,
-    /// every vertex near a joint, decimated through its whole sequence with and without the rig. Explicit, so the gate
-    /// skips it; run it by name.
+    /// every vertex near a joint, decimated through its whole sequence with and without the rig. A measurement: a whole
+    /// gate run leaves out every fixture named *Benchmark; run it by filter.
     /// </summary>
     public class BendBenchmark
     {
