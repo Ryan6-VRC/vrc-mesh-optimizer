@@ -269,6 +269,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(named[0].Key, Is.EqualTo(inDelta ? DiagnosticKeys.NonFiniteShapeKey : DiagnosticKeys.NonFiniteVertex), "named for what it is, not as a failure");
             Assert.That(named[0].Args, inDelta ? Has.Member("Swell") : Has.Member(vertex));
             Assert.That(r.Skip, Is.EqualTo(SkipReason.NonFinite));
+            StringAssert.Contains("its neighbours keep no clearance from it", r.SkipDetail, "what its neighbours lose is named too");
             Assert.That(Optimized(Of(report, healthy)), Is.True);
         }
 

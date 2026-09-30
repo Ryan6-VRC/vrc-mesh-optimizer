@@ -1017,7 +1017,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// A renderer the pass leaves as it was, extracted only to stand in the clearance surface. False, with nothing to
-        /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing.
+        /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing, and its
+        /// <see cref="PreparedRenderer.SkipDetail"/> says so.
         /// </summary>
         static bool TryExtractUnchanged(PreparedRenderer job, PipelineInput input, AvatarBones bones, out EvalMesh eval)
         {
@@ -1030,6 +1031,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
             catch (Exception)
             {
+                const string unheld = "its neighbours keep no clearance from it, since it could not be extracted for the clearance surface";
+                job.SkipDetail = string.IsNullOrEmpty(job.SkipDetail) ? unheld : job.SkipDetail + "; " + unheld;
                 return false;
             }
         }
