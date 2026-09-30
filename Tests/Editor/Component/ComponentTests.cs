@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Core.Decimation;
+using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
 using UnityEngine;
@@ -74,6 +76,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             {
                 Object.DestroyImmediate(fresh);
             }
+        }
+
+        // The decimation defaults a build runs with, which the component does not expose: the normal term's weight, the
+        // clearance rule on at its share, bends at their swing and share of the gap, and re-judging on. Each is a measured
+        // choice, tuned on real avatars against the triangles it costs, so changing one is a decision to measure again and
+        // never a way to make a test pass.
+        [Test]
+        public void ABuild_RunsWithTheMeasuredDecimationDefaults()
+        {
+            var build = new PipelineInput();
+            foreach (var (s, name) in new[] { (DecimationSettings.Default, "DecimationSettings.Default"), (build.Decimation, "a build") })
+            {
+                Assert.That(s.Normal.Weight, Is.EqualTo(0.5f), $"{name}: normal term weight");
+                Assert.That(s.Clearance.Enabled, Is.True, $"{name}: clearance rule");
+                Assert.That(s.Clearance.Share, Is.EqualTo(0.4f), $"{name}: clearance share");
+                Assert.That(s.Bend.Degrees, Is.EqualTo(90f), $"{name}: bend degrees");
+                Assert.That(s.Bend.ClearanceShare, Is.EqualTo(0.7f), $"{name}: bend share of the gap");
+            }
+            Assert.That(build.Rejudge, Is.True, "re-judging");
         }
     }
 }
