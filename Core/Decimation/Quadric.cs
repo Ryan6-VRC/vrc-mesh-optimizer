@@ -192,14 +192,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         }
     }
 
-    /// <summary>A vertex's quadric in one live frame's configuration.</summary>
+    /// <summary>A vertex's quadric in one live frame's configuration, or in one bend (see <see cref="Bends"/>).</summary>
     internal struct FrameQuadric
     {
         public int Frame;
         public Quadric Q;
     }
 
-    /// <summary>A vertex's source-surface normal in one live frame's configuration.</summary>
+    /// <summary>A vertex's source-surface normal in one live frame's configuration, or in one bend.</summary>
     internal struct FrameNormal
     {
         public int Frame;

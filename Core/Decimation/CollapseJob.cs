@@ -145,7 +145,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         {
             _in = job;
             _shading = job.NormalField.Length > 0;
-            _clearance = job.Surface.Nodes.Length > 0 && job.TriangleClearance.Length == job.Triangles.Length;
+            _clearance = job.Surface.Nodes.Length > 0;
             _bent = job.Bends.Active;
             _refused = 0;
             _live = job.LiveTriangles;

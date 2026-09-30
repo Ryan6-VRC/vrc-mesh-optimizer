@@ -11,8 +11,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 {
     /// <summary>
     /// Every working vertex's error quadrics: one for the rest state, one per live frame that moves any vertex
-    /// of its one-ring (stored sparsely, since elsewhere a frame's quadric equals the rest one), and one for
-    /// UV0, and one for the vertex normals when the normal term is on. Plane quadrics are area-weighted; open edges add a
+    /// of its one-ring (stored sparsely, since elsewhere a frame's quadric equals the rest one), one per bend that moves
+    /// its surroundings apart (in the same sparse pool, see <see cref="Bends"/>), one for UV0, and one for the vertex
+    /// normals when the normal term is on. Plane quadrics are area-weighted; open edges add a
     /// perpendicular plane weighted by squared length.
     /// </summary>
     internal struct QuadricBank : IDisposable
