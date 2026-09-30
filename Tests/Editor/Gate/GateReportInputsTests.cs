@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Gate;
+using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Tests.Integration;
 using UnityEngine;
 using static Ryan6Vrc.MeshOptimizer.Tests.Integration.AvatarFixture;
@@ -60,6 +61,27 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
             Assert.That(crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
             Assert.That(crossing.Pairs.Max(p => p.Change.New), Is.Zero);
+        }
+
+        // A renderer the pass left alone for a non-finite position still carries it, and the crossing channel refuses a
+        // surface with one, so handed over it would cost every other renderer its figures.
+        [Test]
+        public void ARendererSkippedForANonFinitePosition_IsLeftOutOfBothChannels_AndTheOthersAreStillMeasured()
+        {
+            var mesh = a.Sphere(0.1f, 16, 32, name: "broken");
+            var vertices = mesh.vertices;
+            vertices[40] = new Vector3(float.NaN, 0f, 0f);
+            mesh.vertices = vertices;
+            var broken = a.Skinned("Broken", mesh, new[] { a.Bone("Armature/Hips/Chest") });
+            var report = a.Run();
+            Assert.That(Of(report, broken).Skip, Is.EqualTo(SkipReason.NonFinite), "the fixture must be skipped for its NaN");
+
+            var inputs = GateReportInputs.From(report);
+            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
+
+            Assert.That(crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
+            Assert.That(inputs.Geometry.Concat(inputs.Crossing).Select(i => i.Renderer), Has.No.Member(broken));
+            StringAssert.Contains("left out of both channels: NonFinite", inputs.LeftOut.Single(l => l.path == "Broken").reason);
         }
 
         [Test]
