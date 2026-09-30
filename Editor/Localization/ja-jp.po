@@ -167,11 +167,11 @@ msgstr "ポリゴン数 {0} → {1}、誤差レベル {2} mm"
 msgid "MeshOptimizer:preview:failed"
 msgstr "プレビューに失敗しました: {0}"
 
-msgid "MeshOptimizer:preview:note:controllers"
-msgstr "プレビューはポリゴン削減のみを表示します。隠れたポリゴンの削除はビルド時に行われます。シェイプキーは、他のツールがアニメーターを追加する前の、アバター自身のアニメーターから判定するため、ビルド結果のポリゴン数とは異なることがあります。"
+msgid "MeshOptimizer:preview:note:descriptor"
+msgstr "ポリゴン数はAvatar Descriptorの内容から見積もった値で、正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
 
 msgid "MeshOptimizer:preview:note:every-key-live"
-msgstr "プレビューはポリゴン削減のみを表示します。隠れたポリゴンの削除はビルド時に行われます。アニメーターが見つからないため、すべてのシェイプキーを動くものとして判定しています。ビルドではさらに削減されることがあります。"
+msgstr "アバターのルートにAvatar Descriptorがないため、すべてのシェイプキーを動くものとして見積もっています。正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
 
 msgid "MeshOptimizer:preview:progress"
 msgstr "Mesh Optimizer プレビュー"

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using nadena.dev.ndmf.ui;
+using Ryan6Vrc.MeshOptimizer.Preview;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
 using UnityEngine;
@@ -51,6 +52,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                 EditorGUI.indentLevel++;
                 DrawTarget();
                 EditorGUILayout.PropertyField(_renderers, Label(_renderers), true);
+                DrawPreview();
                 EditorGUI.indentLevel--;
             }
 
@@ -112,6 +114,30 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                 if (EditorGUI.EndChangeCheck() && _budget.intValue < 0) _budget.intValue = 0;
                 DelayedFloat(_maxError);
             }
+        }
+
+        /// <summary>
+        /// The preview's switch, NDMF's own for this filter, and what the latest preview of this avatar reached, with where
+        /// its shape-key liveness came from.
+        /// </summary>
+        void DrawPreview()
+        {
+            EditorGUILayout.Space();
+            var on = DecimationPreview.Toggle.IsEnabled.Value;
+            EditorGUI.BeginChangeCheck();
+            on = GUILayout.Toggle(on, L10n.G(InspectorKeys.Preview), "Button");
+            if (EditorGUI.EndChangeCheck()) DecimationPreview.Toggle.IsEnabled.Value = on;
+
+            string text;
+            var status = targets.Length == 1 ? PreviewStatus.Of((AvatarMeshOptimizer)target) : null;
+            if (!on) text = L10n.Tr(InspectorKeys.PreviewOff);
+            else if (status == null) text = L10n.Tr(InspectorKeys.PreviewPending);
+            else if (status.Failure != null) text = string.Format(L10n.Tr(InspectorKeys.PreviewFailed), status.Failure);
+            else
+                text = string.Format(L10n.Tr(InspectorKeys.PreviewResult), status.TrianglesBefore.ToString("N0"), status.TrianglesAfter.ToString("N0"),
+                           status.ErrorLevelMm.ToString("0.00")) + "\n" +
+                       L10n.Tr(status.Liveness == PreviewLiveness.Descriptor ? InspectorKeys.PreviewNoteDescriptor : InspectorKeys.PreviewNoteEveryKeyLive);
+            EditorGUILayout.HelpBox(text, status?.Failure != null ? MessageType.Warning : MessageType.None);
         }
 
         static void DelayedFloat(SerializedProperty property)

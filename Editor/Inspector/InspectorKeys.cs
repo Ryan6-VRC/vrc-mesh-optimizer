@@ -8,5 +8,14 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
     {
         public const string Advanced = "MeshOptimizer:advanced";
         public const string Preset = "MeshOptimizer:preset";
+        public const string Preview = "MeshOptimizer:preview";
+        public const string PreviewOff = "MeshOptimizer:preview:off";
+        public const string PreviewPending = "MeshOptimizer:preview:pending";
+        public const string PreviewResult = "MeshOptimizer:preview:result";
+        public const string PreviewFailed = "MeshOptimizer:preview:failed";
+        public const string PreviewNoteDescriptor = "MeshOptimizer:preview:note:descriptor";
+        public const string PreviewNoteEveryKeyLive = "MeshOptimizer:preview:note:every-key-live";
+        public const string PreviewProgress = "MeshOptimizer:preview:progress";
+        public const string PreviewProgressInfo = "MeshOptimizer:preview:progress:info";
     }
 }

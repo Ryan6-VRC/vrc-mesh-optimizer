@@ -167,11 +167,11 @@ msgstr "Triangles {0} before, {1} after; error level {2} mm"
 msgid "MeshOptimizer:preview:failed"
 msgstr "The preview failed: {0}"
 
-msgid "MeshOptimizer:preview:note:controllers"
-msgstr "The preview shows decimation only; hidden triangles are removed at build. Shape keys are judged from the avatar's own animators, before other tools add theirs, so the build's count can differ."
+msgid "MeshOptimizer:preview:note:descriptor"
+msgstr "Counts are estimated from the avatar descriptor; the build's report is exact. The preview shows decimation only; hidden triangles are removed at build."
 
 msgid "MeshOptimizer:preview:note:every-key-live"
-msgstr "The preview shows decimation only; hidden triangles are removed at build. No animator was found, so every shape key is judged as animated and the build can cut deeper."
+msgstr "Counts are estimated with every shape key judged as animated, since the avatar root has no avatar descriptor; the build's report is exact. The preview shows decimation only; hidden triangles are removed at build."
 
 msgid "MeshOptimizer:preview:progress"
 msgstr "Mesh Optimizer preview"
