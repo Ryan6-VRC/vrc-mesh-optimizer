@@ -245,7 +245,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(named[0].Args, Is.EqualTo(new object[] { held.TrianglesAfter.ToString(), "10", "5" }));
         }
 
-        // The ceiling is a budget's alone. A tolerance cuts the same at the default, at 0 and at a value a budget refuses;
+        // The ceiling is a budget's alone. A tolerance writes the same mesh at the default, at 0 and at a value a budget refuses;
         // a budget refuses a negative or non-finite one before it cuts anything.
         [TestCase(-1f)]
         [TestCase(float.NaN)]
@@ -262,7 +262,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             {
                 c.maxError = maxError;
                 var report = a.Run(apply: false);
-                Assert.That(Of(report, round).TrianglesAfter, Is.EqualTo(Of(atDefault, round).TrianglesAfter), $"at {maxError}");
+                var mesh = Of(report, round).OutputMesh;
+                Assert.That(mesh.triangles, Is.EqualTo(Of(atDefault, round).OutputMesh.triangles), $"at {maxError}");
+                Assert.That(mesh.vertices, Is.EqualTo(Of(atDefault, round).OutputMesh.vertices), $"at {maxError}");
                 Assert.That(BitConverter.SingleToInt32Bits(report.ErrorLevel), Is.EqualTo(BitConverter.SingleToInt32Bits(atDefault.ErrorLevel)), $"at {maxError}");
                 Assert.That(report.Diagnostics.Select(d => d.Key), Is.EqualTo(atDefault.Diagnostics.Select(d => d.Key)), $"at {maxError}");
             }
