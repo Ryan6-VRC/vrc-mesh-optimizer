@@ -59,8 +59,12 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         protected override Type Entry => typeof(MaterialOcclusion);
         protected override string[] Fields => new[] { nameof(MaterialOcclusion.material), nameof(MaterialOcclusion.mode) };
 
-        static Material MaterialOf(SerializedProperty property) =>
-            property.FindPropertyRelative(nameof(MaterialOcclusion.material)).objectReferenceValue as Material;
+        /// <summary>The entry's material, or null when the selected components name different ones there, so no verdict shows for them all.</summary>
+        static Material MaterialOf(SerializedProperty property)
+        {
+            var material = property.FindPropertyRelative(nameof(MaterialOcclusion.material));
+            return material.hasMultipleDifferentValues ? null : material.objectReferenceValue as Material;
+        }
 
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label) =>
             base.GetPropertyHeight(property, label) +

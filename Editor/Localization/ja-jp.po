@@ -123,7 +123,7 @@ msgid "MeshOptimizer:verdict:by-alpha"
 msgstr "テクスチャの{0}%で不透明、それ以外は透過と判定"
 
 msgid "MeshOptimizer:verdict:by-alpha:tooltip"
-msgstr "テクスチャのアルファがテクセルごとに判定します。面全体が不透明なら「不透明」にしてください。"
+msgstr "テクスチャのアルファでテクセルごとに判定します。面全体が不透明なら「不透明」にしてください。"
 
 msgid "MeshOptimizer:verdict:see-through"
 msgstr "透過と判定: 何も隠しません"
