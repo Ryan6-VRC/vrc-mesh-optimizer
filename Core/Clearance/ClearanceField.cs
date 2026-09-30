@@ -36,7 +36,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
         public NativeArray<float> Triangle;
         /// <summary>Per source vertex, the least clearance of the live triangles around it: the gap its neighbourhood had.</summary>
         public NativeArray<float> Star;
-        public int NearVertices;
 
         public void Dispose()
         {
@@ -45,10 +44,14 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
             if (Star.IsCreated) Star.Dispose();
         }
 
-        /// <summary><paramref name="live"/> is per triangle of <paramref name="triangles"/>: false for one decimation drops as degenerate.</summary>
+        /// <summary>
+        /// <paramref name="live"/> is per triangle of <paramref name="triangles"/>: false for one decimation drops as degenerate.
+        /// <paramref name="nearVertices"/> counts the vertices of live triangles with another layer within the reach.
+        /// </summary>
         public static ClearanceField Measure(NativeArray<float3> positions, NativeArray<int3> triangles, NativeArray<bool> live, in ClearanceInput input,
-            float reach, Allocator allocator)
+            float reach, Allocator allocator, out int nearVertices)
         {
+            nearVertices = 0;
             if (input.TriangleLayer.Length != triangles.Length)
                 throw new ArgumentException($"the mesh has {triangles.Length} triangles and {input.TriangleLayer.Length} layers; give one layer per triangle");
             var field = new ClearanceField();
@@ -70,7 +73,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                 field.Star = new NativeArray<float>(positions.Length, allocator);
                 new StarJob { Triangles = triangles, Live = live, Triangle = field.Triangle, Reach = reach, Star = field.Star }.Run();
                 for (var v = 0; v < positions.Length; v++)
-                    if (vertexLayer[v] >= 0 && field.Vertex[v] < reach) field.NearVertices++;
+                    if (vertexLayer[v] >= 0 && field.Vertex[v] < reach) nearVertices++;
                 return field;
             }
             catch

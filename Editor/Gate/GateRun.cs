@@ -148,6 +148,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public DecimationSettings Decimation { get; internal set; }
         public bool Rejudge { get; internal set; }
         public OcclusionSettings Occlusion { get; internal set; }
+        /// <summary>In millimetres, as the component holds it.</summary>
+        public float MaxError { get; internal set; }
+        public bool RemovedAsNeighbours { get; internal set; }
+        public bool OutlinesShowInside { get; internal set; }
         public float ErrorLevel { get; internal set; }
         public int RejudgePasses { get; internal set; }
         public bool TargetMet { get; internal set; }
@@ -233,7 +237,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             string Mm(float m) => (m * 1000f).ToString("0.000", c);
             var lines = new List<string>(Failures);
             lines.Add($"avatar: {AvatarName}");
-            lines.Add($"settings: target={Target} budget={TriangleBudget} tolerance_mm={Tolerance.ToString(c)} rejudge={Rejudge}");
+            lines.Add($"settings: target={Target} budget={TriangleBudget} tolerance_mm={Tolerance.ToString(c)} rejudge={Rejudge} " +
+                      $"maxError_mm={MaxError.ToString(c)} removedAsNeighbours={RemovedAsNeighbours} outlinesShowInside={OutlinesShowInside}");
             lines.Add($"settings decimation: {Fields(Decimation)}");
             lines.Add($"settings occlusion: {Fields(Occlusion)}");
             lines.Add($"report: before={Renderers.Sum(r => r.TrianglesBefore)} after={Renderers.Sum(r => r.TrianglesAfter)} hidden={Renderers.Sum(r => r.HiddenRemoved)} " +
@@ -329,7 +334,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
     /// </summary>
     internal static class GateRun
     {
-        static readonly string[] FailureKeys = { DiagnosticKeys.RendererFailed, DiagnosticKeys.OcclusionFailed, DiagnosticKeys.RejudgeFailed, DiagnosticKeys.PassFailed };
+        /// <summary>
+        /// The keys of a stage that fell back and still wrote meshes. A pass that fails whole leaves no report for a gate to
+        /// read, so its key (<see cref="DiagnosticKeys.PassFailed"/>) is not among them.
+        /// </summary>
+        static readonly string[] FailureKeys = { DiagnosticKeys.RendererFailed, DiagnosticKeys.OcclusionFailed, DiagnosticKeys.RejudgeFailed };
 
         /// <summary>
         /// Hashes every report row's meshes, and measures crossing once over the report's renderers, as the avatar stands, in
@@ -349,7 +358,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
 
             var sw = Stopwatch.StartNew();
             var hashes = report.Renderers.Select(r => new MeshHashes(r.Path,
-                r.SourceMesh != null && (r.SourceMesh.isReadable || !Application.isPlaying) ? MeshContent.Hash(r.SourceMesh) : (ulong?)null,
+                r.SourceMesh != null && OptimizerPipeline.CanRead(r.SourceMesh, Application.isPlaying) ? MeshContent.Hash(r.SourceMesh) : (ulong?)null,
                 r.OutputMesh != null ? MeshContent.Hash(r.OutputMesh) : (ulong?)null)).ToArray();
             var hashMs = sw.Elapsed.TotalMilliseconds;
 
@@ -406,6 +415,9 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                 Decimation = report.Decimation,
                 Rejudge = report.Rejudge,
                 Occlusion = report.Occlusion,
+                MaxError = report.MaxError,
+                RemovedAsNeighbours = report.RemovedAsNeighbours,
+                OutlinesShowInside = report.OutlinesShowInside,
                 ErrorLevel = report.ErrorLevel,
                 RejudgePasses = report.RejudgePasses,
                 TargetMet = report.TargetMet,

@@ -58,44 +58,58 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
             if (components.Length == 0) return;
             try
             {
-                var settings = components[0];
-                if (components.Length > 1)
-                    Report(new Diagnostic(DiagnosticKeys.MultipleComponents, true,
-                        string.Join(", ", components.Select(c => RuntimeUtil.RelativePath(root.gameObject, c.gameObject) ?? c.name)), settings));
-
-                var watch = Stopwatch.StartNew();
-                var services = context.ActivateExtensionContextRecursive<AnimatorServicesContext>();
-                var skinned = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null).ToList();
-                var liveness = LivenessSources.Classify(context, skinned, out var links, out var unlinked);
-                var scaleCurves = UnstableBones.FromAnimatorServices(services, root)
-                    .Concat(UnstableBones.FromLegacyAnimations(root)).ToList();
-                var livenessMs = watch.Elapsed.TotalMilliseconds;
-
-                var input = new PipelineInput
-                {
-                    Root = root,
-                    Settings = settings,
-                    Liveness = liveness,
-                    Links = links,
-                    Unlinked = unlinked,
-                    ScaleCurves = scaleCurves,
-                    LivenessMs = livenessMs,
-                };
+                PipelineInput input;
                 OptimizationReport report;
-                using (var prepared = OptimizerPipeline.Prepare(input)) report = OptimizerPipeline.Cut(prepared);
-                // Only a build records its report, so the latest one is always what an avatar was built with.
-                OptimizationReports.Add(report);
-                OptimizerPipeline.Apply(report);
-                OptimizerPipeline.MeasureGate(report, input);
-                foreach (var d in report.Diagnostics) Report(d);
-                Debug.Log(report.Summary());
-                if (report.Gate != null) Debug.Log(report.Gate.Summary());
-            }
-            catch (Exception e)
-            {
-                // Nothing is applied until the pipeline has finished, so the avatar builds as it was.
-                Debug.LogException(e);
-                Report(new Diagnostic(DiagnosticKeys.PassFailed, true, e.Message));
+                try
+                {
+                    var settings = components[0];
+                    if (components.Length > 1)
+                        Report(new Diagnostic(DiagnosticKeys.MultipleComponents, true,
+                            string.Join(", ", components.Select(c => RuntimeUtil.RelativePath(root.gameObject, c.gameObject) ?? c.name)), settings));
+
+                    var watch = Stopwatch.StartNew();
+                    var services = context.ActivateExtensionContextRecursive<AnimatorServicesContext>();
+                    var skinned = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null).ToList();
+                    var liveness = LivenessSources.Classify(context, skinned, out var links, out var unlinked);
+                    var scaleCurves = UnstableBones.FromAnimatorServices(services, root)
+                        .Concat(UnstableBones.FromLegacyAnimations(root)).ToList();
+                    var livenessMs = watch.Elapsed.TotalMilliseconds;
+
+                    input = new PipelineInput
+                    {
+                        Root = root,
+                        Settings = settings,
+                        Liveness = liveness,
+                        Links = links,
+                        Unlinked = unlinked,
+                        ScaleCurves = scaleCurves,
+                        LivenessMs = livenessMs,
+                    };
+                    using (var prepared = OptimizerPipeline.Prepare(input)) report = OptimizerPipeline.Cut(prepared);
+                    // Only a build records its report, so the latest one is always what an avatar was built with.
+                    OptimizationReports.Add(report);
+                    OptimizerPipeline.Apply(report);
+                }
+                catch (Exception e)
+                {
+                    // Nothing is applied until the pipeline has finished, and applying is the last thing this catch sees, so
+                    // the avatar builds as it was.
+                    Debug.LogException(e);
+                    Report(new Diagnostic(DiagnosticKeys.PassFailed, true, e.Message));
+                    return;
+                }
+                try
+                {
+                    OptimizerPipeline.MeasureGate(report, input);
+                    foreach (var d in report.Diagnostics) Report(d);
+                    Debug.Log(report.Summary());
+                    if (report.Gate != null) Debug.Log(report.Gate.Summary());
+                }
+                catch (Exception e)
+                {
+                    // The meshes are applied by now, so a throw here loses only what was being reported.
+                    Debug.LogException(e);
+                }
             }
             finally
             {

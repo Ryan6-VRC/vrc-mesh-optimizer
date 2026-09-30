@@ -98,7 +98,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             {
                 using var live = new NativeArray<bool>(Enumerable.Repeat(true, scene.Meshes[m].TriangleCount).ToArray(), Allocator.Persistent);
                 using var f = ClearanceField.Measure(scene.Meshes[m].Positions, scene.Meshes[m].Triangles, live,
-                    new ClearanceInput { Surface = scene.Surface, TriangleLayer = scene.Layers[m] }, 0.02f, Allocator.Persistent);
+                    new ClearanceInput { Surface = scene.Surface, TriangleLayer = scene.Layers[m] }, 0.02f, Allocator.Persistent, out _);
             }
             TestContext.WriteLine($"measuring every mesh's clearance: {sw.Elapsed.TotalSeconds:F3} s");
             foreach (var rule in new[] { false, true })

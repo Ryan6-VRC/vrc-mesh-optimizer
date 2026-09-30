@@ -2,168 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using nadena.dev.ndmf;
 using nadena.dev.ndmf.runtime;
-using Ryan6Vrc.MeshOptimizer.Core.Allocation;
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Decimation;
 using Ryan6Vrc.MeshOptimizer.Extraction;
-using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Runtime;
-using Ryan6Vrc.MeshOptimizer.Writing;
 using Unity.Collections;
-using Unity.Mathematics;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
 namespace Ryan6Vrc.MeshOptimizer.Pipeline
 {
-    /// <summary>What the pipeline needs; nothing here needs a build.</summary>
-    internal sealed class PipelineInput
-    {
-        public Transform Root;
-        public AvatarMeshOptimizer Settings;
-        /// <summary>Per skinned renderer, per shape key. A renderer missing from it has every key evaluated as live, from the weight it holds to full weight.</summary>
-        public IReadOnlyDictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Liveness;
-        /// <summary>Groups of keys that cannot be driven apart (<see cref="ShapeKeyLinks"/>). Null reads as none: every live key moves alone.</summary>
-        public IReadOnlyList<LinkedKey[]> Links;
-        /// <summary>
-        /// Keys that link with none though another key is driven by exactly the same set of clips of known identity, each
-        /// with why (<see cref="ShapeKeyLinks"/>); the report counts those the pass evaluates as live. Null reads as none.
-        /// </summary>
-        public IReadOnlyList<(LinkedKey key, LinkRefusal reason)> Unlinked;
-        /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
-        public IEnumerable<ScaleCurve> ScaleCurves;
-        public OcclusionSettings Occlusion = OcclusionSettings.Default;
-        public DecimationSettings Decimation = BuildSettings.Decimation;
-        /// <summary>
-        /// Whether a cut judges the removed triangles again against the meshes it writes (<see cref="OptimizerPipeline.Cut"/>).
-        /// Off, every mesh is written with the removals as occlusion first judged them.
-        /// </summary>
-        public bool Rejudge = BuildSettings.Rejudging;
-        /// <summary>
-        /// Whether a triangle occlusion removed stands in the clearance surface as a neighbour of the other layers
-        /// (<see cref="OptimizerPipeline.ClearanceSurfaceOf"/>), so one re-judging writes back comes back clear. Off, the
-        /// surface holds only what occlusion kept, and a layer may cross a triangle written back.
-        /// </summary>
-        public bool RemovedAsNeighbours = BuildSettings.RemovedAsNeighbours;
-        /// <summary>
-        /// What the gate measures on the avatar once the meshes are applied (<see cref="OptimizerPipeline.MeasureGate"/>),
-        /// into <see cref="OptimizationReport.Gate"/>; null, the default, measures nothing.
-        /// </summary>
-        public GateRunOptions Gate = BuildSettings.Gate;
-        /// <summary>Time the caller spent classifying liveness, for the report.</summary>
-        public double LivenessMs;
-        /// <summary>Called before each renderer enters a stage. A test seam: throwing here is a stage failing on that renderer.</summary>
-        public Action<Renderer, PipelineStage> BeforeStage;
-        /// <summary>
-        /// Called before each step taken for the whole avatar at once. A test seam: throwing here escapes
-        /// <see cref="OptimizerPipeline.Prepare"/> or <see cref="OptimizerPipeline.Cut"/>, as a failure no one renderer
-        /// can be blamed for would.
-        /// </summary>
-        public Action<AvatarStep> BeforeStep;
-    }
-
-    /// <summary>The steps taken for the whole avatar at once, as <see cref="PipelineInput.BeforeStep"/> names them.</summary>
-    internal enum AvatarStep
-    {
-        Occlusion,
-        Clearance,
-        Recording,
-        Allocation,
-        Rejudging,
-        Writing,
-    }
-
-    /// <summary>
-    /// The decimation settings a build runs with, whether it judges its removals again, what stands in its clearance
-    /// surface, and what the gate measures once the meshes are applied. The component exposes none of them, and the
-    /// decimation defaults live in <see cref="DecimationSettings.Default"/> alone; this is the one place a test or a
-    /// measurement can hand a build other values, since a build reaches the pipeline through NDMF and not through a caller.
-    /// Nothing in the package overrides them.
-    /// </summary>
-    internal static class BuildSettings
-    {
-        internal static DecimationSettings Decimation { get; private set; } = DecimationSettings.Default;
-
-        /// <summary>Whether a build's cut judges the removed triangles again (<see cref="PipelineInput.Rejudge"/>); on unless overridden.</summary>
-        internal static bool Rejudging { get; private set; } = true;
-
-        /// <summary>Every build until the returned scope is disposed runs with <paramref name="decimation"/>; disposing restores what was before.</summary>
-        internal static IDisposable Override(DecimationSettings decimation)
-        {
-            var before = Decimation;
-            Decimation = decimation;
-            return new Scope(() => Decimation = before);
-        }
-
-        /// <summary>Every build until the returned scope is disposed re-judges or not as <paramref name="rejudging"/> says; disposing restores what was before.</summary>
-        internal static IDisposable OverrideRejudging(bool rejudging)
-        {
-            var before = Rejudging;
-            Rejudging = rejudging;
-            return new Scope(() => Rejudging = before);
-        }
-
-        /// <summary>Whether a build's clearance surface holds the triangles occlusion removed (<see cref="PipelineInput.RemovedAsNeighbours"/>); on unless overridden.</summary>
-        internal static bool RemovedAsNeighbours { get; private set; } = true;
-
-        /// <summary>Every build until the returned scope is disposed runs with <see cref="RemovedAsNeighbours"/> as <paramref name="on"/> says; disposing restores what was before.</summary>
-        internal static IDisposable OverrideRemovedAsNeighbours(bool on)
-        {
-            var before = RemovedAsNeighbours;
-            RemovedAsNeighbours = on;
-            return new Scope(() => RemovedAsNeighbours = before);
-        }
-
-        /// <summary>What a build measures with the gate once its meshes are applied (<see cref="PipelineInput.Gate"/>); null, measuring nothing, unless overridden.</summary>
-        internal static GateRunOptions Gate { get; private set; }
-
-        /// <summary>Every build until the returned scope is disposed measures the gate with <paramref name="options"/>, null for not at all; disposing restores what was before.</summary>
-        /// <remarks>Named apart from <see cref="OverrideGate(bool)"/>, since a runner reaching a scope by name alone would find two.</remarks>
-        internal static IDisposable OverrideGateWith(GateRunOptions options)
-        {
-            var before = Gate;
-            Gate = options;
-            return new Scope(() => Gate = before);
-        }
-
-        /// <summary>
-        /// Every build until the returned scope is disposed measures the gate, when <paramref name="on"/>, in the default pose
-        /// bank (<see cref="PoseBank.Default"/>) with the geometric channel on, or not at all; disposing restores what was before.
-        /// </summary>
-        internal static IDisposable OverrideGate(bool on) =>
-            OverrideGateWith(on ? new GateRunOptions { Poses = PoseBank.Default, Geometry = true } : null);
-
-        sealed class Scope : IDisposable
-        {
-            readonly Action _restore;
-            bool _done;
-
-            public Scope(Action restore) => _restore = restore;
-
-            public void Dispose()
-            {
-                if (_done) return;
-                _done = true;
-                _restore();
-            }
-        }
-    }
-
-    /// <summary>The per-renderer stages, as a failure names them.</summary>
-    internal enum PipelineStage
-    {
-        Extraction,
-        Decimation,
-        Writing,
-    }
-
     /// <summary>
     /// Optimizes an avatar's meshes: extracts every renderer, removes the triangles an always-on renderer hides,
     /// decimates what remains to the avatar-wide target and writes new meshes, in that order, so the budget is spent
@@ -174,7 +28,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// is the costly part; <see cref="Cut"/> spends the target over those sequences and writes, and can be called again on
     /// the same <see cref="PreparedAvatar"/>.
     /// </summary>
-    internal static class OptimizerPipeline
+    internal static partial class OptimizerPipeline
     {
         /// <summary>A renderer's protection maps to an allocation weight no lower than this, which the allocator needs above 0.</summary>
         const float MinWeight = 1e-3f;
@@ -227,408 +81,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
             prepared.PrepareMs = total.Elapsed.TotalMilliseconds;
             return prepared;
-        }
-
-        /// <summary>
-        /// Spends the component's target over the prepared sequences, cuts each and writes the meshes, and reports it all.
-        /// Before writing, every triangle occlusion removed is judged again against what the always-on renderers are written
-        /// with, since decimation moves the faces that covered it, and one no longer covered is written back
-        /// (<see cref="PipelineInput.Rejudge"/>); a budget pays for those by cutting deeper, never past
-        /// the component's <see cref="AvatarMeshOptimizer.maxError"/>, and one the ceiling stops short is reported unmet under
-        /// <see cref="DiagnosticKeys.BudgetCeilingHeld"/> rather than <see cref="DiagnosticKeys.BudgetNotMet"/>.
-        /// Reads <paramref name="prepared"/> and changes nothing in it; whatever of it the report holds and a cut reads is a
-        /// copy, so nothing done to one report changes the next cut. A renderer whose writing fails is left as it was.
-        /// Throws once <paramref name="prepared"/> is disposed, and, decimating to a budget, when the max error is negative or
-        /// not finite.
-        /// </summary>
-        public static OptimizationReport Cut(PreparedAvatar prepared)
-        {
-            if (prepared == null) throw new ArgumentNullException(nameof(prepared));
-            if (prepared.Disposed) throw new ObjectDisposedException(nameof(PreparedAvatar), "a disposed prepared avatar has nothing left to cut; prepare the avatar again");
-            var input = prepared.Input;
-            var settings = input.Settings;
-            if (settings.decimate && settings.target == TargetKind.TriangleBudget && (!(settings.maxError >= 0f) || float.IsPositiveInfinity(settings.maxError)))
-                throw new ArgumentException($"max error {settings.maxError} mm must be finite and 0 or more; 0 turns the ceiling off");
-            var total = Stopwatch.StartNew();
-            var report = new OptimizationReport
-            {
-                AvatarName = input.Root.name,
-                Target = settings.target,
-                TriangleBudget = settings.triangleBudget,
-                Tolerance = settings.tolerance,
-                Decimation = input.Decimation, Rejudge = input.Rejudge, Occlusion = input.Occlusion,
-                TargetMet = true,
-                OcclusionRan = prepared.OcclusionRan,
-                Declined = prepared.Declined,
-                OcclusionStats = prepared.OcclusionStats,
-                Times = prepared.Times,
-            };
-            report.Links.AddRange(prepared.Links);
-            report.Configurations.AddRange(prepared.Configurations);
-            foreach (var kv in prepared.LinkRefusals) report.LinkRefusals[kv.Key] = kv.Value;
-            report.UnmatchedMaterialOverrides.AddRange(prepared.UnmatchedMaterialOverrides);
-            report.UnstableBones.AddRange(prepared.UnstableBones);
-            report.Diagnostics.AddRange(prepared.Diagnostics);
-
-            var jobs = prepared.Renderers;
-            var pass = CutAt(prepared, 0, report);
-            if (Rejudges(prepared, pass)) pass = Rejudge(prepared, pass, report);
-            report.ErrorLevel = pass.Level;
-            report.Diagnostics.AddRange(pass.Diagnostics);
-
-            var stage = Stopwatch.StartNew();
-            input.BeforeStep?.Invoke(AvatarStep.Writing);
-            for (var i = 0; i < jobs.Count; i++)
-                if (pass.Kept[i] != null) Write(jobs[i], pass.Written(i, jobs[i]), pass.Outcomes[i], input, report);
-            report.Times.Writing += stage.Elapsed.TotalMilliseconds;
-
-            for (var i = 0; i < jobs.Count; i++) report.Renderers.Add(ReportOf(jobs[i], pass.Steps[i], pass.Outcomes[i]));
-            if (settings.target == TargetKind.TriangleBudget) report.TargetMet = report.TrianglesAfter <= settings.triangleBudget;
-            // The ceiling is named only when the pass was over the budget before writing: one it held short of an allocation
-            // reduced by a reserve can still meet the budget, and a write that fails is then what leaves it unmet.
-            if (settings.decimate && !report.TargetMet)
-                report.Diagnostics.Add(pass.CeilingHeld && pass.TrianglesAfter(jobs) > settings.triangleBudget
-                    ? new Diagnostic(DiagnosticKeys.BudgetCeilingHeld, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString(),
-                        settings.maxError.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
-                    : new Diagnostic(DiagnosticKeys.BudgetNotMet, false, report.TrianglesAfter.ToString(), settings.triangleBudget.ToString()));
-            report.Times.Total = prepared.PrepareMs + total.Elapsed.TotalMilliseconds + input.LivenessMs;
-            return report;
-        }
-
-        /// <summary>
-        /// How many times at most a budget is allocated, kept and judged again to pay for the triangles re-judging restores.
-        /// Each pass after the first withholds from the allocation what the pass before restored, and at least what it withheld
-        /// plus what it went over. When none meets the budget, the pass that came nearest is written and the budget reported
-        /// not met. A pass the error ceiling held is the last: any later one would take the same steps.
-        /// </summary>
-        const int BudgetPasses = 4;
-
-        /// <summary>
-        /// One cut of every renderer: the allocation's steps and level, what each renderer keeps at them, the failures met
-        /// keeping, and, once judged again, the removed triangles each gets back.
-        /// </summary>
-        sealed class Pass
-        {
-            /// <summary>Triangles of the budget withheld from the allocation, for what an earlier pass restored.</summary>
-            public int Reserve;
-            public float Level;
-            /// <summary>
-            /// The error ceiling stopped this pass's allocation short of what it was given, or, on the pass a budget writes,
-            /// stopped the deeper pass that would have paid for what this one restored.
-            /// </summary>
-            public bool CeilingHeld;
-            public int[] Steps;
-            public Outcome[] Outcomes;
-            public KeptTriangles[] Kept;
-            public readonly List<Diagnostic> Diagnostics = new List<Diagnostic>();
-            /// <summary>Per renderer, per evaluation triangle, true for a removed one no longer covered; null where none is.</summary>
-            public bool[][] Restored;
-            public int RestoredCount;
-
-            public int RestoredOn(int i)
-            {
-                var n = 0;
-                if (Restored?[i] != null) foreach (var r in Restored[i]) if (r) n++;
-                return n;
-            }
-
-            /// <summary>The triangles the avatar draws after this pass, every write succeeding.</summary>
-            public int TrianglesAfter(List<PreparedRenderer> jobs)
-            {
-                var n = 0;
-                for (var i = 0; i < jobs.Count; i++) n += Kept[i] != null ? Kept[i].Triangles.Length + RestoredOn(i) : jobs[i].TrianglesBefore;
-                return n;
-            }
-
-            /// <summary>
-            /// The triangles renderer <paramref name="i"/> is written with: what it keeps, then each removed triangle it gets
-            /// back, at its authored corners and in its own submesh. Records on the renderer's outcome what stays removed.
-            /// </summary>
-            public KeptTriangles Written(int i, PreparedRenderer job)
-            {
-                var kept = Kept[i];
-                var outcome = Outcomes[i];
-                outcome.Restored = RestoredOn(i);
-                if (outcome.Restored == 0) return kept;
-                var restored = Restored[i];
-                outcome.Removed = new bool[job.Hidden.Length];
-                var triangles = new List<int3>(kept.Triangles);
-                var source = new List<int>(kept.Source);
-                for (var t = 0; t < restored.Length; t++)
-                {
-                    outcome.Removed[t] = job.Hidden[t] && !restored[t];
-                    if (!restored[t]) continue;
-                    triangles.Add(job.Eval.Triangles[t]);
-                    source.Add(t);
-                }
-                return new KeptTriangles { Triangles = triangles.ToArray(), Source = source.ToArray() };
-            }
-        }
-
-        /// <summary>
-        /// Allocates the target, a budget less <paramref name="reserve"/> triangles, over the recorded sequences, and keeps
-        /// each changed renderer's triangles at its step.
-        /// </summary>
-        static Pass CutAt(PreparedAvatar prepared, int reserve, OptimizationReport report)
-        {
-            var input = prepared.Input;
-            var settings = input.Settings;
-            var jobs = prepared.Renderers;
-            var pass = new Pass
-            {
-                Reserve = reserve,
-                Steps = new int[jobs.Count],
-                Outcomes = new Outcome[jobs.Count],
-                Kept = new KeptTriangles[jobs.Count],
-            };
-            var stage = Stopwatch.StartNew();
-            if (settings.decimate)
-            {
-                input.BeforeStep?.Invoke(AvatarStep.Allocation);
-                pass.Level = Allocate(jobs, settings, reserve, pass.Steps, out pass.CeilingHeld);
-                report.Times.Allocation += stage.Elapsed.TotalMilliseconds;
-            }
-
-            stage.Restart();
-            for (var i = 0; i < jobs.Count; i++)
-            {
-                var job = jobs[i];
-                if (!job.Extracted) continue;
-                pass.Outcomes[i] = new Outcome();
-                if (job.HiddenCount == 0 && (!job.Decimated || pass.Steps[i] == 0))
-                {
-                    pass.Outcomes[i].Skip = SkipReason.Unchanged;
-                    continue;
-                }
-                pass.Kept[i] = Keep(job, pass.Steps[i], pass.Outcomes[i], pass.Diagnostics);
-            }
-            report.Times.Writing += stage.Elapsed.TotalMilliseconds;
-            return pass;
-        }
-
-        /// <summary>
-        /// Whether a cut can have taken cover from a removed triangle: re-judging is on, a renderer the cut writes has
-        /// triangles occlusion removed, and the cut moved some always-on renderer's triangles. The solve left every removed
-        /// triangle covered by what the always-on renderers keep of their source, so a cut that moves none of them leaves
-        /// that cover standing.
-        /// </summary>
-        static bool Rejudges(PreparedAvatar prepared, Pass pass)
-        {
-            if (!prepared.Input.Rejudge || !prepared.OcclusionRan) return false;
-            var jobs = prepared.Renderers;
-            bool removed = false, moved = false;
-            for (var i = 0; i < jobs.Count; i++)
-            {
-                if (pass.Kept[i] == null) continue;
-                var job = jobs[i];
-                removed |= job.HiddenCount > 0;
-                moved |= job.Occludes && job.Decimated && pass.Steps[i] > 0;
-            }
-            return removed && moved;
-        }
-
-        /// <summary>
-        /// Judges the removals of <paramref name="first"/> again and, under a budget, pays for what that restores by cutting
-        /// deeper, a pass at a time, up to <see cref="BudgetPasses"/>; under a tolerance the one pass stands and the count
-        /// rises. Returns the pass to write. A re-judge that throws is named, and the pass written is <paramref name="first"/>
-        /// with its removals as first judged: what the pipeline writes with re-judging off.
-        /// </summary>
-        static Pass Rejudge(PreparedAvatar prepared, Pass first, OptimizationReport report)
-        {
-            var input = prepared.Input;
-            var settings = input.Settings;
-            var budget = settings.decimate && settings.target == TargetKind.TriangleBudget;
-            input.BeforeStep?.Invoke(AvatarStep.Rejudging);
-            var pass = first;
-            Pass best = null;
-            var watch = new Stopwatch();
-            try
-            {
-                while (true)
-                {
-                    report.RejudgePasses++;
-                    watch.Start();
-                    RejudgeOnce(prepared, pass);
-                    watch.Stop();
-                    var after = pass.TrianglesAfter(prepared.Renderers);
-                    var over = after - settings.triangleBudget;
-                    if (!budget || pass.RestoredCount == 0 || over <= 0) return pass;
-                    // Cutting deeper can take more cover than it saves, so a budget no pass meets is written at the pass
-                    // that came nearest.
-                    if (best == null || after <= best.TrianglesAfter(prepared.Renderers)) best = pass;
-                    // A pass the error ceiling held took every step at or below it, and a deeper one would take the same.
-                    if (pass.CeilingHeld)
-                    {
-                        best.CeilingHeld = true;
-                        return best;
-                    }
-                    if (report.RejudgePasses == BudgetPasses) return best;
-                    // The allocation can land under what it was given, and withholding only the overage from that would
-                    // hand the slack back: the next cut would be this one again. So the next cut is asked for this cut
-                    // less the overage, which is the budget less what this pass restored, and never less than before.
-                    var deeper = CutAt(prepared, Math.Max(pass.Reserve + over, pass.RestoredCount), report);
-                    if (!Rejudges(prepared, deeper)) return deeper;
-                    pass = deeper;
-                }
-            }
-            catch (Exception e)
-            {
-                first.Restored = null;
-                first.RestoredCount = 0;
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.RejudgeFailed, true, e.Message));
-                Debug.LogException(e);
-                return first;
-            }
-            finally
-            {
-                report.Times.Rejudging = watch.Elapsed.TotalMilliseconds;
-            }
-        }
-
-        /// <summary>
-        /// Judges the pass's removals again (<see cref="Rejudging.Restored"/>) and puts what is no longer hidden into
-        /// <see cref="Pass.Restored"/>. Every extracted renderer is entered at its index in the first solve, as the pass
-        /// leaves it: a renderer it writes draws what it keeps and leaves out what occlusion removed, and one it leaves as
-        /// it was draws its whole source.
-        /// </summary>
-        static void RejudgeOnce(PreparedAvatar prepared, Pass pass)
-        {
-            var jobs = prepared.Renderers;
-            var live = prepared.Extracted;
-            var renderers = new List<CutRenderer>(live.Count);
-            foreach (var job in live)
-            {
-                var i = jobs.IndexOf(job);
-                var kept = pass.Kept[i];
-                renderers.Add(new CutRenderer
-                {
-                    Eval = job.Eval,
-                    Mirrored = job.Mirrored,
-                    Occludes = job.Occludes,
-                    Submeshes = job.OccluderSubmeshes,
-                    Removed = kept != null && job.HiddenCount > 0 ? job.Hidden : null,
-                    Drawn = kept?.Triangles,
-                    DrawnSource = kept?.Source,
-                    Setback = job.Occludes && job.Decimated ? job.Sequence.ErrorAt(pass.Steps[i]) : 0f,
-                    CoveredBy = job.CoveredBy,
-                    InteriorCoveredBy = job.InteriorCoveredBy,
-                });
-            }
-            var restored = Rejudging.Restored(renderers, prepared.BoneParents, prepared.VanishingBones, prepared.Input.Occlusion, out var count);
-            pass.Restored = new bool[jobs.Count][];
-            for (var k = 0; k < live.Count; k++) pass.Restored[jobs.IndexOf(live[k])] = restored[k];
-            pass.RestoredCount = count;
-        }
-
-        /// <summary>What one cut did to one extracted renderer.</summary>
-        sealed class Outcome
-        {
-            public Mesh Mesh;
-            public int[] KeptVertices;
-            public int Triangles;
-            public int Hidden;
-            /// <summary>Of the triangles occlusion removed, those written back because the cut took their cover.</summary>
-            public int Restored;
-            /// <summary>Per evaluation triangle, true for one the written mesh leaves out; null when that is every triangle occlusion removed.</summary>
-            public bool[] Removed;
-            public SkipReason Skip;
-            public string SkipDetail;
-        }
-
-        /// <summary>
-        /// The triangles one renderer keeps at one cut, over its evaluation mesh's vertices, each with the evaluation
-        /// triangle it came from, whose submesh it is drawn in.
-        /// </summary>
-        sealed class KeptTriangles
-        {
-            public int3[] Triangles;
-            public int[] Source;
-        }
-
-        /// <summary>The renderer's report, written once from what preparing found and what the cut did.</summary>
-        static RendererReport ReportOf(PreparedRenderer job, int step, Outcome outcome)
-        {
-            var written = outcome?.Mesh != null;
-            return new RendererReport
-            {
-                Renderer = job.Renderer,
-                Path = job.Path,
-                SourceMesh = job.Source,
-                OutputMesh = written ? outcome.Mesh : null,
-                TrianglesBefore = job.TrianglesBefore,
-                HiddenRemoved = written ? outcome.Hidden : 0,
-                HiddenRestored = written ? outcome.Restored : 0,
-                TrianglesAfter = written ? outcome.Triangles : job.TrianglesBefore,
-                Skip = job.Skip != SkipReason.None ? job.Skip : outcome?.Skip ?? SkipReason.None,
-                SkipDetail = job.Skip != SkipReason.None ? job.SkipDetail : outcome?.SkipDetail,
-                Occludes = job.Occludes,
-                Mirrored = job.Mirrored,
-                ExcludedFromDecimation = job.ExcludedFromDecimation,
-                SequenceLength = job.SequenceLength,
-                AllocationCut = step,
-                Error = job.Decimated ? job.Sequence.ErrorAt(step) : 0f,
-                FloorTriangles = job.FloorTriangles,
-                Weight = job.Weight,
-                LockedVertices = job.LockedVertices,
-                LockedFromZeroScale = job.LockedFromZeroScale,
-                LockedForFur = job.LockedForFur,
-                CostRaisedForGrowth = job.CostRaisedForGrowth,
-                NearVertices = job.NearVertices,
-                ClearanceRefused = job.ClearanceRefused,
-                KeptOnUnstableBones = job.KeptOnUnstableBones,
-                KeptForFur = job.KeptForFur,
-                KeptForOutline = job.KeptForOutline,
-                Declined = job.Declined,
-                // What the written mesh leaves out; otherwise a copy, since the prepared flags are what the next cut reads.
-                HiddenSourceTriangles = written && outcome.Removed != null ? outcome.Removed : (bool[])job.Hidden?.Clone(),
-                KeptVertices = written ? outcome.KeptVertices : null,
-                Liveness = job.Liveness,
-            };
-        }
-
-        /// <summary>
-        /// Puts each written mesh on its renderer, recording it in NDMF's object registry as the source mesh's
-        /// replacement first, so an error that names the new mesh leads back to the source.
-        /// </summary>
-        public static void Apply(OptimizationReport report)
-        {
-            foreach (var r in report.Renderers)
-            {
-                if (r.OutputMesh == null || r.Renderer == null) continue;
-                ObjectRegistry.RegisterReplacedObject(r.SourceMesh, r.OutputMesh);
-                switch (r.Renderer)
-                {
-                    case SkinnedMeshRenderer skinned:
-                        skinned.sharedMesh = r.OutputMesh;
-                        break;
-                    case MeshRenderer _ when r.Renderer.TryGetComponent<MeshFilter>(out var filter):
-                        filter.sharedMesh = r.OutputMesh;
-                        break;
-                }
-            }
-        }
-
-        /// <summary>
-        /// When <see cref="PipelineInput.Gate"/> asks, measures the gate (<see cref="GateRun.Measure"/>) into
-        /// <see cref="OptimizationReport.Gate"/>; otherwise does nothing. Call it after <see cref="Apply"/>, on the avatar as
-        /// this pass leaves it: each renderer holding its written mesh. That is what this pass did, before any later plugin
-        /// runs; a runner measuring the finished build reads the same only where no later pass changes a renderer the report
-        /// names. The gate restores every mesh, weight and transform it moves, so the avatar is written as without it. A measure
-        /// that throws is named under <see cref="DiagnosticKeys.GateFailed"/> and leaves <see cref="OptimizationReport.Gate"/>
-        /// null; it never fails the build.
-        /// </summary>
-        public static void MeasureGate(OptimizationReport report, PipelineInput input)
-        {
-            if (input.Gate == null) return;
-            try
-            {
-                report.Gate = GateRun.Measure(report, input.Root, input.Gate);
-            }
-            catch (Exception e)
-            {
-                report.Diagnostics.Add(new Diagnostic(DiagnosticKeys.GateFailed, true, e.Message));
-                Debug.LogException(e);
-            }
         }
 
         static PreparedRenderer Survey(Renderer renderer, PipelineInput input, PreparedAvatar prepared)
@@ -938,32 +390,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// Spends the target over the recorded sequences at one common error level, writing each renderer's step into
-        /// <paramref name="steps"/> (0 for one not decimated), and returns the level. A budget is spent less
-        /// <paramref name="reserve"/> triangles, held back for removed triangles re-judging writes back, and no higher than
-        /// the component's <see cref="AvatarMeshOptimizer.maxError"/> millimetres of weighted error when that is above 0;
-        /// <paramref name="ceilingHeld"/> says the ceiling stopped it short.
-        /// </summary>
-        static float Allocate(List<PreparedRenderer> all, AvatarMeshOptimizer settings, int reserve, int[] steps, out bool ceilingHeld)
-        {
-            ceilingHeld = false;
-            var decimated = all.Where(j => j.Decimated).ToList();
-            // The budget is the avatar's: whatever is not decimated costs its triangles in full.
-            var fixedTriangles = all.Where(j => !j.Decimated).Sum(j => j.TrianglesBefore - j.HiddenCount);
-            // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
-            // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
-            fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - j.HiddenCount - j.Sequence.InitialTriangleCount);
-            var entries = decimated.Select(j => AllocationEntry.From(j.Sequence, j.FloorTriangles, j.Weight)).ToList();
-            if (entries.Count == 0) return 0f;
-            var result = settings.target == TargetKind.TriangleBudget
-                ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles - reserve), settings.maxError / 1000f)
-                : BudgetAllocator.ForTolerance(entries, settings.tolerance / 1000f);
-            for (var i = 0; i < decimated.Count; i++) steps[all.IndexOf(decimated[i])] = result.Cuts[i];
-            ceilingHeld = result.CeilingHeld;
-            return result.Level;
-        }
-
-        /// <summary>
         /// Every renderer's surface as one clearance surface, each connected piece of each mesh its own layer, and each
         /// renderer's layer per triangle in <see cref="PreparedRenderer.Layers"/>; the one place that decides what stands in
         /// it. A triangle occlusion removed stands in it, in the piece it belongs to in the whole mesh: that piece's own
@@ -972,8 +398,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// are then the whole mesh's pieces: a renderer's other pieces (a lining under its outer) keep clear of its removed
         /// triangles as of kept ones, and pieces joined only through removed triangles are one layer, as in the source.
         /// <see cref="PipelineInput.RemovedAsNeighbours"/> off leaves a removed triangle out, so nothing is held clear of
-        /// it and the renderer cut over one written back may cross it. A renderer off at build is in it like any other,
-        /// since whatever turns it on shows it against the rest; one excluded from decimation is in it too, unmoved. So is
+        /// it and the renderer cut over one written back may cross it. A renderer off at build by its object or its
+        /// renderer is in it whole, like any other, since whatever turns it on shows it against the rest. One shown by a
+        /// clip growing a bone from zero scale is in it as nothing, since its triangles have no area as the avatar stands,
+        /// so its neighbours are held clear of nothing where it appears. One excluded from decimation is in it, unmoved. So is
         /// a renderer the pass left as it was (for Cloth, a failed extraction, or its shape keys' names) whose mesh can be
         /// read: it is still drawn where it stands, whole, so its neighbours keep clear of its source.
         /// </summary>
@@ -1016,7 +444,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// A renderer the pass leaves as it was, extracted only to stand in the clearance surface. False, with nothing to
-        /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing.
+        /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing, and its
+        /// <see cref="PreparedRenderer.SkipDetail"/> says so.
         /// </summary>
         static bool TryExtractUnchanged(PreparedRenderer job, PipelineInput input, AvatarBones bones, out EvalMesh eval)
         {
@@ -1029,6 +458,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
             catch (Exception)
             {
+                const string unheld = "its neighbours keep no clearance from it, since it could not be extracted for the clearance surface";
+                job.SkipDetail = string.IsNullOrEmpty(job.SkipDetail) ? unheld : job.SkipDetail + "; " + unheld;
                 return false;
             }
         }
@@ -1109,64 +540,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             finally
             {
                 recording.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// The triangles a renderer keeps at <paramref name="step"/>: its cut when it was cut, otherwise every triangle
-        /// occlusion left. Null, with the failure recorded, when the cut fails.
-        /// </summary>
-        static KeptTriangles Keep(PreparedRenderer job, int step, Outcome outcome, List<Diagnostic> diagnostics)
-        {
-            CutResult cut = default;
-            var cutMade = false;
-            try
-            {
-                var eval = job.Eval;
-                if (job.Decimated && step > 0)
-                {
-                    cut = job.Sequence.Cut(step, Allocator.Persistent);
-                    cutMade = true;
-                    return new KeptTriangles { Triangles = cut.Triangles.AsArray().ToArray(), Source = cut.SourceTriangle.AsArray().ToArray() };
-                }
-                var triangles = new List<int3>();
-                var source = new List<int>();
-                for (var t = 0; t < eval.TriangleCount; t++)
-                {
-                    if (job.Hidden != null && job.Hidden[t]) continue;
-                    triangles.Add(eval.Triangles[t]);
-                    source.Add(t);
-                }
-                return new KeptTriangles { Triangles = triangles.ToArray(), Source = source.ToArray() };
-            }
-            catch (Exception e)
-            {
-                Fail(job.Renderer, diagnostics, PipelineStage.Writing, e, out outcome.Skip, out outcome.SkipDetail);
-                return null;
-            }
-            finally
-            {
-                if (cutMade) cut.Dispose();
-            }
-        }
-
-        static void Write(PreparedRenderer job, KeptTriangles kept, Outcome outcome, PipelineInput input, OptimizationReport report)
-        {
-            try
-            {
-                input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Writing);
-                var submesh = new int[kept.Source.Length];
-                for (var i = 0; i < submesh.Length; i++) submesh[i] = job.Eval.TriangleSubmesh[kept.Source[i]];
-                var mesh = MeshWriter.Write(job.Source, kept.Triangles, submesh, out var keptVertices);
-                outcome.Mesh = mesh;
-                outcome.KeptVertices = keptVertices;
-                outcome.Hidden = job.HiddenCount - outcome.Restored;
-                // Every evaluation triangle is on a submesh of triangles, so each kept one is drawn.
-                outcome.Triangles = kept.Triangles.Length;
-            }
-            catch (Exception e)
-            {
-                Fail(job.Renderer, report.Diagnostics, PipelineStage.Writing, e, out outcome.Skip, out outcome.SkipDetail);
             }
         }
     }

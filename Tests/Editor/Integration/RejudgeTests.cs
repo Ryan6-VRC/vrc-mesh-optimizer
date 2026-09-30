@@ -459,7 +459,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
             Assert.That(on.TargetMet, Is.False);
             Assert.That(on.RejudgePasses, Is.GreaterThan(1));
-            Assert.That(on.Diagnostics.Count(d => d.Key == DiagnosticKeys.BudgetNotMet), Is.EqualTo(1));
+            var unmet = on.Diagnostics.Single(d => d.Key == DiagnosticKeys.BudgetNotMet);
+            Assert.That(on.HiddenRestored, Is.GreaterThan(0));
+            Assert.That(unmet.Args[2], Is.EqualTo(on.HiddenRestored.ToString()), "the description names the triangles written back");
             var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
         }

@@ -171,6 +171,21 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(lines.Last(), Does.StartWith("geometryMs="));
         }
 
+        // The ceiling, the removed triangles' place in the clearance surface and the outlines each decide a mesh, so the
+        // report records them and the gate's settings line prints them, read here at values other than their defaults.
+        [Test]
+        public void TheReport_RecordsMaxErrorRemovedAsNeighboursAndOutlines_AndTheGatePrintsThem()
+        {
+            var optimizer = a.Optimizer();
+            optimizer.maxError = 2.5f;
+            optimizer.outlinesShowInside = true;
+            var report = a.Run(tweak: i => i.RemovedAsNeighbours = false);
+
+            Assert.That((report.MaxError, report.RemovedAsNeighbours, report.OutlinesShowInside), Is.EqualTo((2.5f, false, true)));
+            var result = GateRun.Measure(report, a.Root.transform, new GateRunOptions());
+            Assert.That(result.Lines().Single(l => l.StartsWith("settings: target=")), Does.EndWith(" maxError_mm=2.5 removedAsNeighbours=False outlinesShowInside=True"));
+        }
+
         static bool CanHoldAUnityObject(Type type, HashSet<Type> seen)
         {
             if (!seen.Add(type) || type.IsPrimitive || type.IsEnum || type == typeof(string)) return false;

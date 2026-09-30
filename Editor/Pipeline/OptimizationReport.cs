@@ -207,12 +207,18 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public float Tolerance { get; internal set; }
         /// <summary>
         /// The settings besides the target that decide a mesh, as the cut ran with them: decimation's (the normal and UV
-        /// weights, clearance and its share, bends), whether it re-judged, and occlusion's. A figure read off this build is
-        /// read at these.
+        /// weights, clearance and its share, bends), whether it re-judged, occlusion's, the budget's error ceiling
+        /// (<see cref="MaxError"/>), whether removed triangles stood in the clearance surface
+        /// (<see cref="RemovedAsNeighbours"/>), and whether outlines show inside (<see cref="OutlinesShowInside"/>). A figure
+        /// read off this build is read at these.
         /// </summary>
         public DecimationSettings Decimation { get; internal set; }
         public bool Rejudge { get; internal set; }
         public OcclusionSettings Occlusion { get; internal set; }
+        /// <summary>The component's max error, in millimetres, as the component holds it; 0 is no ceiling.</summary>
+        public float MaxError { get; internal set; }
+        public bool RemovedAsNeighbours { get; internal set; }
+        public bool OutlinesShowInside { get; internal set; }
 
         public int TrianglesBefore => Renderers.Sum(r => r.TrianglesBefore);
         public int TrianglesAfter => Renderers.Sum(r => r.TrianglesAfter);
@@ -264,7 +270,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// The gate's figures on this build, measured once its meshes were applied, when the build was switched to measure
-        /// them (<see cref="BuildSettings.OverrideGate(bool)"/>); null otherwise, and when the measure threw
+        /// them (<see cref="PipelineInput.Gate"/>); null otherwise, and when the measure threw
         /// (<see cref="DiagnosticKeys.GateFailed"/>). Plain data, so it outlives the build's clone.
         /// </summary>
         internal GateResult Gate { get; set; }
@@ -332,20 +338,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
     /// <summary>
     /// The most recent optimization reports, newest last. Each holds its meshes, which keeps them loaded, so only a
-    /// few are kept; a domain reload or <see cref="Clear"/> lets them go.
+    /// few are kept; a domain reload lets them go.
     /// </summary>
     internal static class OptimizationReports
     {
         const int Kept = 4;
         static readonly List<OptimizationReport> _recent = new List<OptimizationReport>();
 
-        public static IReadOnlyList<OptimizationReport> Recent => _recent;
         public static OptimizationReport Latest => _recent.Count > 0 ? _recent[_recent.Count - 1] : null;
-
-        /// <summary>The newest report for an avatar by its root's name; a build clone's name ends "(Clone)".</summary>
-        public static OptimizationReport For(string avatarName) => _recent.LastOrDefault(r => r.AvatarName == avatarName);
-
-        public static void Clear() => _recent.Clear();
 
         internal static void Add(OptimizationReport report)
         {

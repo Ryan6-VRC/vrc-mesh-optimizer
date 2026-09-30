@@ -156,10 +156,10 @@ msgid "MeshOptimizer:diag:budget-not-met"
 msgstr "Mesh Optimizerが目標ポリゴン数に届きませんでした"
 
 msgid "MeshOptimizer:diag:budget-not-met:description"
-msgstr "アバターのポリゴン数は{0}で、目標は{1}です。"
+msgstr "アバターのポリゴン数は{0}で、目標は{1}です。そのうち{2}は、削減で覆いがなくなったため書き戻した隠れポリゴンです。"
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションでスケール0から大きくなるボーンの頂点は削除されません。目標を上げるか、削減できるレンダラーを増やしてください。"
+msgstr "削減から除外したレンダラーと変更しなかったレンダラーはそのまま数えられ、顔はポリゴンの半分を残し、指の頂点とアニメーションでスケール0から大きくなるボーンの頂点は削除されず、重なった服の層は隣の層との隙間の決まった割合より近くまでは削減されません。目標を上げるか、削減できるレンダラーを増やしてください。"
 
 msgid "MeshOptimizer:diag:budget-ceiling-held"
 msgstr "Mesh Optimizerは誤差の上限で止まり、目標ポリゴン数に届きませんでした"
