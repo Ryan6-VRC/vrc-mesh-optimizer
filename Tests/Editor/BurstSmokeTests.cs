@@ -88,15 +88,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             }
             try
             {
-                // Burst and managed code round some sums differently, which can swap two collapses of near-equal cost, so the
-                // records may part; every step's error level, a running maximum, stays within a hundredth of the managed one or a micrometre.
-                Assert.That(managed.Steps[managed.Length - 1].Error, Is.GreaterThan(1e-4f), "the sequence costs something to compare");
-                Assert.That(burst.Length, Is.EqualTo(managed.Length).Within(managed.Length / 100));
-                for (var s = 0; s < math.min(burst.Length, managed.Length); s++)
-                {
-                    var m = managed.Steps[s].Error;
-                    Assert.That(burst.Steps[s].Error, Is.EqualTo(m).Within(m * 0.01f + 1e-6f), $"step {s}'s error");
-                }
+                AssertAlike(burst, managed, "the tube");
             }
             finally
             {
@@ -105,21 +97,107 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
             }
         }
 
-        // Recordings scheduled together run side by side on worker threads, reading one clearance surface. Each must record,
-        // step for step and bit for bit, what it records alone: against layers and bends, and against a crossing.
-        [Test]
-        public void RecordingsScheduledTogether_EachRecordWhatTheyRecordAlone()
+        /// <summary>
+        /// Burst and managed code round some sums differently, which can swap two collapses of near-equal cost, so the records
+        /// may part; every step's error level, a running maximum, stays within a hundredth of the managed one or a micrometre.
+        /// </summary>
+        static void AssertAlike(in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst, in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence managed, string name)
         {
-            using var bent = new Decimation.LayerFixtures.Scene();
+            Assert.That(managed.Steps[managed.Length - 1].Error, Is.GreaterThan(1e-4f), $"{name}: the sequence costs something to compare");
+            Assert.That(burst.Length, Is.EqualTo(managed.Length).Within(managed.Length / 100), $"{name}: steps");
+            for (var s = 0; s < math.min(burst.Length, managed.Length); s++)
+            {
+                var m = managed.Steps[s].Error;
+                Assert.That(burst.Steps[s].Error, Is.EqualTo(m).Within(m * 0.01f + 1e-6f), $"{name}: step {s}'s error");
+            }
+        }
+
+        /// <summary>Step for step and bit for bit the same sequence: every error level, triangle count and record.</summary>
+        static void AssertSame(in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence x, in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence y, string name)
+        {
+            Assert.That(y.Length, Is.EqualTo(x.Length), $"{name}: steps");
+            for (var s = 0; s < x.Length; s++)
+            {
+                Assert.That(math.asuint(y.Steps[s].Error), Is.EqualTo(math.asuint(x.Steps[s].Error)), $"{name} step {s}: error");
+                Assert.That(y.Steps[s].TriangleCount, Is.EqualTo(x.Steps[s].TriangleCount), $"{name} step {s}: triangles");
+            }
+            Assert.That(y.Records.ToArray(), Is.EqualTo(x.Records.ToArray()), $"{name}: records");
+        }
+
+        /// <summary>Three tubes a millimetre or less apart over a joint, with the rig they are weighted to.</summary>
+        static Decimation.LayerFixtures.Scene BentLayers()
+        {
+            var bent = new Decimation.LayerFixtures.Scene();
             bent.Add(Decimation.BendFixtures.SkinnedTube(40, 36, 0.05f, 0f, 0.03f));
             bent.Add(Decimation.BendFixtures.SkinnedTube(36, 32, 0.0508f, 0.5f, 0.03f));
             bent.Add(Decimation.BendFixtures.SkinnedTube(30, 30, 0.0495f, 0.25f, 0.02f));
             bent.BuildSurface();
             bent.Rig = Decimation.BendFixtures.Rig();
-            using var crossing = new Decimation.LayerFixtures.Scene();
+            return bent;
+        }
+
+        /// <summary>A layer sloping through the skin, so the two cross along a ring.</summary>
+        static Decimation.LayerFixtures.Scene SlopedCrossing()
+        {
+            var crossing = new Decimation.LayerFixtures.Scene();
             crossing.Add(Decimation.LayerFixtures.SkinTube());
             crossing.Add(Decimation.LayerFixtures.LayerTube((a, y) => Decimation.LayerFixtures.Skin(a, y) + math.lerp(-0.0015f, 0.0015f, y / Decimation.LayerFixtures.Length)));
             crossing.BuildSurface();
+            return crossing;
+        }
+
+        // The loop with the clearance rule on, over the scenes the side-by-side test uses: near layers over a joint, measured in
+        // bends, and a crossing, where the rule compares crossing lengths Burst and managed code round differently. It runs at the
+        // default crossing allowance, 1e-7 m. At 1e-9 the two paths part: where a collapse leaves a crossing as it was, the
+        // rule compares two sums of segment lengths equal but for rounding, the paths put that margin apart by up to about 1.5e-8 m,
+        // and at step 1,381 of the crossing scene's skin Burst refuses a collapse managed code makes, so from there the two record
+        // different meshes. At 1e-7 every crossing check decides alike, and the crossing scene must record bit for bit the same on
+        // both paths. The bent layers' records part among collapses of near-equal cost with the rule on or off, from rounding in the
+        // bends rather than the crossing check, so they are held only to the comparison above.
+        [Test]
+        public void TheCollapseLoop_WithTheClearanceRule_RecordsUnderBurstWhatItRecordsAsManagedCode()
+        {
+            using var bent = BentLayers();
+            using var crossing = SlopedCrossing();
+            var held = JobsUtility.JobCompilerEnabled;
+            Assume.That(held, "Burst is off in this Editor, so there is no compiled code to compare");
+            foreach (var (scene, label, same) in new[] { (bent, "bent layers", false), (crossing, "crossing", true) })
+                for (var m = 0; m < scene.Meshes.Count; m++)
+                {
+                    Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst = default, managed = default;
+                    try
+                    {
+                        Ryan6Vrc.MeshOptimizer.Core.Clearance.ClearanceStats burstStats, managedStats;
+                        try
+                        {
+                            burst = scene.Decimate(m, true, out burstStats);
+                            JobsUtility.JobCompilerEnabled = false;
+                            managed = scene.Decimate(m, true, out managedStats);
+                        }
+                        finally
+                        {
+                            JobsUtility.JobCompilerEnabled = held;
+                        }
+                        TestContext.WriteLine($"{label} mesh {m}: {burst.Length} steps under Burst, {managed.Length} managed; refused {burstStats.Refused} and {managedStats.Refused}; last error {burst.Steps[burst.Length - 1].Error * 1000:0.0000} and {managed.Steps[managed.Length - 1].Error * 1000:0.0000} mm");
+                        Assert.That(burstStats.Refused, Is.GreaterThan(0), $"{label} mesh {m}: the rule acts");
+                        AssertAlike(burst, managed, $"{label} mesh {m}");
+                        if (same) AssertSame(burst, managed, $"{label} mesh {m}");
+                    }
+                    finally
+                    {
+                        burst.Dispose();
+                        managed.Dispose();
+                    }
+                }
+        }
+
+        // Recordings scheduled together run side by side on worker threads, reading one clearance surface. Each must record,
+        // step for step and bit for bit, what it records alone: against layers and bends, and against a crossing.
+        [Test]
+        public void RecordingsScheduledTogether_EachRecordWhatTheyRecordAlone()
+        {
+            using var bent = BentLayers();
+            using var crossing = SlopedCrossing();
 
             foreach (var scene in new[] { bent, crossing })
             {
@@ -140,13 +218,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
                         var x = alone[m];
                         var y = together[m];
                         Assert.That(x.Length, Is.GreaterThan(100), $"mesh {m} decimates");
-                        Assert.That(y.Length, Is.EqualTo(x.Length), $"mesh {m}: steps");
-                        for (var s = 0; s < x.Length; s++)
-                        {
-                            Assert.That(math.asuint(y.Steps[s].Error), Is.EqualTo(math.asuint(x.Steps[s].Error)), $"mesh {m} step {s}: error");
-                            Assert.That(y.Steps[s].TriangleCount, Is.EqualTo(x.Steps[s].TriangleCount), $"mesh {m} step {s}: triangles");
-                        }
-                        Assert.That(y.Records.ToArray(), Is.EqualTo(x.Records.ToArray()), $"mesh {m}: records");
+                        AssertSame(x, y, $"mesh {m}");
                     }
                 }
                 finally
