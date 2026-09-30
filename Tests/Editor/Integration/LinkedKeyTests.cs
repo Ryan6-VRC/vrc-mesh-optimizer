@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
-using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Gate;
@@ -255,9 +254,38 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(configuration.Weights[tights], Is.EqualTo(new[] { 100f }));
             Assert.That(configuration.Weights.ContainsKey(boot), Is.False, "a renderer with no member stands as it is");
 
-            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, inputs.Configurations, CrossingSettings.Default);
+            var crossing = GateRun.Measure(report, a.Root.transform, null).Crossing;
             Assert.That(crossing.Configurations, Has.Member("linked Body:heels, Tights:heels at 1"));
             Assert.That(crossing.Pairs.Any(p => p.Configuration == configuration.Name), "the pairs are measured in it");
+        }
+
+        // Two keys linked on one renderer, each swelling one half of it: the pass evaluates them only together, so the
+        // geometric channel measures the state the avatar takes, both at once, and neither alone, which it never takes.
+        [Test]
+        public void TheGeometricGate_MeasuresTwoKeysLinkedOnOneRenderer_Together_AndNeverAlone()
+        {
+            var mesh = a.Sphere(0.1f, 16, 32, name: "Body");
+            mesh.AddBlendShapeFrame("left", 100f, mesh.vertices.Select(v => v.x < 0f ? v.normalized * 0.01f : Vector3.zero).ToArray(), null, null);
+            mesh.AddBlendShapeFrame("right", 100f, mesh.vertices.Select(v => v.x < 0f ? Vector3.zero : v.normalized * 0.01f).ToArray(), null, null);
+            var body = a.Skinned("Body", mesh, new[] { a.Bone("Armature/Hips/Leg") });
+            a.Optimizer(decimate: true);
+            var root = a.Root.transform;
+            var described = new[] { LivenessSources.Describe(body, root) };
+            var liveness = ShapeKeyClassifier.Classify(described, new[] { "left", "right" }.Select(k => new ShapeKeyBinding(described[0].Path, k, new[] { 0f, 100f })), new DrivenKey[0])[0];
+
+            var report = a.Run(tweak: input =>
+            {
+                input.Liveness = new Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> { [body] = liveness };
+                input.Links = new[] { new[] { new LinkedKey(body, 0), new LinkedKey(body, 1) } };
+            });
+            Assert.That(report.Links.Single().ToString(), Is.EqualTo("Body:left, Body:right"));
+            Assert.That(Of(report, body).OutputMesh, Is.Not.Null, "the pass must write the body for the channel to measure it");
+
+            var keys = GateRun.Measure(report, root, new GateRunOptions { Geometry = true }).Geometry.Single().Kinds.Single(k => k.Kind == ConfigurationKind.ShapeKey);
+
+            Assert.That(keys.Configurations, Is.EqualTo(report.Configurations.Count), "the link's states, and neither key alone");
+            Assert.That(keys.P99At, Is.EqualTo("linked Body:left, Body:right at 1"));
+            Assert.That(keys.MaxAt, Does.StartWith("linked Body:left, Body:right at 1 "));
         }
     }
 }

@@ -208,6 +208,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 Target = settings.target,
                 TriangleBudget = settings.triangleBudget,
                 Tolerance = settings.tolerance,
+                Decimation = input.Decimation, Rejudge = input.Rejudge, Occlusion = input.Occlusion,
                 TargetMet = true,
                 OcclusionRan = prepared.OcclusionRan,
                 Declined = prepared.Declined,

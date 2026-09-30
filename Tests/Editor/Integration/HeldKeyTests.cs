@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
-using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Gate;
@@ -164,13 +163,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
             var report = a.Run(tweak: input => input.Liveness = Classified("fold", off, partway));
 
-            // Measured on the built meshes as the avatar stands, the way a viewer sees them.
-            float AsItStands(SkinnedMeshRenderer r)
-            {
-                var rr = Of(report, r);
-                var gate = GeometryGate.Measure(r, a.Root.transform, rr.SourceMesh, rr.OutputMesh, null, rr.Liveness, null, SurfaceDistanceSettings.Default);
-                return gate.Stats(0, GateDirection.SourceToOptimized).Max;
-            }
+            // Measured on the built meshes as the avatar stands, the way a viewer sees them, in both directions.
+            var gate = GateRun.Measure(report, a.Root.transform, new GateRunOptions { Geometry = true });
+            float AsItStands(SkinnedMeshRenderer r) => gate.Geometry.Single(g => g.Path == Of(report, r).Path).Kinds.Single(k => k.Kind == ConfigurationKind.AsItStands).Max;
             var before = Of(report, partway).TrianglesBefore;
             Assert.That(Of(report, off).TrianglesAfter, Is.LessThan(before / 10), "flat in every state it reaches, it collapses");
             Assert.That(AsItStands(off), Is.LessThan(0.001f));

@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Tests.Integration;
 using UnityEngine;
+using UnityEngine.TestTools;
 using static Ryan6Vrc.MeshOptimizer.Tests.Integration.AvatarFixture;
 using Object = UnityEngine.Object;
 
@@ -58,7 +62,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(masked.Stats(0, GateDirection.Combined).Max, Is.Zero);
             Assert.That(unmasked.Stats(0, GateDirection.SourceToOptimized).Max, Is.GreaterThan(0.001f));
 
-            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
+            var crossing = GateRun.Measure(report, a.Root.transform, null).Crossing;
             Assert.That(crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
             Assert.That(crossing.Pairs.Max(p => p.Change.New), Is.Zero);
         }
@@ -80,7 +84,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
             var inputs = GateReportInputs.From(report);
             Assert.That(inputs.Geometry.Select(i => i.Renderer), Is.EquivalentTo(new Renderer[] { body, inner }), "both bodies lose what their bowls cover");
-            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
+            var crossing = GateRun.Measure(report, a.Root.transform, null).Crossing;
 
             foreach (var i in inputs.Geometry)
             {
@@ -105,11 +109,101 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(Of(report, broken).Skip, Is.EqualTo(SkipReason.NonFinite), "the fixture must be skipped for its NaN");
 
             var inputs = GateReportInputs.From(report);
-            var crossing = CrossingGate.Measure(a.Root.transform, inputs.Crossing, null, null, CrossingSettings.Default);
+            var result = GateRun.Measure(report, a.Root.transform, null);
 
-            Assert.That(crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
+            Assert.That(result.Crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
             Assert.That(inputs.Geometry.Concat(inputs.Crossing).Select(i => i.Renderer), Has.No.Member(broken));
-            StringAssert.Contains("left out of both channels: NonFinite", inputs.LeftOut.Single(l => l.path == "Broken").reason);
+            StringAssert.Contains("left out of both channels: NonFinite", result.LeftOut.Single(l => l.path == "Broken").reason);
+        }
+
+        // A renderer the pass skips before its numbers are read, as Cloth, never gets the non-finite check, so it reaches the
+        // crossing channel measured unchanged with its NaN; the channel leaves it out by name and measures the rest.
+        [Test]
+        public void ARendererSkippedBeforeItsNumbersAreRead_WithANonFinitePosition_IsLeftOutOfCrossingByName()
+        {
+            var mesh = a.Sphere(0.1f, 16, 32, name: "broken");
+            var broken = a.Skinned("Broken", mesh, new[] { a.Bone("Armature/Hips/Chest") });
+            // Cloth reads the mesh once, when added; given the NaN then, Unity logs its refusal.
+            broken.gameObject.AddComponent<Cloth>();
+            var vertices = mesh.vertices;
+            vertices[40] = new Vector3(float.NaN, 0f, 0f);
+            mesh.vertices = vertices;
+            var report = a.Run();
+            Assert.That(Of(report, broken).Skip, Is.EqualTo(SkipReason.Cloth), "the fixture must be skipped before its numbers are read");
+
+            var result = GateRun.Measure(report, a.Root.transform, null);
+
+            Assert.That(result.Failures, Is.Empty, "a renderer left out is not a failed channel");
+            var crossing = result.Crossing;
+            Assert.That(crossing.Pairs.Select(p => $"{p.RendererA} x {p.RendererB}"), Does.Contain("Body x Garment"));
+            Assert.That(crossing.Pairs.Where(p => p.RendererA == "Broken" || p.RendererB == "Broken"), Is.Empty);
+            var left = crossing.LeftOut.Single();
+            Assert.That(result.LeftOut, Has.Member(left), "the runner lists it with the renderers the report's inputs left out");
+            Assert.That(left.path, Is.EqualTo("Broken"));
+            StringAssert.Contains("in as it stands: surface source vertex 40", left.reason);
+            StringAssert.Contains("not a finite position", left.reason);
+        }
+
+        // The runner's result is read after the build's clone is gone, so it holds figures and paths, never a Unity object,
+        // and measuring leaves every renderer drawing the mesh it drew.
+        [Test]
+        public void TheRunner_ReturnsFiguresByPath_ThatOutliveTheAvatar_AndLeavesItsMeshesAsTheyWere()
+        {
+            var report = a.Run();
+            var drawn = new[] { body, bowl }.Select(r => r.sharedMesh).ToArray();
+
+            var result = GateRun.Measure(report, a.Root.transform, new GateRunOptions { Geometry = true });
+
+            Assert.That(new[] { body, bowl }.Select(r => r.sharedMesh), Is.EqualTo(drawn));
+            Assert.That(CanHoldAUnityObject(typeof(GateResult), new HashSet<Type>()), Is.False);
+            Assert.That(result.Failures, Is.Empty);
+            var written = $"  meshhash Body {MeshContent.Hash(Of(report, body).OutputMesh):x16}";
+            var source = $"  sourcehash Garment {MeshContent.Hash(bowl.sharedMesh):x16}";
+            Object.DestroyImmediate(a.Root);
+            var lines = result.Lines();
+            Assert.That(lines[0], Is.EqualTo("avatar: " + report.AvatarName), "no failure, so nothing reads before the avatar");
+            Assert.That(lines, Has.Some.StartWith("[as it stands] pairs=3 "));
+            Assert.That(lines, Has.Some.StartWith("  Body: as it stands: 1 configurations, worst p99=0.000"));
+            Assert.That(lines, Has.Member("leftOut: Empty: left out of both channels: NoMesh"));
+            Assert.That(lines.SkipWhile(l => l != "-- mesh hashes").Skip(1).TakeWhile(l => l != "-- end mesh hashes"), Is.EqualTo(new[] { written }),
+                "the one mesh the pass wrote, as the measurement runner prints it");
+            Assert.That(lines, Has.Member(source));
+            Assert.That(lines.Last(), Does.StartWith("geometryMs="));
+        }
+
+        static bool CanHoldAUnityObject(Type type, HashSet<Type> seen)
+        {
+            if (!seen.Add(type) || type.IsPrimitive || type.IsEnum || type == typeof(string)) return false;
+            if (typeof(Object).IsAssignableFrom(type) || type == typeof(object)) return true;
+            if (type.IsArray) return CanHoldAUnityObject(type.GetElementType(), seen);
+            if (type.IsGenericType && type.GetGenericArguments().Any(t => CanHoldAUnityObject(t, seen))) return true;
+            if (type.Namespace != null && type.Namespace.StartsWith("System")) return false;
+            return type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Any(f => CanHoldAUnityObject(f.FieldType, seen));
+        }
+
+        // A stage the pass fell back from and a channel that threw both read before any figure, marked, so a run missing
+        // either cannot pass for a clean one.
+        [Test]
+        public void AStageThatFailedAndAChannelThatThrew_ReadFirst_MarkedFailed()
+        {
+            LogAssert.Expect(LogType.Exception, new Regex("extraction fails here"));
+            var report = a.Run(tweak: input => input.BeforeStage = (r, stage) =>
+            {
+                if (r == body && stage == PipelineStage.Extraction) throw new InvalidOperationException("extraction fails here");
+            });
+            var unusable = new BoneRotationPose("unusable", ("No/Such/Bone", Quaternion.identity));
+
+            var result = GateRun.Measure(report, a.Root.transform, new GateRunOptions { Poses = new[] { unusable } });
+
+            Assert.That(result.Crossing, Is.Null);
+            var lines = result.Lines();
+            Assert.That(lines.Take(2), Has.All.StartWith("FAILED"));
+            StringAssert.Contains("renderer-failed", lines[0]);
+            StringAssert.Contains("Body, Extraction, extraction fails here", lines[0]);
+            StringAssert.Contains("crossing channel", lines[1]);
+            StringAssert.Contains("No/Such/Bone", lines[1]);
+            Assert.That(lines[2], Does.StartWith("avatar: "));
+            Assert.That(lines, Has.Member("not measured: the channel failed (see FAILED above)"));
         }
 
         [Test]

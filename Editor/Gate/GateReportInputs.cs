@@ -23,9 +23,10 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         /// <summary>Each renderer's path, and which channels it is left out of and why.</summary>
         public readonly IReadOnlyList<(string path, string reason)> LeftOut;
         /// <summary>
-        /// For <see cref="CrossingGate"/>, one state of the whole avatar per configuration the report's links made: each linked
-        /// key at its weight in it, every other key of every renderer in <see cref="Crossing"/> where it stands. A linked key
-        /// on a renderer left out of the crossing channel is left out of its configuration.
+        /// For <see cref="CrossingGate"/>, and for <see cref="GeometryGate.MeasureInput"/> on each renderer it names, one state
+        /// of the whole avatar per configuration the report's links made: each linked key at its weight in it, every other key
+        /// of every renderer in <see cref="Crossing"/> where it stands. A linked key on a renderer left out of the crossing
+        /// channel is left out of its configuration.
         /// </summary>
         public readonly IReadOnlyList<AvatarConfiguration> Configurations;
 
@@ -54,6 +55,8 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
             var geometry = new List<GateInput>();
             var crossing = new List<GateInput>();
             var leftOut = new List<(string, string)>();
+            var linked = report.Links.SelectMany(l => l.Keys).GroupBy(k => k.Renderer)
+                .ToDictionary(g => g.Key, g => (IReadOnlyCollection<int>)g.Select(k => k.Key).Distinct().ToArray());
             foreach (var r in report.Renderers)
             {
                 if (r.SourceMesh == null || r.Skip == SkipReason.NoMesh || r.Skip == SkipReason.NoTriangles || r.Skip == SkipReason.NotReadable ||
@@ -63,15 +66,16 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
                     continue;
                 }
                 var liveness = Liveness(r);
+                linked.TryGetValue(r.Renderer, out var linkedKeys);
                 if (r.OutputMesh != null)
                 {
-                    var input = new GateInput(r.Renderer, r.SourceMesh, r.OutputMesh, r.HiddenSourceTriangles, liveness);
+                    var input = new GateInput(r.Renderer, r.SourceMesh, r.OutputMesh, r.HiddenSourceTriangles, liveness, linkedKeys);
                     geometry.Add(input);
                     crossing.Add(input);
                     continue;
                 }
                 leftOut.Add((r.Path, $"left out of the geometric channel, measured unchanged for crossing: {Why(r)}"));
-                crossing.Add(new GateInput(r.Renderer, r.SourceMesh, r.SourceMesh, null, liveness));
+                crossing.Add(new GateInput(r.Renderer, r.SourceMesh, r.SourceMesh, null, liveness, linkedKeys));
             }
             return new GateReportInputs(geometry, crossing, leftOut, Linked(report, crossing));
         }

@@ -144,6 +144,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(failed.Diagnostics.Count(d => d.Key == DiagnosticKeys.RejudgeFailed && d.Warning), Is.EqualTo(1));
             Assert.That(failed.HiddenRestored, Is.Zero);
             Assert.That(Of(failed, body).HiddenRemoved, Is.GreaterThan(0));
+            Assert.That((failed.Rejudge, failed.Occlusion.Reach, off.Rejudge, off.Decimation), Is.EqualTo((true, 0f, false, BuildSettings.Decimation)),
+                "each report records the settings its cut ran with");
             AssertSameCut(off, failed);
         }
 
