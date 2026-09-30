@@ -125,20 +125,33 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return mesh;
         }
 
+        /// <summary>
+        /// A cut of the scene, with the error ceiling at <paramref name="ceiling"/> metres: 0, the ceiling off, unless a test
+        /// asks for one, so each budget here is cut as these tests measured it before the component carried the ceiling.
+        /// </summary>
         OptimizationReport Run(TargetKind target, float value, bool rejudge, bool removedAsNeighbours = true, float ceiling = 0f)
         {
             var c = a.Optimizer(decimate: true);
             c.target = target;
             if (target == TargetKind.Tolerance) c.tolerance = value;
             else c.triangleBudget = (int)value;
+            c.maxError = Millimetres(ceiling);
             return a.Run(apply: false, tweak: input =>
             {
                 input.Rejudge = rejudge;
                 input.RemovedAsNeighbours = removedAsNeighbours;
-                var s = input.Decimation;
-                s.BudgetErrorCeiling = ceiling;
-                input.Decimation = s;
             });
+        }
+
+        /// <summary>
+        /// Millimetres the pipeline reads back as <paramref name="metres"/> or a hair over, so a ceiling set at a measured
+        /// level takes the step at that level: metres × 1000 alone can read back an ulp under it.
+        /// </summary>
+        static float Millimetres(float metres)
+        {
+            var mm = metres * 1000f;
+            while (mm / 1000f < metres) mm = BitConverter.Int32BitsToSingle(BitConverter.SingleToInt32Bits(mm) + 1);
+            return mm;
         }
 
         /// <summary>

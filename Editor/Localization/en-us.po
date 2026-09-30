@@ -35,6 +35,12 @@ msgstr "Triangle count"
 msgid "MeshOptimizer:triangleBudget:tooltip"
 msgstr "Triangles for the whole avatar after optimization."
 
+msgid "MeshOptimizer:maxError"
+msgstr "Max error (mm)"
+
+msgid "MeshOptimizer:maxError:tooltip"
+msgstr "With a triangle count as the target, the farthest, in millimetres, the optimized surface may stray from the original to reach it. A count reachable only past this is left unmet. 0 turns the limit off."
+
 msgid "MeshOptimizer:tolerance"
 msgstr "Tolerance (mm)"
 

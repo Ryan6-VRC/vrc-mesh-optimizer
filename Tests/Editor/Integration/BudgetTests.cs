@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -22,11 +23,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         [SetUp] public void SetUp() => a = new AvatarFixture();
         [TearDown] public void TearDown() => a.Dispose();
 
+        /// <summary>
+        /// A budget with the error ceiling off: these tests measure how a budget is spent, which a ceiling could stop short.
+        /// The ceiling's own tests set it.
+        /// </summary>
         AvatarMeshOptimizer Budget(int triangles)
         {
             var c = a.Optimizer(decimate: true, removeHidden: false);
             c.target = TargetKind.TriangleBudget;
             c.triangleBudget = triangles;
+            c.maxError = 0f;
             return c;
         }
 
@@ -186,14 +192,11 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var c = Budget(100);
             var free = a.Run(apply: false);
             Assert.That(free.Diagnostics.Select(d => d.Key), Has.Member(DiagnosticKeys.BudgetNotMet).And.No.Member(DiagnosticKeys.BudgetCeilingHeld));
-            var ceiling = free.ErrorLevel / 4;
+            var millimetres = free.ErrorLevel * 1000f / 4;
+            var ceiling = millimetres / 1000f;
 
-            var held = a.Run(apply: false, tweak: input =>
-            {
-                var s = input.Decimation;
-                s.BudgetErrorCeiling = ceiling;
-                input.Decimation = s;
-            });
+            c.maxError = millimetres;
+            var held = a.Run(apply: false);
 
             Assert.That(held.TargetMet, Is.False);
             Assert.That(held.ErrorLevel, Is.LessThanOrEqualTo(ceiling));
@@ -203,12 +206,70 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             var named = held.Diagnostics.Where(d => d.Key == DiagnosticKeys.BudgetCeilingHeld).ToList();
             Assert.That(named, Has.Count.EqualTo(1));
             Assert.That(named[0].Args, Is.EqualTo(new object[]
-                { held.TrianglesAfter.ToString(), "100", (ceiling * 1000f).ToString("0.###", CultureInfo.InvariantCulture) }));
+                { held.TrianglesAfter.ToString(), "100", millimetres.ToString("0.###", CultureInfo.InvariantCulture) }));
             c.target = TargetKind.Tolerance;
-            c.tolerance = ceiling * 1000f;
+            c.tolerance = millimetres;
             var tolerance = a.Run(apply: false);
             foreach (var r in new Renderer[] { face, twin })
                 Assert.That(Of(held, r).TrianglesAfter, Is.EqualTo(Of(tolerance, r).TrianglesAfter), r.name + " ships what a tolerance of the ceiling ships");
+        }
+
+        // Two balls at a budget no cut of theirs reaches. A component left at its default ceiling ships them cut no further
+        // than 5 mm, naming the ceiling; at 0 the ceiling is off and they are cut as deep as the sequences go, past 5 mm,
+        // with the budget reported not met as before the ceiling existed.
+        [Test]
+        public void ABudgetItCannotReach_StopsAtTheDefaultFiveMillimetres_AndAtZeroIsCutAsBefore()
+        {
+            var one = Ball("One", new Vector3(1, 0, 0));
+            var two = Ball("Two", new Vector3(2, 0, 0));
+            var c = a.Optimizer(decimate: true, removeHidden: false);
+            c.target = TargetKind.TriangleBudget;
+            c.triangleBudget = 10;
+
+            var held = a.Run(apply: false);
+            c.maxError = 0f;
+            var off = a.Run(apply: false);
+
+            Assert.That(off.TargetMet, Is.False);
+            Assert.That(off.ErrorLevel, Is.GreaterThan(5f / 1000f), "without the ceiling the cut goes past 5 mm");
+            Assert.That(off.Diagnostics.Count(d => d.Key == DiagnosticKeys.BudgetNotMet), Is.EqualTo(1));
+            Assert.That(off.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.BudgetCeilingHeld));
+
+            Assert.That(held.TargetMet, Is.False);
+            Assert.That(held.ErrorLevel, Is.GreaterThan(0f).And.LessThanOrEqualTo(5f / 1000f));
+            foreach (var r in new Renderer[] { one, two }) Assert.That(Of(held, r).Error, Is.LessThanOrEqualTo(5f / 1000f), r.name);
+            Assert.That(held.TrianglesAfter, Is.GreaterThan(off.TrianglesAfter));
+            Assert.That(held.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.BudgetNotMet));
+            var named = held.Diagnostics.Where(d => d.Key == DiagnosticKeys.BudgetCeilingHeld).ToList();
+            Assert.That(named, Has.Count.EqualTo(1));
+            Assert.That(named[0].Args, Is.EqualTo(new object[] { held.TrianglesAfter.ToString(), "10", "5" }));
+        }
+
+        // The ceiling is a budget's alone. A tolerance cuts the same at the default, at 0 and at a value a budget refuses;
+        // a budget refuses a negative or non-finite one before it cuts anything.
+        [TestCase(-1f)]
+        [TestCase(float.NaN)]
+        [TestCase(float.PositiveInfinity)]
+        public void ATolerance_NeverReadsMaxError_AndABudgetRefusesANegativeOrNonFiniteOne(float refused)
+        {
+            var round = Ball("Round", Vector3.zero);
+            var c = a.Optimizer(decimate: true, removeHidden: false);
+            c.target = TargetKind.Tolerance;
+            var atDefault = a.Run(apply: false);
+            Assert.That(Of(atDefault, round).TrianglesAfter, Is.LessThan(Of(atDefault, round).TrianglesBefore), "the tolerance cuts");
+
+            foreach (var maxError in new[] { 0f, refused })
+            {
+                c.maxError = maxError;
+                var report = a.Run(apply: false);
+                Assert.That(Of(report, round).TrianglesAfter, Is.EqualTo(Of(atDefault, round).TrianglesAfter), $"at {maxError}");
+                Assert.That(BitConverter.SingleToInt32Bits(report.ErrorLevel), Is.EqualTo(BitConverter.SingleToInt32Bits(atDefault.ErrorLevel)), $"at {maxError}");
+                Assert.That(report.Diagnostics.Select(d => d.Key), Is.EqualTo(atDefault.Diagnostics.Select(d => d.Key)), $"at {maxError}");
+            }
+
+            c.target = TargetKind.TriangleBudget;
+            var e = Assert.Throws<ArgumentException>(() => a.Run(apply: false));
+            Assert.That(e.Message, Does.Contain("max error"));
         }
 
         // A dense patch on the right hand: the half at +X rides the index finger, the rest the hand. Fingers are

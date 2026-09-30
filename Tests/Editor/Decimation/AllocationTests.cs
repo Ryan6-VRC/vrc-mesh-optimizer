@@ -169,10 +169,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         [TestCase(-1e-3f)]
         [TestCase(float.NaN)]
         [TestCase(float.PositiveInfinity)]
-        public void ANegativeOrNonFiniteCeiling_IsRefused_ByTheAllocatorAndTheDecimator(float ceiling)
+        public void ANegativeOrNonFiniteCeiling_IsRefused_ByTheAllocator(float ceiling)
         {
             Assert.Throws<ArgumentException>(() => BudgetAllocator.ForBudget(Weighted, Total / 2, ceiling));
-            Assert.Throws<ArgumentException>(() => Fixtures.Decimate(Fixtures.Icosphere(1, 0.1f), s => { s.BudgetErrorCeiling = ceiling; return s; }).Dispose());
         }
 
         // With no ceiling the merge is the one before the ceiling existed, held here as the oracle: over a sweep of budgets,
