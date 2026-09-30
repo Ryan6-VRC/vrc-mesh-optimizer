@@ -53,6 +53,9 @@ msgstr "Always-on renderers"
 msgid "MeshOptimizer:alwaysOn:tooltip"
 msgstr "Renderers that are never hidden. Only these can hide another renderer's triangles, so leave out anything that can be toggled off."
 
+msgid "MeshOptimizer:alwaysOn:help"
+msgstr "Only renderers on this list can hide triangles on other meshes. List only what is never toggled off: a renderer a toggle can hide must stay off the list, or whatever it covered shows as a hole when it is toggled off."
+
 msgid "MeshOptimizer:outlinesShowInside"
 msgstr "Outlines show the inside"
 
@@ -60,16 +63,19 @@ msgid "MeshOptimizer:outlinesShowInside:tooltip"
 msgstr "Keep a covered triangle whose material's outline draws its back side, for a garment whose inside is seen through its outline. Off removes more, mostly skin under clothing."
 
 msgid "MeshOptimizer:materials"
-msgstr "Material occlusion"
+msgstr "Material overrides"
 
 msgid "MeshOptimizer:materials:tooltip"
-msgstr "Per material, whether its surface hides what is behind it."
+msgstr "Materials Automatic reads wrong, each set to Opaque or See-through. Most avatars need none."
+
+msgid "MeshOptimizer:materials:help"
+msgstr "This list can stay empty: only a material Automatic reads wrong needs an entry. Automatic decides whether each material on an always-on renderer counts as cover for the triangles behind it, and is right for most materials. Set See-through, which never hides anything, on a material read as solid that has gaps, such as lace, mesh or cut-outs drawn with an opaque shader. Set Opaque, which always hides what is behind it, on a solid material read as see-through, typically one a vendor put on a transparent render queue, or one whose texture's alpha is below full where the surface is solid. The button below shows what Automatic reads each always-on material as."
 
 msgid "MaterialOcclusion:material"
 msgstr "Material"
 
 msgid "MaterialOcclusion:mode"
-msgstr "Occlusion"
+msgstr "Treat as"
 
 msgid "OcclusionMode:Automatic"
 msgstr "Automatic"
@@ -78,16 +84,58 @@ msgid "OcclusionMode:Automatic:tooltip"
 msgstr "Opaque when its render queue and render type say so; otherwise its texture's alpha decides."
 
 msgid "OcclusionMode:ForceOpaque"
-msgstr "Always opaque"
+msgstr "Opaque"
 
 msgid "OcclusionMode:ForceOpaque:tooltip"
-msgstr "Treat the whole surface as solid, whatever its alpha."
+msgstr "Always hides what is behind it, whatever its alpha."
 
 msgid "OcclusionMode:NeverOccludes"
-msgstr "Never occludes"
+msgstr "See-through"
 
 msgid "OcclusionMode:NeverOccludes:tooltip"
-msgstr "Never let this material hide anything behind it."
+msgstr "Never hides anything behind it."
+
+msgid "MeshOptimizer:check"
+msgstr "Check the always-on materials"
+
+msgid "MeshOptimizer:check:tooltip"
+msgstr "Shows what Automatic reads each material of the always-on renderers as, without adding any to the overrides. Reading a texture can take a moment."
+
+msgid "MeshOptimizer:override"
+msgstr "Set {0}"
+
+msgid "MeshOptimizer:override:tooltip"
+msgstr "Adds this material to the overrides at the opposite of what Automatic read. Use it only where Automatic read it wrong."
+
+msgid "MeshOptimizer:verdict"
+msgstr "Automatic"
+
+msgid "MeshOptimizer:verdict:tooltip"
+msgstr "What Automatic decides for this material, read the way the build reads it. A tool that replaces the material during the build can change what the build reads."
+
+msgid "MeshOptimizer:verdict:opaque"
+msgstr "Read as opaque: hides what is behind it"
+
+msgid "MeshOptimizer:verdict:opaque:tooltip"
+msgstr "Its render queue and render type say opaque. If the surface has gaps the mesh does not, such as lace or mesh, set See-through."
+
+msgid "MeshOptimizer:verdict:by-alpha"
+msgstr "Read as solid on {0}% of its texture, see-through elsewhere"
+
+msgid "MeshOptimizer:verdict:by-alpha:tooltip"
+msgstr "Its texture's alpha decides, texel by texel. If the surface is solid all over, set Opaque."
+
+msgid "MeshOptimizer:verdict:see-through"
+msgstr "Read as see-through: hides nothing"
+
+msgid "MeshOptimizer:verdict:see-through:tooltip"
+msgstr "It can be see-through, and its alpha cannot be read from its textures, so it hides nothing. If the surface is solid, set Opaque."
+
+msgid "MeshOptimizer:verdict:unchecked"
+msgstr "Not checked"
+
+msgid "MeshOptimizer:verdict:unchecked:tooltip"
+msgstr "Edited since it was checked. Press Check the always-on materials to read it again."
 
 msgid "MeshOptimizer:renderers"
 msgstr "Renderer settings"
@@ -270,10 +318,10 @@ msgid "MeshOptimizer:diag:pass-failed:hint"
 msgstr "The console holds the full error."
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched"
-msgstr "A never-occludes material matched nothing"
+msgstr "A see-through override matched nothing"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:description"
-msgstr "{0} is set to never occlude, but no renderer on the avatar uses it or a clone of it by the same name, so the setting does nothing: the material that replaced it may still hide triangles behind it."
+msgstr "{0} is set to See-through, but no renderer on the avatar uses it or a clone of it by the same name, so the setting does nothing: the material that replaced it may still hide triangles behind it."
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
 msgstr "Set the override on the material the renderer uses at build, or remove the override if the material is gone."

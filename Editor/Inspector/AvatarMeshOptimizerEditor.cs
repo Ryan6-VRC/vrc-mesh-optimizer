@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using nadena.dev.ndmf.ui;
 using Ryan6Vrc.MeshOptimizer.Preview;
@@ -11,8 +12,8 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
 {
     /// <summary>
     /// The component's inspector: every label through <see cref="L10n"/>, and only the fields the chosen settings use. The
-    /// target's fields show under the target that reads them, the occlusion lists only with hidden-triangle removal on, and
-    /// the protect settings under a collapsed Advanced group with decimation on.
+    /// target's fields show under the target that reads them, the occlusion lists only with hidden-triangle removal on, each
+    /// under a help paragraph that stays in view, and the protect settings under a collapsed Advanced group with decimation on.
     /// </summary>
     [CustomEditor(typeof(AvatarMeshOptimizer))]
     [CanEditMultipleObjects]
@@ -61,9 +62,13 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             if (_removeHidden.boolValue || _removeHidden.hasMultipleDifferentValues)
             {
                 EditorGUI.indentLevel++;
+                Help(InspectorKeys.AlwaysOnHelp);
                 EditorGUILayout.PropertyField(_alwaysOn, Label(_alwaysOn), true);
                 Field(_outlines);
+                EditorGUILayout.Space();
+                Help(InspectorKeys.MaterialsHelp);
                 EditorGUILayout.PropertyField(_materials, Label(_materials), true);
+                DrawCheck();
                 EditorGUI.indentLevel--;
             }
 
@@ -138,6 +143,103 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                            status.ErrorLevelMm.ToString("0.00")) + "\n" +
                        L10n.Tr(status.Liveness == PreviewLiveness.Descriptor ? InspectorKeys.PreviewNoteDescriptor : InspectorKeys.PreviewNoteEveryKeyLive);
             EditorGUILayout.HelpBox(text, status?.Failure != null ? MessageType.Warning : MessageType.None);
+        }
+
+        /// <summary>
+        /// The check button, then each material of the always-on renderers with what Automatic reads it as and a button
+        /// that overrides it to the opposite. Checking adds nothing to the overrides list; only the button beside a
+        /// misread material does.
+        /// </summary>
+        void DrawCheck()
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Space(EditorGUI.indentLevel * IndentWidth);
+                using (new EditorGUI.DisabledScope(targets.Length != 1))
+                    if (GUILayout.Button(L10n.G(InspectorKeys.Check)))
+                    {
+                        serializedObject.ApplyModifiedProperties();
+                        CheckAlwaysOn();
+                        // The progress bar broke this event's layout, so it ends here and the next one draws the verdicts.
+                        GUIUtility.ExitGUI();
+                    }
+            }
+            if (_checked == null || targets.Length != 1) return;
+
+            var indent = EditorGUI.indentLevel;
+            EditorGUI.indentLevel = 0;
+            foreach (var material in _checked)
+            {
+                if (material == null) continue;
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.Space(indent * IndentWidth);
+                    using (new EditorGUI.DisabledScope(true))
+                        EditorGUILayout.ObjectField(material, typeof(Material), false, GUILayout.MinWidth(60f));
+                    EditorGUILayout.LabelField(MaterialVerdicts.Describe(material), GUILayout.MinWidth(60f));
+                    var known = MaterialVerdicts.TryGet(material, out var verdict);
+                    var opposite = MaterialVerdicts.Opposite(verdict.Kind);
+                    var set = new GUIContent(string.Format(L10n.Tr(InspectorKeys.Override), L10n.Tr("OcclusionMode:" + opposite)),
+                        L10n.Tooltip(InspectorKeys.Override));
+                    using (new EditorGUI.DisabledScope(!known || IsListed(material)))
+                        if (GUILayout.Button(set, GUILayout.ExpandWidth(false))) AddOverride(material, opposite);
+                }
+            }
+            EditorGUI.indentLevel = indent;
+        }
+
+        const float IndentWidth = 15f;
+
+        /// <summary>The always-on renderers' materials last checked, in list order, or null before the first check.</summary>
+        List<Material> _checked;
+
+        /// <summary>Reads what Automatic decides for every always-on material and every overridden one.</summary>
+        void CheckAlwaysOn()
+        {
+            var optimizer = (AvatarMeshOptimizer)target;
+            _checked = optimizer.alwaysOn.Where(r => r != null).SelectMany(r => r.sharedMaterials).Where(m => m != null).Distinct().ToList();
+            var all = _checked.Concat(optimizer.materials.Where(o => o != null && o.material != null).Select(o => o.material)).Distinct().ToList();
+            var title = L10n.Tr(InspectorKeys.Check);
+            try
+            {
+                for (var i = 0; i < all.Count; i++)
+                {
+                    EditorUtility.DisplayProgressBar(title, all[i].name, (float)i / all.Count);
+                    MaterialVerdicts.Check(all[i]);
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+
+        bool IsListed(Material material)
+        {
+            for (var i = 0; i < _materials.arraySize; i++)
+                if (_materials.GetArrayElementAtIndex(i).FindPropertyRelative(nameof(MaterialOcclusion.material)).objectReferenceValue == material)
+                    return true;
+            return false;
+        }
+
+        void AddOverride(Material material, OcclusionMode mode)
+        {
+            var index = _materials.arraySize;
+            _materials.arraySize++;
+            var entry = _materials.GetArrayElementAtIndex(index);
+            entry.FindPropertyRelative(nameof(MaterialOcclusion.material)).objectReferenceValue = material;
+            // The enum's values run 0, 1, 2 in declaration order, so its value is its index.
+            entry.FindPropertyRelative(nameof(MaterialOcclusion.mode)).enumValueIndex = (int)mode;
+        }
+
+        /// <summary>A paragraph of help above a list, at the list's indent, where it reads without hovering.</summary>
+        static void Help(string key)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Space(EditorGUI.indentLevel * IndentWidth);
+                EditorGUILayout.HelpBox(L10n.Tr(key), MessageType.None);
+            }
         }
 
         static void DelayedFloat(SerializedProperty property)

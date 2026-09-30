@@ -53,6 +53,9 @@ msgstr "常時表示のレンダラー"
 msgid "MeshOptimizer:alwaysOn:tooltip"
 msgstr "常に表示されるレンダラーです。他のレンダラーのポリゴンを隠せるのはここにあるレンダラーだけなので、オフにできるものは入れないでください。"
 
+msgid "MeshOptimizer:alwaysOn:help"
+msgstr "他のメッシュのポリゴンを隠せるのは、このリストにあるレンダラーだけです。オフにならないものだけを入れてください。トグルで隠せるレンダラーを入れると、オフにしたときに、それが覆っていた部分が穴になって見えます。"
+
 msgid "MeshOptimizer:outlinesShowInside"
 msgstr "輪郭線で内側を見せる"
 
@@ -60,16 +63,19 @@ msgid "MeshOptimizer:outlinesShowInside:tooltip"
 msgstr "マテリアルの輪郭線が裏面を描くポリゴンは、覆われていても残します。輪郭線越しに内側が見える衣装向けです。オフにすると、主に服の下の肌がより多く削除されます。"
 
 msgid "MeshOptimizer:materials"
-msgstr "マテリアルごとの遮蔽"
+msgstr "マテリアルの上書き"
 
 msgid "MeshOptimizer:materials:tooltip"
-msgstr "マテリアルごとに、その面が後ろにあるものを隠すかどうかを設定します。"
+msgstr "「自動」が見誤るマテリアルを、「不透明」か「透過」に設定します。ほとんどのアバターでは不要です。"
+
+msgid "MeshOptimizer:materials:help"
+msgstr "このリストは空のままで構いません。追加が必要なのは、「自動」が見誤ったマテリアルだけです。「自動」は、常時表示のレンダラーの各マテリアルが後ろのポリゴンを覆うかどうかを判定し、ほとんどのマテリアルはそれで正しく扱われます。レースやメッシュ、不透明シェーダーで描いた切り抜きなど、すき間があるのに不透明と判定されたマテリアルは、後ろを一切隠さない「透過」にします。販売元が透過のRender Queueにしているものや、面は不透明なのにテクスチャのアルファが最大値に届いていないものなど、不透明なのに透けると判定されたマテリアルは、後ろを常に隠す「不透明」にします。下のボタンで、常時表示のマテリアルが「自動」でどう判定されるかを確認できます。"
 
 msgid "MaterialOcclusion:material"
 msgstr "マテリアル"
 
 msgid "MaterialOcclusion:mode"
-msgstr "遮蔽"
+msgstr "扱い"
 
 msgid "OcclusionMode:Automatic"
 msgstr "自動"
@@ -78,16 +84,58 @@ msgid "OcclusionMode:Automatic:tooltip"
 msgstr "Render QueueとRenderTypeが不透明を示していれば不透明として扱い、そうでなければテクスチャのアルファで判定します。"
 
 msgid "OcclusionMode:ForceOpaque"
-msgstr "常に不透明"
+msgstr "不透明"
 
 msgid "OcclusionMode:ForceOpaque:tooltip"
-msgstr "アルファに関係なく、面全体を不透明として扱います。"
+msgstr "アルファに関係なく、後ろにあるものを常に隠します。"
 
 msgid "OcclusionMode:NeverOccludes"
-msgstr "遮蔽しない"
+msgstr "透過"
 
 msgid "OcclusionMode:NeverOccludes:tooltip"
-msgstr "このマテリアルは後ろにあるものを隠さないものとして扱います。"
+msgstr "後ろにあるものを一切隠しません。"
+
+msgid "MeshOptimizer:check"
+msgstr "常時表示のマテリアルを確認"
+
+msgid "MeshOptimizer:check:tooltip"
+msgstr "常時表示のレンダラーの各マテリアルが「自動」でどう判定されるかを表示します。上書きリストには追加しません。テクスチャの読み込みに少し時間がかかることがあります。"
+
+msgid "MeshOptimizer:override"
+msgstr "「{0}」にする"
+
+msgid "MeshOptimizer:override:tooltip"
+msgstr "このマテリアルを、「自動」の判定と逆の設定で上書きリストに追加します。「自動」が見誤ったときだけ使ってください。"
+
+msgid "MeshOptimizer:verdict"
+msgstr "「自動」の判定"
+
+msgid "MeshOptimizer:verdict:tooltip"
+msgstr "このマテリアルについて「自動」が下す判定で、ビルドと同じ方法で読み取っています。ビルド中にマテリアルを置き換えるツールがあると、ビルドでの判定が変わることがあります。"
+
+msgid "MeshOptimizer:verdict:opaque"
+msgstr "不透明と判定: 後ろを隠します"
+
+msgid "MeshOptimizer:verdict:opaque:tooltip"
+msgstr "Render QueueとRenderTypeが不透明を示しています。レースやメッシュなど、メッシュにないすき間が面にあるなら「透過」にしてください。"
+
+msgid "MeshOptimizer:verdict:by-alpha"
+msgstr "テクスチャの{0}%で不透明、それ以外は透過と判定"
+
+msgid "MeshOptimizer:verdict:by-alpha:tooltip"
+msgstr "テクスチャのアルファがテクセルごとに判定します。面全体が不透明なら「不透明」にしてください。"
+
+msgid "MeshOptimizer:verdict:see-through"
+msgstr "透過と判定: 何も隠しません"
+
+msgid "MeshOptimizer:verdict:see-through:tooltip"
+msgstr "透ける可能性があり、アルファをテクスチャから読み取れないため、何も隠しません。面が不透明なら「不透明」にしてください。"
+
+msgid "MeshOptimizer:verdict:unchecked"
+msgstr "未確認"
+
+msgid "MeshOptimizer:verdict:unchecked:tooltip"
+msgstr "確認した後に変更されています。「常時表示のマテリアルを確認」を押すと、もう一度判定します。"
 
 msgid "MeshOptimizer:renderers"
 msgstr "レンダラーごとの設定"
@@ -270,10 +318,10 @@ msgid "MeshOptimizer:diag:pass-failed:hint"
 msgstr "詳しいエラーはコンソールにあります。"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched"
-msgstr "「遮蔽しない」に設定したマテリアルがどれにも一致しません"
+msgstr "「透過」に設定したマテリアルがどれにも一致しません"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:description"
-msgstr "{0}は「遮蔽しない」に設定されていますが、アバターのどのレンダラーもこのマテリアルや同名の複製を使っていないため、この設定は効いていません。置き換わったマテリアルが背後のポリゴンを隠すことがあります。"
+msgstr "{0}は「透過」に設定されていますが、アバターのどのレンダラーもこのマテリアルや同名の複製を使っていないため、この設定は効いていません。置き換わったマテリアルが背後のポリゴンを隠すことがあります。"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
 msgstr "ビルド時にレンダラーが使うマテリアルに設定し直すか、マテリアルがもう無ければ設定を削除してください。"

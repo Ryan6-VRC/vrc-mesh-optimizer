@@ -52,10 +52,28 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         };
     }
 
+    /// <summary>An override, with a third line saying what Automatic reads the material as once it has been checked.</summary>
     [CustomPropertyDrawer(typeof(MaterialOcclusion))]
     internal sealed class MaterialOcclusionDrawer : LocalizedEntryDrawer
     {
         protected override Type Entry => typeof(MaterialOcclusion);
         protected override string[] Fields => new[] { nameof(MaterialOcclusion.material), nameof(MaterialOcclusion.mode) };
+
+        static Material MaterialOf(SerializedProperty property) =>
+            property.FindPropertyRelative(nameof(MaterialOcclusion.material)).objectReferenceValue as Material;
+
+        public override float GetPropertyHeight(SerializedProperty property, GUIContent label) =>
+            base.GetPropertyHeight(property, label) +
+            (MaterialVerdicts.TryGet(MaterialOf(property), out _) ? EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing : 0f);
+
+        public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
+        {
+            base.OnGUI(position, property, label);
+            var material = MaterialOf(property);
+            if (!MaterialVerdicts.TryGet(material, out _)) return;
+            var line = new Rect(position.x, position.y + Fields.Length * (EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing),
+                position.width, EditorGUIUtility.singleLineHeight);
+            EditorGUI.LabelField(line, L10n.G(InspectorKeys.Verdict), MaterialVerdicts.Describe(material));
+        }
     }
 }

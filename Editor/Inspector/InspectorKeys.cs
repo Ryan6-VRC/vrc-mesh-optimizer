@@ -17,5 +17,14 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         public const string PreviewNoteEveryKeyLive = "MeshOptimizer:preview:note:every-key-live";
         public const string PreviewProgress = "MeshOptimizer:preview:progress";
         public const string PreviewProgressInfo = "MeshOptimizer:preview:progress:info";
+        public const string AlwaysOnHelp = "MeshOptimizer:alwaysOn:help";
+        public const string MaterialsHelp = "MeshOptimizer:materials:help";
+        public const string Check = "MeshOptimizer:check";
+        public const string Override = "MeshOptimizer:override";
+        public const string Verdict = "MeshOptimizer:verdict";
+        public const string VerdictOpaque = "MeshOptimizer:verdict:opaque";
+        public const string VerdictByAlpha = "MeshOptimizer:verdict:by-alpha";
+        public const string VerdictSeeThrough = "MeshOptimizer:verdict:see-through";
+        public const string VerdictUnchecked = "MeshOptimizer:verdict:unchecked";
     }
 }
