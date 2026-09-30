@@ -9,19 +9,19 @@ msgid "MeshOptimizer:decimate"
 msgstr "Decimate"
 
 msgid "MeshOptimizer:decimate:tooltip"
-msgstr "Collapse edges to lower the triangle count, keeping the shape wherever the avatar deforms or animates it."
+msgstr "Collapse edges to lower the triangle count while keeping the shape wherever the avatar bends or animates."
 
 msgid "MeshOptimizer:removeHiddenTriangles"
 msgstr "Remove hidden triangles"
 
 msgid "MeshOptimizer:removeHiddenTriangles:tooltip"
-msgstr "Delete triangles that an always-on renderer riding the same bones covers from every direction."
+msgstr "Delete triangles that an always-on renderer on the same bones covers from every direction."
 
 msgid "MeshOptimizer:target"
 msgstr "Target"
 
 msgid "MeshOptimizer:target:tooltip"
-msgstr "Reduce to a triangle count for the whole avatar, or as far as a tolerance allows."
+msgstr "Reduce the whole avatar to a triangle count, or as far as a tolerance allows."
 
 msgid "TargetKind:TriangleBudget"
 msgstr "Triangle count"
@@ -39,37 +39,37 @@ msgid "MeshOptimizer:maxError"
 msgstr "Max error (mm)"
 
 msgid "MeshOptimizer:maxError:tooltip"
-msgstr "With a triangle count as the target, the farthest, in millimetres, the optimized surface may stray from the original to reach it. A count reachable only past this is left unmet. 0 turns the limit off."
+msgstr "How far, in millimetres, the surface may move to reach the triangle count. If the count needs more than this, it is left unmet. Set 0 for no limit."
 
 msgid "MeshOptimizer:tolerance"
 msgstr "Tolerance (mm)"
 
 msgid "MeshOptimizer:tolerance:tooltip"
-msgstr "The farthest, in millimetres, the optimized surface may stray from the original."
+msgstr "How far, in millimetres, the optimized surface may move from the original."
 
 msgid "MeshOptimizer:alwaysOn"
 msgstr "Always-on renderers"
 
 msgid "MeshOptimizer:alwaysOn:tooltip"
-msgstr "Renderers that are never hidden. Only these can hide another renderer's triangles, so leave out anything that can be toggled off."
+msgstr "Renderers that are never hidden. Only these can hide triangles on other meshes, so leave out anything a toggle can turn off."
 
 msgid "MeshOptimizer:alwaysOn:help"
-msgstr "Only renderers on this list hide the triangles they cover on other meshes, which are then removed. List only renderers that are never toggled off: when a listed renderer is hidden, what it covered shows as a hole."
+msgstr "Triangles covered by a renderer on this list are removed. Only list renderers that are never toggled off, because if one is hidden in game, whatever it covered shows as a hole."
 
 msgid "MeshOptimizer:outlinesShowInside"
 msgstr "Outlines show the inside"
 
 msgid "MeshOptimizer:outlinesShowInside:tooltip"
-msgstr "Keep a covered triangle whose material's outline draws its back side, for a garment whose inside is seen through its outline. Off removes more, mostly skin under clothing."
+msgstr "Keep covered triangles whose material's outline draws their back side. Turn this on for a garment whose inside you can see through its outline. Leaving it off removes more, mostly skin under clothing."
 
 msgid "MeshOptimizer:materials"
 msgstr "Material overrides"
 
 msgid "MeshOptimizer:materials:tooltip"
-msgstr "Materials Automatic reads wrong, each set to Opaque or See-through. Automatic is right for most materials. Set See-through on a material read as solid that has gaps, such as lace, mesh or cut-outs drawn with an opaque shader. Set Opaque on a solid material read as see-through, typically one a vendor put on a transparent render queue, or one whose texture's alpha is below full where the surface is solid. The check button below shows what Automatic reads each always-on material as."
+msgstr "Automatic gets most materials right. Set See-through on a material with gaps that Automatic reads as solid, such as lace, mesh or cut-outs drawn with an opaque shader. Set Opaque on a solid material that Automatic reads as see-through, usually because the vendor put it on a transparent render queue or its texture's alpha is not fully solid. Analyze renderer materials shows what Automatic decides for each one."
 
 msgid "MeshOptimizer:materials:help"
-msgstr "Automatic decides whether each material on an always-on renderer hides the triangles behind it. This list can stay empty: add a material only where Automatic reads it wrong, as Opaque, which hides what is behind it, or See-through, which hides nothing."
+msgstr "Automatic decides whether each material on an always-on renderer hides what is behind it, so leave this list empty unless it gets one wrong. Opaque always hides what is behind it, and See-through never does."
 
 msgid "MaterialOcclusion:material"
 msgstr "Material"
@@ -81,13 +81,13 @@ msgid "OcclusionMode:Automatic"
 msgstr "Automatic"
 
 msgid "OcclusionMode:Automatic:tooltip"
-msgstr "Opaque when its render queue and render type say so; otherwise its texture's alpha decides."
+msgstr "Opaque if its render queue and render type say so. Otherwise its texture's alpha decides."
 
 msgid "OcclusionMode:ForceOpaque"
 msgstr "Opaque"
 
 msgid "OcclusionMode:ForceOpaque:tooltip"
-msgstr "Always hides what is behind it, whatever its alpha."
+msgstr "Always hides what is behind it, whatever its alpha says."
 
 msgid "OcclusionMode:NeverOccludes"
 msgstr "See-through"
@@ -96,46 +96,46 @@ msgid "OcclusionMode:NeverOccludes:tooltip"
 msgstr "Never hides anything behind it."
 
 msgid "MeshOptimizer:check"
-msgstr "Check the always-on materials"
+msgstr "Analyze renderer materials"
 
 msgid "MeshOptimizer:check:tooltip"
-msgstr "Shows what Automatic reads each material of the always-on renderers as, without adding any to the overrides. Reading a texture can take a moment."
+msgstr "Show what Automatic decides for each material on the always-on renderers. Nothing is added to the overrides. Reading textures can take a moment."
 
 msgid "MeshOptimizer:override"
 msgstr "Set {0}"
 
 msgid "MeshOptimizer:override:tooltip"
-msgstr "Adds this material to the overrides at the opposite of what Automatic read. Use it only where Automatic read it wrong."
+msgstr "Add this material to the overrides with the opposite setting. Only do this if Automatic got it wrong."
 
 msgid "MeshOptimizer:verdict"
-msgstr "Automatic reads"
+msgstr "Automatic decides"
 
 msgid "MeshOptimizer:verdict:tooltip"
-msgstr "What Automatic decides for this material, read the way the build reads it. A tool that replaces the material during the build can change what the build reads."
+msgstr "What Automatic decides for this material, worked out the same way the build does it. If another tool swaps the material during the build, the result can differ."
 
 msgid "MeshOptimizer:verdict:opaque"
 msgstr "Opaque"
 
 msgid "MeshOptimizer:verdict:opaque:tooltip"
-msgstr "Read as opaque: it hides what is behind it. Its render queue and render type say opaque. If the surface has gaps the mesh does not, such as lace or mesh, set See-through."
+msgstr "Its render queue and render type say opaque, so it hides what is behind it. If the surface has gaps the mesh does not, such as lace or mesh, set See-through."
 
 msgid "MeshOptimizer:verdict:by-alpha"
 msgstr "{0}% solid"
 
 msgid "MeshOptimizer:verdict:by-alpha:tooltip"
-msgstr "Read as solid on this share of its texture and see-through elsewhere. Its texture's alpha decides, texel by texel. If the surface is solid all over, set Opaque."
+msgstr "Solid on this share of its texture and see-through on the rest, judged texel by texel from the texture's alpha. If the surface is solid all over, set Opaque."
 
 msgid "MeshOptimizer:verdict:see-through"
 msgstr "See-through"
 
 msgid "MeshOptimizer:verdict:see-through:tooltip"
-msgstr "Read as see-through. It can be see-through, and its alpha cannot be read from its textures, so it hides nothing. If the surface is solid, set Opaque."
+msgstr "It may be transparent and its alpha cannot be read from its textures, so it hides nothing. If the surface is solid, set Opaque."
 
 msgid "MeshOptimizer:verdict:unchecked"
-msgstr "Not checked"
+msgstr "Not analyzed"
 
 msgid "MeshOptimizer:verdict:unchecked:tooltip"
-msgstr "Edited since it was checked. Press Check the always-on materials to read it again."
+msgstr "Changed since the last analysis. Press Analyze renderer materials again."
 
 msgid "MeshOptimizer:renderers"
 msgstr "Renderer settings"
@@ -153,31 +153,31 @@ msgid "MeshOptimizer:column:exclude"
 msgstr "Exclude"
 
 msgid "MeshOptimizer:column:exclude:tooltip"
-msgstr "Exclude from decimation: never decimate this renderer. Its hidden triangles are still removed."
+msgstr "Never decimate this renderer. Its hidden triangles are still removed."
 
 msgid "RendererSettings:protection"
 msgstr "Protection"
 
 msgid "RendererSettings:protection:tooltip"
-msgstr "How much detail this renderer keeps: its error counts this many times over against the target. 1 is neutral; higher keeps more."
+msgstr "How much detail this renderer keeps. Its error counts this many times over against the target, so 1 is neutral and higher keeps more."
 
 msgid "MeshOptimizer:faceFloor"
 msgstr "Face keeps at least"
 
 msgid "MeshOptimizer:faceFloor:tooltip"
-msgstr "The share of its triangles the lip-sync face renderer keeps, whatever the target. Its expressions deform it most and other players watch it, so the reduction is spent elsewhere first."
+msgstr "The smallest share of its triangles the lip-sync face mesh keeps, whatever the target. The face deforms the most and other players are looking at it, so the reduction happens elsewhere first."
 
 msgid "MeshOptimizer:lockFingers"
 msgstr "Lock fingers"
 
 msgid "MeshOptimizer:lockFingers:tooltip"
-msgstr "Keep every vertex that rides a finger, found through the humanoid rig. Fingers bend at every joint and thin out quickly when decimated."
+msgstr "Never remove vertices on the fingers, found through the humanoid rig. Fingers bend at every joint and fall apart quickly when decimated."
 
 msgid "MeshOptimizer:fingerWeight"
 msgstr "Finger weight"
 
 msgid "MeshOptimizer:fingerWeight:tooltip"
-msgstr "A vertex with at least this much skin weight on a finger bone counts as a finger vertex. Lower locks more of the hand."
+msgstr "A vertex with at least this much skin weight on a finger bone counts as part of the finger. Lower values lock more of the hand."
 
 msgid "MeshOptimizer:advanced"
 msgstr "Advanced"
@@ -186,7 +186,7 @@ msgid "MeshOptimizer:preset"
 msgstr "Preset"
 
 msgid "MeshOptimizer:preset:tooltip"
-msgstr "A tolerance to start from. Fine keeps the most detail and Coarse removes the most; editing the tolerance by hand makes it Custom."
+msgstr "A starting tolerance. Fine keeps the most detail and Coarse removes the most. Typing your own tolerance switches this to Custom."
 
 msgid "TolerancePreset:Fine"
 msgstr "Fine (0.5 mm)"
@@ -207,25 +207,25 @@ msgid "MeshOptimizer:preview"
 msgstr "Preview decimation"
 
 msgid "MeshOptimizer:preview:tooltip"
-msgstr "Show the decimated meshes in the Scene view. The first preview records every mesh and can take a while; changing the target afterwards only re-cuts."
+msgstr "Show the decimated meshes in the Scene view. The first time it processes every mesh, which can take a few seconds. After that, changing the target updates it almost at once."
 
 msgid "MeshOptimizer:preview:off"
 msgstr "The preview is off."
 
 msgid "MeshOptimizer:preview:pending"
-msgstr "The preview is being computed."
+msgstr "Computing the preview."
 
 msgid "MeshOptimizer:preview:result"
 msgstr "Triangles {0} → {1}, error level {2} mm"
 
 msgid "MeshOptimizer:preview:failed"
-msgstr "The preview failed: {0}"
+msgstr "The preview failed. {0}"
 
 msgid "MeshOptimizer:preview:note:descriptor"
-msgstr "Counts are estimated from the avatar descriptor; the build's report is exact. The preview shows decimation only; hidden triangles are removed at build."
+msgstr "These counts are estimated from the avatar descriptor, and the build's report has the exact numbers. The preview shows decimation only. Hidden triangles are removed when you build."
 
 msgid "MeshOptimizer:preview:note:every-key-live"
-msgstr "Counts are estimated with every shape key judged as animated, since the avatar root has no avatar descriptor; the build's report is exact. The preview shows decimation only; hidden triangles are removed at build."
+msgstr "The avatar root has no avatar descriptor, so these counts treat every shape key as animated. The build's report has the exact numbers. The preview shows decimation only. Hidden triangles are removed when you build."
 
 msgid "MeshOptimizer:preview:progress"
 msgstr "Mesh Optimizer preview"
@@ -237,7 +237,7 @@ msgid "MeshOptimizer:diag:not-readable"
 msgstr "Mesh Optimizer cannot read {1}"
 
 msgid "MeshOptimizer:diag:not-readable:description"
-msgstr "{0} was left as it was: its mesh {1} does not allow reading in play mode."
+msgstr "{0} was left unchanged because its mesh {1} cannot be read in play mode."
 
 msgid "MeshOptimizer:diag:not-readable:hint"
 msgstr "Turn on Read/Write in the model's import settings, or build for upload, where the mesh can be read."
@@ -246,55 +246,55 @@ msgid "MeshOptimizer:diag:cloth"
 msgstr "Mesh Optimizer skipped a renderer with Cloth"
 
 msgid "MeshOptimizer:diag:cloth:description"
-msgstr "{0} was left as it was: its Cloth component addresses the mesh's vertices by index, so they cannot be removed."
+msgstr "{0} was left unchanged. Its Cloth component refers to the mesh's vertices by index, so none of them can be removed."
 
 msgid "MeshOptimizer:diag:cloth:hint"
-msgstr "Nothing to do unless this renderer's triangle count matters; then reduce its mesh before it gets Cloth."
+msgstr "If this renderer's triangle count matters, reduce its mesh before adding Cloth. Otherwise there is nothing to do."
 
 msgid "MeshOptimizer:diag:renderer-failed"
 msgstr "Mesh Optimizer failed on a renderer"
 
 msgid "MeshOptimizer:diag:renderer-failed:description"
-msgstr "{0} failed during {1}: {2}. Every other renderer was still optimized."
+msgstr "{0} failed during {1}. Every other renderer was still optimized. {2}"
 
 msgid "MeshOptimizer:diag:renderer-failed:hint"
-msgstr "The console holds the full error. A renderer that failed during Extraction or Writing was left as it was; one that failed during Decimation kept only its hidden-triangle removal."
+msgstr "The full error is in the console. A renderer that failed during Extraction or Writing was left unchanged, and one that failed during Decimation still had its hidden triangles removed."
 
 msgid "MeshOptimizer:diag:occlusion-failed"
 msgstr "Mesh Optimizer could not find hidden triangles"
 
 msgid "MeshOptimizer:diag:occlusion-failed:description"
-msgstr "Removing hidden triangles failed, so no triangle was removed for being hidden: {0}"
+msgstr "Finding hidden triangles failed, so none were removed. {0}"
 
 msgid "MeshOptimizer:diag:occlusion-failed:hint"
-msgstr "The console holds the full error. Decimation still ran."
+msgstr "The full error is in the console. Decimation still ran."
 
 msgid "MeshOptimizer:diag:rejudge-failed"
 msgstr "Mesh Optimizer could not check hidden triangles against the decimated meshes"
 
 msgid "MeshOptimizer:diag:rejudge-failed:description"
-msgstr "Checking whether decimation uncovered any removed hidden triangle failed, so they stay removed as first found: {0}"
+msgstr "Checking whether decimation exposed any removed triangles failed, so they all stay removed. {0}"
 
 msgid "MeshOptimizer:diag:rejudge-failed:hint"
-msgstr "The console holds the full error. Where decimation coarsened an always-on mesh, a hole may show through it; a looser budget or tolerance makes one less likely."
+msgstr "The full error is in the console. Where an always-on mesh was decimated, a hole may show through it. A looser budget or tolerance makes that less likely."
 
 msgid "MeshOptimizer:diag:budget-not-met"
 msgstr "Mesh Optimizer did not reach the triangle count"
 
 msgid "MeshOptimizer:diag:budget-not-met:description"
-msgstr "The avatar has {0} triangles against a target of {1}; {2} of them are hidden triangles written back because the cut took their cover."
+msgstr "The avatar has {0} triangles against a target of {1}. {2} of them are hidden triangles that were put back because decimation removed what covered them."
 
 msgid "MeshOptimizer:diag:budget-not-met:hint"
-msgstr "Renderers excluded from decimation or left as they were count in full, the face keeps half its triangles, vertices on fingers or on bones an animation grows from zero scale are never removed, and no layer of clothing is cut closer to the layer beside it than its share of the gap between them. Raise the target, or allow more renderers to be decimated."
+msgstr "Some triangles are never cut. Renderers excluded from decimation or left unchanged count in full, the face keeps the share set under Advanced, vertices on fingers or on bones an animation grows from zero scale are kept, and no clothing layer is cut closer to the next than its share of the gap between them. Raise the target, or let more renderers be decimated."
 
 msgid "MeshOptimizer:diag:budget-ceiling-held"
 msgstr "Mesh Optimizer stopped at its error ceiling before the triangle count"
 
 msgid "MeshOptimizer:diag:budget-ceiling-held:description"
-msgstr "The avatar has {0} triangles against a target of {1}: reaching it would move the surface further than the {2} mm the error ceiling allows."
+msgstr "The avatar has {0} triangles against a target of {1}. Reaching the target would move the surface more than the {2} mm the error ceiling allows."
 
 msgid "MeshOptimizer:diag:budget-ceiling-held:hint"
-msgstr "The meshes are cut no further than the ceiling allows, rather than distorted to meet the count. Raise the target to an amount the avatar reaches within the ceiling."
+msgstr "The meshes were cut only as far as the ceiling allows instead of being distorted to hit the count. Raise the triangle count to one the avatar can reach, or raise Max error."
 
 msgid "MeshOptimizer:diag:always-on-is-off"
 msgstr "An always-on renderer is off"
@@ -309,7 +309,7 @@ msgid "MeshOptimizer:diag:multiple-components"
 msgstr "More than one Mesh Optimizer on the avatar"
 
 msgid "MeshOptimizer:diag:multiple-components:description"
-msgstr "Found {0}; only the settings on {1} were used."
+msgstr "Found {0}. Only the settings on {1} were used."
 
 msgid "MeshOptimizer:diag:multiple-components:hint"
 msgstr "Keep one Mesh Optimizer per avatar."
@@ -318,16 +318,16 @@ msgid "MeshOptimizer:diag:pass-failed"
 msgstr "Mesh Optimizer failed"
 
 msgid "MeshOptimizer:diag:pass-failed:description"
-msgstr "The avatar was left as it was: {0}"
+msgstr "The avatar was left unchanged. {0}"
 
 msgid "MeshOptimizer:diag:pass-failed:hint"
-msgstr "The console holds the full error."
+msgstr "The full error is in the console."
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched"
 msgstr "A see-through override matched nothing"
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:description"
-msgstr "{0} is set to See-through, but no renderer on the avatar uses it or a clone of it by the same name, so the setting does nothing: the material that replaced it may still hide triangles behind it."
+msgstr "{0} is set to See-through, but no renderer on the avatar uses it or a clone of it with the same name, so the setting does nothing. Whatever material replaced it may still hide triangles."
 
 msgid "MeshOptimizer:diag:never-occludes-unmatched:hint"
 msgstr "Set the override on the material the renderer uses at build, or remove the override if the material is gone."
@@ -336,16 +336,16 @@ msgid "MeshOptimizer:diag:non-finite-vertex"
 msgstr "Mesh Optimizer skipped a mesh with a vertex that is not a number"
 
 msgid "MeshOptimizer:diag:non-finite-vertex:description"
-msgstr "{0} was left as it was: its vertex {1} has a position or texture coordinate that is not a finite number, which every error the optimizer measures would read as no error at all."
+msgstr "{0} was left unchanged. Its vertex {1} has a position or texture coordinate that is not a finite number, which would make every error the optimizer measures read as zero."
 
 msgid "MeshOptimizer:diag:non-finite-vertex:hint"
-msgstr "Re-export the mesh from its source; a broken export or bone weight usually leaves such a vertex."
+msgstr "Re-export the mesh from its source. A broken export or bone weight usually causes this."
 
 msgid "MeshOptimizer:diag:non-finite-shape-key"
 msgstr "Mesh Optimizer skipped a mesh with a shape key that is not a number"
 
 msgid "MeshOptimizer:diag:non-finite-shape-key:description"
-msgstr "{0} was left as it was: its shape key {1} moves vertex {2} by a distance that is not a finite number, which every error the optimizer measures would read as no error at all."
+msgstr "{0} was left unchanged. Its shape key {1} moves vertex {2} by a distance that is not a finite number, which would make every error the optimizer measures read as zero."
 
 msgid "MeshOptimizer:diag:non-finite-shape-key:hint"
 msgstr "Fix or remove the shape key in the mesh's source and re-export it."
@@ -354,16 +354,16 @@ msgid "MeshOptimizer:diag:duplicate-shape-key"
 msgstr "Mesh Optimizer skipped a mesh with two shape keys of one name"
 
 msgid "MeshOptimizer:diag:duplicate-shape-key:description"
-msgstr "{0} was left as it was: more than one of its shape keys is named {1}, and Unity finds a shape key by its name, so a new mesh could not keep both."
+msgstr "{0} was left unchanged. More than one of its shape keys is named {1}, and because Unity finds shape keys by name, a new mesh could not keep both."
 
 msgid "MeshOptimizer:diag:duplicate-shape-key:hint"
-msgstr "Rename the shape keys in the mesh's source so that each name is used once, and re-export it."
+msgstr "Rename the shape keys in the mesh's source so each name is used once, then re-export it."
 
 msgid "MeshOptimizer:diag:gate-failed"
 msgstr "Mesh Optimizer could not measure the gate"
 
 msgid "MeshOptimizer:diag:gate-failed:description"
-msgstr "The gate measurement this build was switched on for failed, so the report holds no gate figures. The avatar is optimized as it would be without it: {0}"
+msgstr "The gate measurement switched on for this build failed, so the report has no gate figures. The avatar is optimized exactly as it would be without it. {0}"
 
 msgid "MeshOptimizer:diag:gate-failed:hint"
-msgstr "The console holds the full error. The gate is a measurement that runs only when switched on, so nothing on the avatar needs fixing."
+msgstr "The full error is in the console. The gate only runs when it is switched on, so nothing on the avatar needs fixing."
