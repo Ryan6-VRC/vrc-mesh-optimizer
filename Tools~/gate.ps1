@@ -93,9 +93,11 @@ $before = @(& git -C $root status --porcelain --untracked-files=all)
 $runArgs = @('-NoProfile', '-File', $runner, '-Project', $Venue, '-Assemblies', $Assembly,
              '-Tag', $Tag, '-TimeoutSec', $TimeoutSec)
 # Unity's runner runs [Explicit] tests in an unfiltered run, so a whole run excludes the measurement
-# fixtures by name instead: a leading "!" makes a -testFilter regex exclude what it matches. Under an
-# exclusion an [Explicit] test is no longer run, so one not named *Benchmark is a skip, and fails here.
-if (-not $Filter) { $Filter = '!Benchmark\b'; Write-Host "[gate] whole run: fixtures named *Benchmark left out" }
+# fixtures by name instead: a leading "!" makes a -testFilter regex exclude what it matches, and this
+# one matches the methods of a fixture whose name ends in Benchmark, not a method so named.
+# Under an exclusion an [Explicit] test is no longer run, so one not named *Benchmark is a skip, and
+# fails here.
+if (-not $Filter) { $Filter = '!Benchmark\.\w+(\(|$)'; Write-Host "[gate] whole run: fixtures named *Benchmark left out" }
 $runArgs += @('-Filter', $Filter)
 & pwsh @runArgs 2>&1 | Tee-Object -Variable out | Out-Host
 $code = $LASTEXITCODE
