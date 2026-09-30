@@ -17,6 +17,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         public const string PreviewNoteEveryKeyLive = "MeshOptimizer:preview:note:every-key-live";
         public const string PreviewProgress = "MeshOptimizer:preview:progress";
         public const string PreviewProgressInfo = "MeshOptimizer:preview:progress:info";
+        public const string ColumnExclude = "MeshOptimizer:column:exclude";
         public const string AlwaysOnHelp = "MeshOptimizer:alwaysOn:help";
         public const string MaterialsHelp = "MeshOptimizer:materials:help";
         public const string Check = "MeshOptimizer:check";

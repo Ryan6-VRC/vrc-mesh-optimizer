@@ -54,7 +54,7 @@ msgid "MeshOptimizer:alwaysOn:tooltip"
 msgstr "常に表示されるレンダラーです。他のレンダラーのポリゴンを隠せるのはここにあるレンダラーだけなので、オフにできるものは入れないでください。"
 
 msgid "MeshOptimizer:alwaysOn:help"
-msgstr "他のメッシュのポリゴンを隠せるのは、このリストにあるレンダラーだけです。オフにならないものだけを入れてください。トグルで隠せるレンダラーを入れると、オフにしたときに、それが覆っていた部分が穴になって見えます。"
+msgstr "他のメッシュで覆っているポリゴンを隠して削除できるのは、このリストにあるレンダラーだけです。オフにならないものだけを入れてください。リストのレンダラーを隠すと、覆っていた部分が穴になって見えます。"
 
 msgid "MeshOptimizer:outlinesShowInside"
 msgstr "輪郭線で内側を見せる"
@@ -66,10 +66,10 @@ msgid "MeshOptimizer:materials"
 msgstr "マテリアルの上書き"
 
 msgid "MeshOptimizer:materials:tooltip"
-msgstr "「自動」が見誤るマテリアルを、「不透明」か「透過」に設定します。ほとんどのアバターでは不要です。"
+msgstr "「自動」が見誤るマテリアルを、「不透明」か「透過」に設定します。ほとんどのマテリアルは「自動」で正しく扱われます。レースやメッシュ、不透明シェーダーで描いた切り抜きなど、すき間があるのに不透明と判定されたマテリアルは「透過」にします。販売元が透過のRender Queueにしているものや、面は不透明なのにテクスチャのアルファが最大値に届いていないものなど、不透明なのに透けると判定されたマテリアルは「不透明」にします。下の確認ボタンで、常時表示のマテリアルが「自動」でどう判定されるかを確認できます。"
 
 msgid "MeshOptimizer:materials:help"
-msgstr "このリストは空のままで構いません。追加が必要なのは、「自動」が見誤ったマテリアルだけです。「自動」は、常時表示のレンダラーの各マテリアルが後ろのポリゴンを覆うかどうかを判定し、ほとんどのマテリアルはそれで正しく扱われます。レースやメッシュ、不透明シェーダーで描いた切り抜きなど、すき間があるのに不透明と判定されたマテリアルは、後ろを一切隠さない「透過」にします。販売元が透過のRender Queueにしているものや、面は不透明なのにテクスチャのアルファが最大値に届いていないものなど、不透明なのに透けると判定されたマテリアルは、後ろを常に隠す「不透明」にします。下のボタンで、常時表示のマテリアルが「自動」でどう判定されるかを確認できます。"
+msgstr "「自動」は、常時表示のレンダラーの各マテリアルが後ろのポリゴンを隠すかどうかを判定します。このリストは空のままで構いません。「自動」が見誤ったマテリアルだけを、後ろを隠す「不透明」か、何も隠さない「透過」で追加してください。"
 
 msgid "MaterialOcclusion:material"
 msgstr "マテリアル"
@@ -114,22 +114,22 @@ msgid "MeshOptimizer:verdict:tooltip"
 msgstr "このマテリアルについて「自動」が下す判定で、ビルドと同じ方法で読み取っています。ビルド中にマテリアルを置き換えるツールがあると、ビルドでの判定が変わることがあります。"
 
 msgid "MeshOptimizer:verdict:opaque"
-msgstr "不透明と判定: 後ろを隠します"
+msgstr "不透明"
 
 msgid "MeshOptimizer:verdict:opaque:tooltip"
-msgstr "Render QueueとRenderTypeが不透明を示しています。レースやメッシュなど、メッシュにないすき間が面にあるなら「透過」にしてください。"
+msgstr "不透明と判定され、後ろを隠します。Render QueueとRenderTypeが不透明を示しています。レースやメッシュなど、メッシュにないすき間が面にあるなら「透過」にしてください。"
 
 msgid "MeshOptimizer:verdict:by-alpha"
-msgstr "テクスチャの{0}%で不透明、それ以外は透過と判定"
+msgstr "{0}%が不透明"
 
 msgid "MeshOptimizer:verdict:by-alpha:tooltip"
-msgstr "テクスチャのアルファでテクセルごとに判定します。面全体が不透明なら「不透明」にしてください。"
+msgstr "テクスチャのこの割合で不透明、それ以外は透過と判定されます。テクスチャのアルファでテクセルごとに判定します。面全体が不透明なら「不透明」にしてください。"
 
 msgid "MeshOptimizer:verdict:see-through"
-msgstr "透過と判定: 何も隠しません"
+msgstr "透過"
 
 msgid "MeshOptimizer:verdict:see-through:tooltip"
-msgstr "透ける可能性があり、アルファをテクスチャから読み取れないため、何も隠しません。面が不透明なら「不透明」にしてください。"
+msgstr "透過と判定されています。透ける可能性があり、アルファをテクスチャから読み取れないため、何も隠しません。面が不透明なら「不透明」にしてください。"
 
 msgid "MeshOptimizer:verdict:unchecked"
 msgstr "未確認"
@@ -148,6 +148,12 @@ msgstr "ポリゴン削減から除外"
 
 msgid "RendererSettings:excludeFromDecimation:tooltip"
 msgstr "このレンダラーのポリゴンは削減しません。隠れたポリゴンの削除は行われます。"
+
+msgid "MeshOptimizer:column:exclude"
+msgstr "除外"
+
+msgid "MeshOptimizer:column:exclude:tooltip"
+msgstr "ポリゴン削減から除外: このレンダラーのポリゴンは削減しません。隠れたポリゴンの削除は行われます。"
 
 msgid "RendererSettings:protection"
 msgstr "保護の強さ"
@@ -216,10 +222,10 @@ msgid "MeshOptimizer:preview:failed"
 msgstr "プレビューに失敗しました: {0}"
 
 msgid "MeshOptimizer:preview:note:descriptor"
-msgstr "ポリゴン数はAvatar Descriptorの内容から見積もった値で、正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
+msgstr "ポリゴン数はAvatar Descriptorの内容から見積もった値で、正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
 
 msgid "MeshOptimizer:preview:note:every-key-live"
-msgstr "アバターのルートにAvatar Descriptorがないため、すべてのシェイプキーを動くものとして見積もっています。正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
+msgstr "アバターのルートにAvatar Descriptorがないため、すべてのシェイプキーを動くものとして見積もっています。正確な値はビルド時のレポートに出ます。プレビューはポリゴン削減のみを表示し、隠れたポリゴンの削除はビルド時に行われます。"
 
 msgid "MeshOptimizer:preview:progress"
 msgstr "Mesh Optimizer プレビュー"

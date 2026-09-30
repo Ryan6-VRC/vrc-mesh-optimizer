@@ -154,6 +154,29 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
+        // A list's header and its one-line rows share this split, so its columns line up only if the fixed columns pack
+        // against the right edge in order and the first column takes what is left, never less than nothing.
+        [Test]
+        public void ListColumns_PackAgainstTheRightEdge_AndTheFirstTakesTheRest()
+        {
+            var columns = Columns.Split(new Rect(10f, 2f, 300f, 18f), 40f, 60f);
+
+            Assert.That(columns.Length, Is.EqualTo(3));
+            Assert.That(columns[2].xMax, Is.EqualTo(310f));
+            Assert.That(columns[2].width, Is.EqualTo(60f));
+            Assert.That(columns[1].xMax, Is.EqualTo(columns[2].x - 4f));
+            Assert.That(columns[1].width, Is.EqualTo(40f));
+            Assert.That(columns[0].x, Is.EqualTo(10f));
+            Assert.That(columns[0].xMax, Is.EqualTo(columns[1].x - 4f));
+            foreach (var c in columns)
+            {
+                Assert.That(c.y, Is.EqualTo(2f));
+                Assert.That(c.height, Is.EqualTo(18f));
+            }
+
+            Assert.That(Columns.Split(new Rect(0f, 0f, 80f, 18f), 40f, 60f)[0].width, Is.EqualTo(0f));
+        }
+
         // The decimation defaults a build runs with, which the component does not expose: the normal term's weight, the
         // clearance rule on at its share and crossing allowance, bends at their swing and share of the gap, and re-judging
         // on. Each is a measured choice, tuned on real avatars against the triangles it costs, so changing one is a decision
