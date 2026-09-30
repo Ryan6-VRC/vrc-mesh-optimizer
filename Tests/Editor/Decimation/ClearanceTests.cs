@@ -111,6 +111,38 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(kv.Value, Is.Zero, $"with the rule, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
         }
 
+        // Two layers 3 mm apart, each with a nearer layer on its far side: tights 0.2 mm over the skin, and a lining with
+        // its outer 0.5 mm over it. Each must keep a share of the 3 mm between the pair. Read against its nearest layer of
+        // any, each is held only to a share of its 0.2 or 0.5 mm, may cross nearly all 3 mm toward the other, and the two
+        // meet at 2 and 4 mm cuts.
+        [Test]
+        public void TwoLayersEachWithANearerLayerBeyond_KeepTheGapBetweenThem()
+        {
+            const float tight = 0.0002f, lining = 0.0032f, outer = 0.0037f;
+            using var scene = new Scene();
+            scene.Add(SkinTube());
+            var a = scene.Add(LayerTube(Over(tight)));
+            var b = scene.Add(Tube(64, 40, Length, Over(lining)));
+            scene.Add(LayerTube(Over(outer)));
+            scene.BuildSurface();
+            Assert.That(Crossing(scene.Builders[a], scene.Builders[b]), Is.Zero, "the source layers do not cross");
+            // Each layer is judged against the others' sources, so the skin's and the outer's own cuts do not bear on the pair.
+            using var ta = scene.Decimate(a, true, out _);
+            using var tb = scene.Decimate(b, true, out _);
+            var levels = new[] { 0.002f, 0.004f };
+            var result = new Dictionary<(float, float), float>();
+            foreach (var la in levels)
+            foreach (var lb in levels)
+            {
+                using var ca = ta.Cut(Fixtures.CutAtError(ta, la), Allocator.Persistent);
+                using var cb = tb.Cut(Fixtures.CutAtError(tb, lb), Allocator.Persistent);
+                result[(la, lb)] = NewCrossing(scene.Builders[a], Fixtures.ToArray(ca.Triangles), scene.Builders[b], Fixtures.ToArray(cb.Triangles));
+            }
+            TestContext.WriteLine($"new crossing between the tight layer and the lining: {string.Join(", ", result.Select(kv => $"{kv.Key.Item1 * 1000}/{kv.Key.Item2 * 1000} mm: {kv.Value * 1000:0.00} mm"))}");
+            foreach (var kv in result)
+                Assert.That(kv.Value, Is.Zero, $"new crossing, tight layer cut at {kv.Key.Item1 * 1000} mm and the lining at {kv.Key.Item2 * 1000} mm");
+        }
+
         /// <summary>
         /// A layer whose gap to the skin runs linearly from <paramref name="from"/> at the bottom to <paramref name="to"/>
         /// at the top: through zero, it crosses the skin along a ring, as a boot crosses the tights inside it; from
