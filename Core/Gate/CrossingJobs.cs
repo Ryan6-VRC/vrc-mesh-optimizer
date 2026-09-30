@@ -8,78 +8,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
 {
     internal static class TriangleCrossing
     {
-        /// <summary>
-        /// Where triangles a and b cross, if they do. Each triangle's corners are measured against the other's plane; a
-        /// pair crosses only when each triangle reaches past the other's plane on both sides by more than
-        /// <paramref name="touch"/>. That leaves out a triangle lying on the other or meeting it along an edge or at a
-        /// corner, whatever the rounding, and a coplanar pair. Each triangle then cuts the other's plane along a
-        /// segment of the planes' common line; the crossing is where the two segments overlap.
-        /// </summary>
-        public static bool Cross(float3 a0, float3 a1, float3 a2, float3 b0, float3 b1, float3 b2, float touch, out CrossingSegment segment)
-        {
-            segment = default;
-            var na = math.cross(a1 - a0, a2 - a0);
-            var nb = math.cross(b1 - b0, b2 - b0);
-            var la = math.length(na);
-            var lb = math.length(nb);
-            if (!(la > 0f) || !(lb > 0f)) return false;
-            na /= la;
-            nb /= lb;
-
-            var da = new float3(math.dot(nb, a0 - b0), math.dot(nb, a1 - b0), math.dot(nb, a2 - b0));
-            if (!(math.cmax(da) > touch && math.cmin(da) < -touch)) return false;
-            var db = new float3(math.dot(na, b0 - a0), math.dot(na, b1 - a0), math.dot(na, b2 - a0));
-            if (!(math.cmax(db) > touch && math.cmin(db) < -touch)) return false;
-
-            var dir = math.cross(na, nb);
-            var ld = math.length(dir);
-            if (!(ld > 0f)) return false;
-            dir /= ld;
-
-            Cut(a0, a1, a2, da, out var pa, out var qa);
-            Cut(b0, b1, b2, db, out var pb, out var qb);
-            Order(dir, ref pa, ref qa, out var ta0, out var ta1);
-            Order(dir, ref pb, ref qb, out var tb0, out var tb1);
-            var start = ta0 >= tb0 ? pa : pb;
-            var end = ta1 <= tb1 ? qa : qb;
-            if (!(math.min(ta1, tb1) - math.max(ta0, tb0) > touch)) return false;
-
-            segment = new CrossingSegment
-            {
-                Start = start,
-                End = end,
-                ReachA = math.min(math.cmax(da), -math.cmin(da)),
-                ReachB = math.min(math.cmax(db), -math.cmin(db)),
-                SameFacing = math.dot(na, nb) > 0f,
-            };
-            return true;
-        }
-
-        /// <summary>The two points where a triangle straddling a plane meets it, from the corner alone on its side.</summary>
-        static void Cut(float3 v0, float3 v1, float3 v2, float3 d, out float3 p, out float3 q)
-        {
-            var above = d > 0f;
-            var count = (above.x ? 1 : 0) + (above.y ? 1 : 0) + (above.z ? 1 : 0);
-            // The lone corner is the one whose side the other two do not share.
-            var lone = count == 1 ? above : !above;
-            float3 k, u, w;
-            float dk, du, dw;
-            if (lone.x) { k = v0; dk = d.x; u = v1; du = d.y; w = v2; dw = d.z; }
-            else if (lone.y) { k = v1; dk = d.y; u = v2; du = d.z; w = v0; dw = d.x; }
-            else { k = v2; dk = d.z; u = v0; du = d.x; w = v1; dw = d.y; }
-            p = k + (u - k) * (dk / (dk - du));
-            q = k + (w - k) * (dk / (dk - dw));
-        }
-
-        static void Order(float3 dir, ref float3 p, ref float3 q, out float tp, out float tq)
-        {
-            tp = math.dot(dir, p);
-            tq = math.dot(dir, q);
-            if (tp <= tq) return;
-            (p, q) = (q, p);
-            (tp, tq) = (tq, tp);
-        }
-
         public static float DistanceToSegment(float3 p, float3 a, float3 b)
         {
             var ab = b - a;
@@ -177,10 +105,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
                     var pmin = math.min(prim.A, math.min(prim.B, prim.C));
                     var pmax = math.max(prim.A, math.max(prim.B, prim.C));
                     if (math.any(pmin > hi) || math.any(pmax < lo)) continue;
-                    if (!TriangleCrossing.Cross(a0, a1, a2, prim.A, prim.B, prim.C, Touch, out var segment)) continue;
-                    segment.TriangleA = i;
-                    segment.TriangleB = prim.Triangle;
-                    Found.Enqueue(segment);
+                    if (!TriangleDistance.Intersect(a0, a1, a2, prim.A, prim.B, prim.C, Touch, out var x)) continue;
+                    Found.Enqueue(new CrossingSegment
+                    {
+                        Start = x.Start,
+                        End = x.End,
+                        Length = x.Length,
+                        TriangleA = i,
+                        TriangleB = prim.Triangle,
+                        ReachA = x.ReachA,
+                        ReachB = x.ReachB,
+                        SameFacing = x.SameFacing,
+                    });
                 }
             }
         }

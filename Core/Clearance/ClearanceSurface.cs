@@ -566,12 +566,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
                         if (PrimLayer[k] == layer) continue;
                         var prim = Prims[k];
                         if (q.PrimApart(prim, 0f)) continue;
-                        var length = TriangleDistance.IntersectionSegment(a, b, c, prim.A, prim.B, prim.C, out var s, out var e);
-                        total += length;
-                        if (drift > 0f && length > 0f && !strays &&
-                            (PointToLayer(s, layer, drift * 2f) > drift ||
-                             PointToLayer(e, layer, drift * 2f) > drift ||
-                             PointToLayer((s + e) * 0.5f, layer, drift * 2f) > drift))
+                        if (!TriangleDistance.Intersect(a, b, c, prim.A, prim.B, prim.C, TriangleDistance.Touch, out var x)) continue;
+                        total += x.Length;
+                        if (drift > 0f && !strays &&
+                            (PointToLayer(x.Start, layer, drift * 2f) > drift ||
+                             PointToLayer(x.End, layer, drift * 2f) > drift ||
+                             PointToLayer((x.Start + x.End) * 0.5f, layer, drift * 2f) > drift))
                             strays = true;
                     }
                     continue;

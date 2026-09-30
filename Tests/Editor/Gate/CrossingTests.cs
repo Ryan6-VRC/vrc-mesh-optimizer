@@ -189,7 +189,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(stats.Length, Is.EqualTo(0.01).Within(1e-6));
         }
 
-        static CrossingSegment Segment(float3 start, float3 end) => new CrossingSegment { Start = start, End = end, SameFacing = true };
+        static CrossingSegment Segment(float3 start, float3 end) => new CrossingSegment { Start = start, End = end, Length = math.distance(start, end), SameFacing = true };
 
         [Test]
         public void NewCrossingRunningAwayFromAShippedOne_IsNewFromWhereItLeavesNearness()
@@ -254,7 +254,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
 
         static uint[] Bits(CrossingSegment[] segments) => segments.SelectMany(s => new[]
         {
-            math.asuint(s.Start.x), math.asuint(s.Start.y), math.asuint(s.Start.z), math.asuint(s.End.x), math.asuint(s.End.y), math.asuint(s.End.z),
+            math.asuint(s.Start.x), math.asuint(s.Start.y), math.asuint(s.Start.z), math.asuint(s.End.x), math.asuint(s.End.y), math.asuint(s.End.z), math.asuint(s.Length),
             (uint)s.TriangleA, (uint)s.TriangleB, math.asuint(s.ReachA), math.asuint(s.ReachB),
         }).ToArray();
     }
