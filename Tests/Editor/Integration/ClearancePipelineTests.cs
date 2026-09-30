@@ -108,7 +108,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         // Neighbours are what occlusion kept. Body deleted under an always-on garment is not there to be passed through,
         // so it holds nothing back; kept, the same body is a neighbour to the whole garment. Re-judging is off: where the
         // cut garment both uncovers and crosses the deleted body, re-judging writes some of it back where it stands, crossed
-        // by the garment, since the rule never saw it; what is measured here is what the rule saw.
+        // by the garment, since the rule never saw it; what is measured here is what the rule saw. A build re-judges by
+        // default, and with the switch on this fixture writes back about 130 body triangles and the last assertion reads
+        // about 7 cm of crossing, so what ships is not what this test checks.
         [Test]
         public void BodyDeletedUnderTheGarment_IsNoNeighbour()
         {
