@@ -17,7 +17,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     /// The rule it applies, per sample of a hidden triangle (its corners, and the lattice the rule samples
     /// inside a large one): the sample is weighted, and every ray of the cone about its geometric normal, on
     /// the side it renders, is
-    /// blocked by a kept face of another always-on renderer that holds the share on the sample's kin bones
+    /// blocked by a kept face of another always-on renderer, one its mesh lets block, that holds the share on the sample's kin bones
     /// and renders opaque where the ray meets it. A triangle whose material renders its back is owed cover on
     /// that side too. It is lenient in the solver's favour only by float noise (<see cref="EdgeSlack"/>), so
     /// two implementations' rounding never reads as a failure.
@@ -48,6 +48,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             public List<Dictionary<int, double3>> Frames = new List<Dictionary<int, double3>>();
             public List<int> FrameIds = new List<int>();
             public bool Occludes;
+            /// <summary>Per triangle, whether it may block; null for every triangle.</summary>
+            public bool[] Blocks;
             public OccluderSubmesh[] Submeshes;
             public List<int>[] VertTris;
         }
@@ -59,10 +61,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             public int Mesh, Tri;
         }
 
+        /// <summary>
+        /// With <paramref name="setback"/>, per mesh in metres, the rule a re-judge asks: a sample of mesh a whose cone is not
+        /// blocked is still covered when a face of mesh b meets the ray from its origin straight back against its normal,
+        /// within the origin offset and setback[b], and <paramref name="behind"/>[a] names b by bit min(b, 63); null names
+        /// every mesh.
+        /// </summary>
         public static Report Check(IReadOnlyList<OcclusionMesh> meshes, int[] parents, bool[] vanishes,
-                                   OcclusionSettings s, OcclusionResult[] results, int maxViolations = 8)
+                                   OcclusionSettings s, OcclusionResult[] results, int maxViolations = 8,
+                                   float[] setback = null, ulong[] behind = null)
         {
-            var c = new Checker(meshes, parents, vanishes, s, results, maxViolations);
+            var c = new Checker(meshes, parents, vanishes, s, results, maxViolations) { Setback = setback, Behind = behind };
             c.Run();
             return c.R;
         }
@@ -77,6 +86,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             readonly OcclusionResult[] results;
             readonly int maxViolations;
             readonly double3[] cone;
+            public float[] Setback;
+            public ulong[] Behind;
             public readonly Report R = new Report();
 
             public Checker(IReadOnlyList<OcclusionMesh> meshes, int[] parents, bool[] vanishes, OcclusionSettings s,
@@ -99,7 +110,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             static MeshData Load(OcclusionMesh om)
             {
                 var e = om.Mesh;
-                var d = new MeshData { Occludes = om.Occludes, Submeshes = om.Submeshes };
+                var d = new MeshData { Occludes = om.Occludes, Blocks = om.Blocks, Submeshes = om.Submeshes };
                 var n = e.Positions.Length;
                 d.Pos = new double3[n];
                 d.Nrm = new double3[n];
@@ -208,7 +219,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                     if (d.Occludes)
                         for (var t = 0; t < d.Tris.Length; t++)
                         {
-                            if (results[m].HiddenTriangles[t]) continue;
+                            if (results[m].HiddenTriangles[t] || d.Blocks != null && !d.Blocks[t]) continue;
                             var sub = Sub(d, t);
                             if (sub != null && sub.Mode == OccluderMode.NeverOccludes) continue;
                             if (TouchesVanishing(d, d.Tris[t])) continue;
@@ -485,19 +496,47 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                 var u = math.normalize(math.cross(n, up));
                 var w = math.cross(n, u);
                 var o = p + n * s.OriginOffset;
+                bool? behind = null;
                 foreach (var c in cone)
                 {
                     var dir = math.normalize(u * c.x + w * c.y + n * c.z);
                     R.RaysCast++;
-                    if (!Blocked(cfg, m, o, dir, allowed))
+                    if (Blocked(cfg, m, o, dir, allowed, null)) continue;
+                    behind ??= CoveredBehind(cfg, m, o, n, allowed);
+                    if (!behind.Value)
                         return $"the ray {dir} from {o} meets no kept co-moving opaque face";
                 }
                 return null;
             }
 
-            bool Blocked(Config cfg, int own, double3 o, double3 dir, HashSet<int> allowed)
+            /// <summary>
+            /// With <see cref="Setback"/>: a face of a mesh b the sample's mesh names lies on the line straight back from the
+            /// sample's origin against its normal, within the origin offset and setback[b], and blocks a ray cast out along
+            /// the normal from there, the line a viewer in front of the sample looks down.
+            /// </summary>
+            bool CoveredBehind(Config cfg, int m, double3 o, double3 n, HashSet<int> allowed)
             {
-                var reach = s.Reach * (1 + 1e-6) + 1e-9;
+                if (Setback == null) return false;
+                for (var b = 0; b < M.Length; b++)
+                {
+                    if (Behind != null && (Behind[m] & (1UL << Math.Min(b, 63))) == 0 || Setback[b] <= 0f) continue;
+                    var reachOf = new double[M.Length];
+                    reachOf[b] = s.OriginOffset + Setback[b];
+                    if (Blocked(cfg, m, o - n * reachOf[b], n, allowed, reachOf)) return true;
+                }
+                return false;
+            }
+
+            /// <summary>Whether a kept face blocks the ray within the reach, or, with <paramref name="reachOf"/>, a face of a mesh within its own.</summary>
+            bool Blocked(Config cfg, int own, double3 o, double3 dir, HashSet<int> allowed, double[] reachOf)
+            {
+                double far = s.Reach;
+                if (reachOf != null)
+                {
+                    far = 0;
+                    foreach (var r in reachOf) far = Math.Max(far, r);
+                }
+                var reach = far * (1 + 1e-6) + 1e-9;
                 var h = cfg.Cell;
                 cfg.Ray++;
                 // Amanatides-Woo: every cell the ray passes through, nearest first, out to reach.
@@ -518,7 +557,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
                         {
                             if (cfg.Stamp[i] == cfg.Ray) continue;
                             cfg.Stamp[i] = cfg.Ray;
-                            if (BlocksRay(cfg.Faces[i], own, o, dir, reach, allowed)) return true;
+                            var f = cfg.Faces[i];
+                            var within = reachOf == null ? reach : reachOf[f.Mesh] * (1 + 1e-6) + 1e-9;
+                            if (reachOf != null && reachOf[f.Mesh] <= 0) continue;
+                            if (BlocksRay(f, own, o, dir, within, allowed)) return true;
                         }
                     var axis = tMax.x <= tMax.y && tMax.x <= tMax.z ? 0 : tMax.y <= tMax.z ? 1 : 2;
                     if (tMax[axis] > reach) return false;

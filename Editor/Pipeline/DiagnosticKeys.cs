@@ -14,6 +14,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public const string RendererFailed = "MeshOptimizer:diag:renderer-failed";
         /// <summary>{0} the exception's message.</summary>
         public const string OcclusionFailed = "MeshOptimizer:diag:occlusion-failed";
+        /// <summary>{0} the exception's message.</summary>
+        public const string RejudgeFailed = "MeshOptimizer:diag:rejudge-failed";
         /// <summary>{0} the triangles reached, {1} the budget.</summary>
         public const string BudgetNotMet = "MeshOptimizer:diag:budget-not-met";
         /// <summary>{0} the renderer.</summary>
@@ -34,7 +36,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         public static readonly string[] All =
         {
-            NotReadable, Cloth, RendererFailed, OcclusionFailed, BudgetNotMet, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
+            NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
             NonFiniteVertex, NonFiniteShapeKey, DuplicateShapeKey,
         };
     }

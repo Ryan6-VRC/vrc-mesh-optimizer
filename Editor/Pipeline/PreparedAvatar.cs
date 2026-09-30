@@ -32,6 +32,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public bool OcclusionRan;
         public DeclineCounts Declined;
         public OcclusionStats OcclusionStats;
+        /// <summary>
+        /// What the occlusion solve read beyond the renderers, kept so a cut judges its removals again by the same rule: its
+        /// settings, and the avatar's bone table with the unstable bones marked as vanishing. Set only once occlusion ran.
+        /// </summary>
+        public OcclusionSettings OcclusionSettings;
+        public int[] BoneParents;
+        public bool[] VanishingBones;
         public readonly List<string> UnstableBones = new List<string>();
         /// <summary>The problems preparing raised, in the order it raised them.</summary>
         public readonly List<Diagnostic> Diagnostics = new List<Diagnostic>();
@@ -73,8 +80,16 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public bool Mirrored;
 
         public bool Occludes;
+        /// <summary>Per submesh, the sides it draws and how it blocks, as the occlusion solve read them; null when occlusion did not run.</summary>
+        public OccluderSubmesh[] OccluderSubmeshes;
         /// <summary>Per evaluation triangle, true when occlusion removed it; null when occlusion did not decide on this renderer.</summary>
         public bool[] Hidden;
+        /// <summary>
+        /// Per evaluation vertex, and per evaluation triangle for the samples inside it, front then back, the renderers whose
+        /// faces covered that side in the occlusion solve, by their index in <see cref="PreparedAvatar.Extracted"/>
+        /// (<see cref="OcclusionResult.CoveredBy"/>); null when occlusion did not decide on this renderer.
+        /// </summary>
+        public ulong[] CoveredBy, InteriorCoveredBy;
         public int KeptOnUnstableBones;
         public int KeptForFur;
         public int KeptForOutline;

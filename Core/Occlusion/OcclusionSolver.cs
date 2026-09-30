@@ -32,6 +32,17 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// the first verdict, the hidden occluder faces are removed and every hidden candidate whose cover rests
     /// on a mesh that lost faces is re-evaluated, configurations included; only what stays covered is hidden.
     /// Each hidden triangle is then covered by faces that are kept.
+    ///
+    /// Masks: a mesh may name which of its triangles are candidates and which block (<see cref="OcclusionMesh.Candidate"/>,
+    /// <see cref="OcclusionMesh.Blocks"/>). Only candidates are sampled and judged, and only blocking faces of always-on
+    /// meshes are occluders. Unset, every triangle is both, which is the rule above to the bit.
+    ///
+    /// Setback: a solve that asks again after occluders moved may give each a setback (<see cref="OcclusionMesh.Setback"/>)
+    /// and each candidate the meshes that covered it before (<see cref="OcclusionMesh.CoveredBy"/>, as a solve reports them
+    /// in <see cref="OcclusionResult.CoveredBy"/>). A sample the rule above finds uncovered is then still covered when a face
+    /// of a mesh it names, one that blocks by the rule's own tests, lies straight behind it, back along its normal, within
+    /// that mesh's setback: the cover moved past it by no more than that, and a viewer sees the cover where it stood. That
+    /// is one ray a sample, cast only when the cone fails. With no setback, the solve is the rule's own to the bit.
     /// </summary>
     public static class OcclusionSolver
     {
@@ -77,8 +88,16 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             public NativeArray<float3> Pos, Nrm, GeoN;
             public NativeArray<float2> Uv;
             public NativeArray<int> VertMesh, WeightStart, TriMesh, TriOcc, VTStart, VTList;
-            /// <summary>Per triangle: its material renders its back. Per vertex: some such triangle uses it.</summary>
+            /// <summary>Per triangle: a candidate whose material renders its back. Per vertex: some such triangle uses it.</summary>
             public NativeArray<bool> TriTwoSided, NeedsBack;
+            /// <summary>Per triangle: it may be hidden (<see cref="OcclusionMesh.Candidate"/>). Per vertex: some such triangle uses it, so it is sampled.</summary>
+            public NativeArray<bool> TriCandidate, VertCandidate;
+            /// <summary>Two per vertex and two per triangle, front then back: <see cref="OcclusionMesh.CoveredBy"/> and <see cref="OcclusionMesh.InteriorCoveredBy"/>, every bit set where unset.</summary>
+            public NativeArray<ulong> VertCoveredBy, TriCoveredBy;
+            /// <summary>Per mesh, <see cref="OcclusionMesh.Setback"/>; zero from index 63 on.</summary>
+            public NativeArray<float> MeshSetback;
+            /// <summary>Some mesh has a setback, so some sample may be covered from behind itself.</summary>
+            public bool AnySetback;
             public NativeArray<BoneInfluence> Weights;
             public NativeArray<int3> Tris;
             public NativeArray<int> OccTri, OccMesh, MeshOccStart, MeshRoot, MeshOrder, BoneParent;
@@ -123,6 +142,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     if (e.Uv0.IsCreated && e.Uv0.Length != v) throw new ArgumentException($"mesh {m}: Uv0 has {e.Uv0.Length} entries for {v} vertices");
                     if (!e.WeightStart.IsCreated || e.WeightStart.Length != v + 1 || !e.Weights.IsCreated) throw new ArgumentException($"mesh {m}: WeightStart must have VertexCount + 1 ({v + 1}) entries over a created Weights");
                     if (e.TriangleSubmesh.IsCreated && e.TriangleSubmesh.Length != t) throw new ArgumentException($"mesh {m}: TriangleSubmesh has {e.TriangleSubmesh.Length} entries for {t} triangles");
+                    if (om.Candidate != null && om.Candidate.Length != t) throw new ArgumentException($"mesh {m}: Candidate has {om.Candidate.Length} entries for {t} triangles");
+                    if (om.Blocks != null && om.Blocks.Length != t) throw new ArgumentException($"mesh {m}: Blocks has {om.Blocks.Length} entries for {t} triangles");
+                    if (!(om.Setback >= 0f) || float.IsInfinity(om.Setback)) throw new ArgumentException($"mesh {m}: Setback is {om.Setback}; it must be finite and not negative");
+                    if (om.CoveredBy != null && om.CoveredBy.Length != 2 * v) throw new ArgumentException($"mesh {m}: CoveredBy has {om.CoveredBy.Length} entries for {v} vertices; it takes two a vertex");
+                    if (om.InteriorCoveredBy != null && om.InteriorCoveredBy.Length != 2 * t) throw new ArgumentException($"mesh {m}: InteriorCoveredBy has {om.InteriorCoveredBy.Length} entries for {t} triangles; it takes two a triangle");
                     vertBase[m + 1] = vertBase[m] + v;
                     triBase[m + 1] = triBase[m] + t;
                     weightCount += e.Weights.Length;
@@ -167,6 +191,11 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 TriOcc = new NativeArray<int>(T, a);
                 TriTwoSided = new NativeArray<bool>(T, a);
                 NeedsBack = new NativeArray<bool>(V, a);
+                TriCandidate = new NativeArray<bool>(T, a);
+                VertCandidate = new NativeArray<bool>(V, a);
+                VertCoveredBy = new NativeArray<ulong>(2 * V, a);
+                TriCoveredBy = new NativeArray<ulong>(2 * T, a);
+                MeshSetback = new NativeArray<float>(meshCount, a);
                 VTStart = new NativeArray<int>(V + 1, a);
                 VTList = new NativeArray<int>(3 * T, a);
                 Deltas = new NativeArray<ShapeDelta>(deltaCount, a);
@@ -192,7 +221,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     {
                         VertMesh[vb + i] = m;
                         WeightStart[vb + i] = w + e.WeightStart[i];
+                        for (var side = 0; side < 2; side++) VertCoveredBy[2 * (vb + i) + side] = om.CoveredBy?[2 * i + side] ?? ulong.MaxValue;
                     }
+                    for (var t = 0; t < 2 * e.TriangleCount; t++) TriCoveredBy[2 * tb + t] = om.InteriorCoveredBy?[t] ?? ulong.MaxValue;
+                    // The bit that would name a mesh from index 63 on names them all, so none of them may cover from behind.
+                    MeshSetback[m] = m < 63 ? om.Setback : 0f;
+                    AnySetback |= MeshSetback[m] > 0f;
                     for (var k = 0; k < e.Weights.Length; k++)
                         if ((uint)e.Weights[k].Bone >= (uint)boneCount)
                             throw new ArgumentException($"mesh {m}: an influence names bone {e.Weights[k].Bone}, outside the table of {boneCount}");
@@ -226,6 +260,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                         if (math.any(tri < 0) || math.any(tri >= v)) throw new ArgumentException($"mesh {m}: triangle {t} names a vertex outside 0..{v - 1}");
                         Tris[tb + t] = tri + vb;
                         TriMesh[tb + t] = m;
+                        if (om.Candidate != null && !om.Candidate[t]) continue;
+                        TriCandidate[tb + t] = true;
+                        VertCandidate[vb + tri.x] = VertCandidate[vb + tri.y] = VertCandidate[vb + tri.z] = true;
                         // A material that renders a face's back shows it to a viewer behind the face.
                         if (!mats[matBase[m] + (e.TriangleSubmesh.IsCreated ? e.TriangleSubmesh[t] : 0)].DrawsBack) continue;
                         TriTwoSided[tb + t] = true;
@@ -252,8 +289,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     Configurations.Add((start, d - start));
                 }
 
-                // Occluders: faces of always-on renderers, less any submesh that never occludes and any face
-                // that can vanish with a bone.
+                // Occluders: faces of always-on renderers that block, less any submesh that never occludes and any
+                // face that can vanish with a bone.
                 var vanishes = bones.Vanishes;
                 if (vanishes.IsCreated && vanishes.Length != boneCount) throw new ArgumentException($"bones.Vanishes has {vanishes.Length} entries for {boneCount} bones");
                 var occTri = new List<int>();
@@ -262,11 +299,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 {
                     meshOccStart[m] = occTri.Count;
                     var e = meshes[m].Mesh;
+                    var blocks = meshes[m].Blocks;
                     for (var t = 0; t < e.TriangleCount; t++)
                     {
                         var g = triBase[m] + t;
                         TriOcc[g] = -1;
-                        if (!occludes[m]) continue;
+                        if (!occludes[m] || (blocks != null && !blocks[t])) continue;
                         var mat = mats[matBase[m] + (e.TriangleSubmesh.IsCreated ? e.TriangleSubmesh[t] : 0)];
                         if (mat.Mode == OccluderMode.NeverOccludes) continue;
                         if (vanishes.IsCreated && TouchesVanishing(Tris[g], vanishes)) continue;
@@ -340,7 +378,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 void D<T>(ref NativeArray<T> x) where T : struct { if (x.IsCreated) x.Dispose(); }
                 D(ref Pos); D(ref Nrm); D(ref GeoN); D(ref Uv); D(ref VertMesh); D(ref WeightStart); D(ref Weights);
-                D(ref Tris); D(ref TriMesh); D(ref TriOcc); D(ref TriTwoSided); D(ref NeedsBack); D(ref VTStart); D(ref VTList); D(ref Deltas);
+                D(ref Tris); D(ref TriMesh); D(ref TriOcc); D(ref TriTwoSided); D(ref NeedsBack); D(ref TriCandidate); D(ref VertCandidate); D(ref VertCoveredBy); D(ref TriCoveredBy); D(ref MeshSetback); D(ref VTStart); D(ref VTList); D(ref Deltas);
                 D(ref OccTri); D(ref OccMesh); D(ref OccMat); D(ref MeshOccStart); D(ref MeshRoot); D(ref MeshOrder);
                 D(ref BoneParent); D(ref Texels); D(ref Alpha); D(ref Prims);
                 if (Nodes.IsCreated) Nodes.Dispose();
@@ -360,6 +398,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             NativeList<byte> SampleState, SampleReason, SampleFlags;
             NativeList<bool> Covered, Relevant, SampleMark;
             NativeList<ulong> Witness, FrameWitness;
+            /// <summary>Per sample: the meshes whose faces behind it may cover it, and how far behind it the deepest of them may lie (see <see cref="CoverageKernel.Evaluate"/>).</summary>
+            NativeList<ulong> SampleCoveredBy;
+            NativeList<float> SampleStretch;
             NativeList<int> RelevantList;
             NativeArray<int> TriSampleStart, TriSampleCount, TriSubdivision;
             NativeArray<bool> TriVeto;
@@ -400,6 +441,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 SampleReason = new NativeList<byte>(V, a); SampleFlags = new NativeList<byte>(V, a);
                 Covered = new NativeList<bool>(V, a); Relevant = new NativeList<bool>(V, a); SampleMark = new NativeList<bool>(V, a); Witness = new NativeList<ulong>(V, a); FrameWitness = new NativeList<ulong>(V, a);
                 RelevantList = new NativeList<int>(V, a);
+                SampleCoveredBy = new NativeList<ulong>(V, a); SampleStretch = new NativeList<float>(V, a);
                 TriSampleStart = new NativeArray<int>(T, a); TriSampleCount = new NativeArray<int>(T, a);
                 TriSubdivision = new NativeArray<int>(T, a); TriVeto = new NativeArray<bool>(T, a);
                 Disabled = new NativeArray<bool>(O, a); Moved = new NativeArray<bool>(O, a);
@@ -420,7 +462,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 stats.BvhNodes = S.Nodes.Length;
                 stats.LiveFrames = S.FrameTotal;
                 stats.Configurations = S.Configurations.Count;
-                int V = S.Pos.Length, T = S.Tris.Length;
+                var V = S.Pos.Length;
 
                 var sw = Stopwatch.StartNew();
                 new VertexSamplesJob
@@ -431,9 +473,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     SampleBones = SampleBones, SampleState = SampleState, SampleBary = SampleBary, SampleBack = SampleBack,
                 }.Run();
                 ResizeState();
+                CoverBehind(interior: false);
                 using (var referenced = new NativeList<int>(V, Allocator.TempJob))
                 {
-                    for (var v = 0; v < V; v++) if (S.VTStart[v + 1] > S.VTStart[v]) referenced.Add(v);
+                    for (var v = 0; v < V; v++) if (S.VertCandidate[v]) referenced.Add(v);
                     for (var v = 0; v < V; v++) if (VertBack[v] >= 0) referenced.Add(VertBack[v]);
                     stats.VertexSamples = referenced.Length;
                     RestEval(referenced.AsArray(), 0);
@@ -441,7 +484,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 var firstInterior = SamplePos.Length;
                 new InteriorSamplesJob
                 {
-                    Pos = S.Pos, Tris = S.Tris, TriMesh = S.TriMesh, TriTwoSided = S.TriTwoSided, VertBack = VertBack,
+                    Pos = S.Pos, Tris = S.Tris, TriMesh = S.TriMesh, TriCandidate = S.TriCandidate, TriTwoSided = S.TriTwoSided, VertBack = VertBack,
                     WeightStart = S.WeightStart, Weights = S.Weights,
                     Covered = Covered.AsArray(), Spacing = Cfg.InteriorSpacing, MinInfluence = Cfg.MinInfluence,
                     TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount, TriSubdivision = TriSubdivision, TriVeto = TriVeto,
@@ -449,6 +492,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     SampleBones = SampleBones, SampleState = SampleState, SampleBary = SampleBary, SampleBack = SampleBack,
                 }.Run();
                 ResizeState();
+                CoverBehind(interior: true);
                 stats.InteriorSamples = SamplePos.Length - firstInterior;
                 var interior = new NativeArray<int>(SamplePos.Length - firstInterior, Allocator.TempJob);
                 try
@@ -460,7 +504,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 {
                     interior.Dispose();
                 }
-                for (var t = 0; t < T; t++) Eligible[t] = true;
+                NativeArray<bool>.Copy(S.TriCandidate, Eligible);
                 Candidates();
                 stats.RestMs = sw.Elapsed.TotalMilliseconds;
 
@@ -519,6 +563,47 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 SampleFlags.Resize(n, NativeArrayOptions.ClearMemory);
                 Witness.Resize(n, NativeArrayOptions.ClearMemory);
                 FrameWitness.Resize(n, NativeArrayOptions.ClearMemory);
+                SampleCoveredBy.Resize(n, NativeArrayOptions.ClearMemory);
+                SampleStretch.Resize(n, NativeArrayOptions.ClearMemory);
+            }
+
+            /// <summary>
+            /// Each sample's cover from behind, when some mesh has a setback: the meshes named for its side, from its vertex
+            /// for a corner sample or from its triangle for an interior one, and the deepest setback among them.
+            /// Unset, every stretch stays zero and no sample looks behind itself.
+            /// </summary>
+            void CoverBehind(bool interior)
+            {
+                if (!S.AnySetback) return;
+                var deepest = new float[64];
+                for (var m = 0; m < S.MeshCount; m++)
+                {
+                    var b = math.min(m, 63);
+                    deepest[b] = math.max(deepest[b], S.MeshSetback[m]);
+                }
+                var stretchOf = new Dictionary<ulong, float>();
+                void Set(int s, ulong names)
+                {
+                    SampleCoveredBy[s] = names;
+                    if (!stretchOf.TryGetValue(names, out var stretch))
+                    {
+                        for (var b = 0; b < 64; b++)
+                            if ((names & (1UL << b)) != 0) stretch = math.max(stretch, deepest[b]);
+                        stretchOf[names] = stretch;
+                    }
+                    SampleStretch[s] = stretch;
+                }
+                if (interior)
+                {
+                    for (var t = 0; t < S.Tris.Length; t++)
+                        for (var s = TriSampleStart[t]; s < TriSampleStart[t] + TriSampleCount[t]; s++) Set(s, S.TriCoveredBy[2 * t + (SampleBack[s] ? 1 : 0)]);
+                    return;
+                }
+                for (var v = 0; v < S.Pos.Length; v++)
+                {
+                    Set(v, S.VertCoveredBy[2 * v]);
+                    if (VertBack[v] >= 0) Set(VertBack[v], S.VertCoveredBy[2 * v + 1]);
+                }
             }
 
             CoverageKernel Kernel(NativeArray<FrameTree> frameTrees, NativeArray<BvhNode> frameNodes, NativeArray<BvhTri> framePrims) => new CoverageKernel
@@ -529,6 +614,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 Disabled = Disabled, Moved = Moved, FrameTrees = frameTrees, FrameNodes = frameNodes, FramePrims = framePrims,
                 SampleMesh = SampleMesh.AsArray(), SampleBoneStart = SampleBoneStart.AsArray(), SampleBones = SampleBones.AsArray(),
                 SampleState = SampleState.AsArray(),
+                MeshSetback = S.MeshSetback, SampleCoveredBy = SampleCoveredBy.AsArray(), SampleStretch = SampleStretch.AsArray(),
                 Share = Cfg.Share, Reach = Cfg.Reach, OriginOffset = Cfg.OriginOffset, Kin = Cfg.KinSteps,
             };
 
@@ -576,6 +662,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     {
                         Spacing = Cfg.InteriorSpacing, DeltaStart = start, DeltaCount = count,
                         MoveEpsilon = Cfg.MoveEpsilon, Reach = Cfg.Reach, OriginOffset = Cfg.OriginOffset, ConeRadians = math.radians(Cfg.ConeDegrees), Split = Cfg.Split,
+                        SampleStretch = SampleStretch.AsArray(),
                         Deltas = S.Deltas, Pos = S.Pos, GeoN = S.GeoN, VTStart = S.VTStart, VTList = S.VTList, Tris = S.Tris, TriMesh = S.TriMesh, TriOcc = S.TriOcc,
                         TriSampleStart = TriSampleStart, TriSampleCount = TriSampleCount, TriSubdivision = TriSubdivision, TriVeto = TriVeto,
                         SamplePos = SamplePos.AsArray(),
@@ -615,20 +702,30 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     r.HiddenTriangles = new NativeArray<bool>(tc, allocator);
                     r.CoveredVertices = new NativeArray<bool>(vc, allocator);
                     r.FrontCovered = new NativeArray<bool>(vc, allocator);
+                    r.CoveredBy = new NativeArray<ulong>(2 * vc, allocator);
+                    r.InteriorCoveredBy = new NativeArray<ulong>(2 * tc, allocator);
                 }
                 catch
                 {
                     r.Dispose();
                     throw;
                 }
-                NativeArray<bool>.Copy(Candidate, tb, r.HiddenTriangles, 0, tc);
+                // A mesh with no triangles last in the list starts where the triangles end, an index Copy refuses even for none.
+                if (tc > 0) NativeArray<bool>.Copy(Candidate, tb, r.HiddenTriangles, 0, tc);
+                // What covered each sample: its rest witness, replaced by a deletion re-cast, and every earlier one kept beside it.
+                ulong CoveredBy(int s) => Witness[s] | FrameWitness[s];
+                for (var t = 0; t < tc; t++)
+                    for (var s = TriSampleStart[tb + t]; s < TriSampleStart[tb + t] + TriSampleCount[tb + t]; s++)
+                        r.InteriorCoveredBy[2 * t + (SampleBack[s] ? 1 : 0)] |= CoveredBy(s);
                 var d = new DeclineCounts();
                 for (var i = 0; i < vc; i++)
                 {
                     var v = vb + i;
-                    if (S.VTStart[v + 1] == S.VTStart[v]) continue;
+                    if (!S.VertCandidate[v]) continue;
                     r.FrontCovered[i] = Covered[v];
                     var back = VertBack[v];
+                    r.CoveredBy[2 * i] = CoveredBy(v);
+                    if (back >= 0) r.CoveredBy[2 * i + 1] = CoveredBy(back);
                     if (Covered[v] && (back < 0 || Covered[back]))
                     {
                         r.CoveredVertices[i] = true;
@@ -658,7 +755,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 D(ref EmptyNodes); D(ref EmptyPrims); D(ref EmptyTrees); D(ref DeltaScratch); D(ref NormalScratch); D(ref VertMark); D(ref TriMark); D(ref TriMark2);
                 L(ref SamplePos); L(ref SampleNrm); L(ref SampleBary); L(ref SampleMesh); L(ref SampleBoneStart); L(ref SampleBones);
                 L(ref SampleState); L(ref SampleBack); L(ref SampleReason); L(ref SampleFlags); L(ref Covered); L(ref Relevant); L(ref SampleMark);
-                L(ref Witness); L(ref FrameWitness); L(ref RelevantList); L(ref Work); L(ref MovedOcc); L(ref FrameTrees); L(ref FrameNodes); L(ref FramePrims);
+                L(ref Witness); L(ref FrameWitness); L(ref SampleCoveredBy); L(ref SampleStretch); L(ref RelevantList); L(ref Work); L(ref MovedOcc); L(ref FrameTrees); L(ref FrameNodes); L(ref FramePrims);
                 if (FrameRays.IsCreated) FrameRays.Dispose();
             }
         }

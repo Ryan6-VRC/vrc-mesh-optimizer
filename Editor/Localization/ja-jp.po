@@ -137,6 +137,15 @@ msgstr "隠れたポリゴンの判定に失敗したため、隠れているこ
 msgid "MeshOptimizer:diag:occlusion-failed:hint"
 msgstr "詳しいエラーはコンソールにあります。ポリゴン削減は行われました。"
 
+msgid "MeshOptimizer:diag:rejudge-failed"
+msgstr "Mesh Optimizerが削減後のメッシュで隠れたポリゴンを確認できませんでした"
+
+msgid "MeshOptimizer:diag:rejudge-failed:description"
+msgstr "ポリゴン削減で見えるようになった隠れたポリゴンがないかの確認に失敗したため、最初の判定のまま削除しています: {0}"
+
+msgid "MeshOptimizer:diag:rejudge-failed:hint"
+msgstr "詳しいエラーはコンソールにあります。常時表示のメッシュを粗く削減した箇所では、穴が見えることがあります。予算や許容誤差を緩めると起こりにくくなります。"
+
 msgid "MeshOptimizer:diag:budget-not-met"
 msgstr "Mesh Optimizerが目標ポリゴン数に届きませんでした"
 

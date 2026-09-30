@@ -189,7 +189,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return mr;
         }
 
-        /// <summary>Runs the pipeline as the pass would, with liveness and scale curves injected, and applies it.</summary>
+        /// <summary>
+        /// Runs the pipeline as the pass would, with liveness and scale curves injected, and applies it. Fails the test when
+        /// the re-judge threw: its fallback writes what the switch off writes, so it would read as one that restored nothing.
+        /// </summary>
         public OptimizationReport Run(IEnumerable<ScaleCurve> scaleCurves = null, Action<PipelineInput> tweak = null, bool apply = true)
         {
             var input = new PipelineInput
@@ -203,6 +206,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             OptimizationReport report;
             using (var prepared = OptimizerPipeline.Prepare(input)) report = OptimizerPipeline.Cut(prepared);
             foreach (var r in report.Renderers) if (r.OutputMesh != null) Made(r.OutputMesh);
+            NUnit.Framework.Assert.That(report.Diagnostics.Select(d => d.Key), NUnit.Framework.Has.No.Member(DiagnosticKeys.RejudgeFailed),
+                "the re-judge threw (the exception is in the log)");
             if (apply) OptimizerPipeline.Apply(report);
             return report;
         }

@@ -50,7 +50,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public Mesh OutputMesh { get; internal set; }
 
         public int TrianglesBefore { get; internal set; }
+        /// <summary>Triangles the written mesh leaves out as hidden: those set in <see cref="HiddenSourceTriangles"/>.</summary>
         public int HiddenRemoved { get; internal set; }
+        /// <summary>
+        /// Triangles occlusion found hidden but the written mesh draws, at their source corners, because decimation took
+        /// their cover: judged again against what the always-on renderers are written with, they were no longer hidden.
+        /// Not counted in <see cref="HiddenRemoved"/>; counted in <see cref="TrianglesAfter"/>.
+        /// </summary>
+        public int HiddenRestored { get; internal set; }
         public int TrianglesAfter { get; internal set; }
 
         public SkipReason Skip { get; internal set; }
@@ -102,7 +109,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int KeptForOutline { get; internal set; }
         public DeclineCounts Declined { get; internal set; }
 
-        /// <summary>Per source triangle, true when occlusion removed it. Null when occlusion did not run on this renderer.</summary>
+        /// <summary>
+        /// Per source triangle, true when occlusion removed it: for a written mesh, those it leaves out, after re-judging put
+        /// back any whose cover the cut took. Null when occlusion did not run on this renderer.
+        /// </summary>
         public bool[] HiddenSourceTriangles { get; internal set; }
         /// <summary>Output vertex i is source vertex KeptVertices[i]. Null when no mesh was written.</summary>
         public int[] KeptVertices { get; internal set; }
@@ -173,6 +183,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public double Clearance;
         public double Decimation;
         public double Allocation;
+        /// <summary>Judging the removed triangles again, over every pass a budget took; cutting for those passes is in <see cref="Allocation"/> and <see cref="Writing"/>.</summary>
+        public double Rejudging;
+        /// <summary>Cutting every renderer at its step, over every pass, and writing the meshes.</summary>
         public double Writing;
         public double Total;
     }
@@ -194,6 +207,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int TrianglesBefore => Renderers.Sum(r => r.TrianglesBefore);
         public int TrianglesAfter => Renderers.Sum(r => r.TrianglesAfter);
         public int HiddenRemoved => Renderers.Sum(r => r.HiddenRemoved);
+        /// <summary>Removed triangles written back because the cut took their cover (<see cref="RendererReport.HiddenRestored"/>).</summary>
+        public int HiddenRestored => Renderers.Sum(r => r.HiddenRestored);
+        /// <summary>
+        /// How many times the cut's removals were judged again: 0 when no cut moved an always-on renderer while something
+        /// was removed, or re-judging is off; more than 1 only when a budget cut deeper to pay for what was restored.
+        /// </summary>
+        public int RejudgePasses { get; internal set; }
         /// <summary>The common weighted error level every decimated renderer was cut at, in metres.</summary>
         public float ErrorLevel { get; internal set; }
         public bool TargetMet { get; internal set; }
@@ -243,6 +263,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 ? $"Budget {TriangleBudget} {(TargetMet ? "met" : "NOT met")}"
                 : $"Tolerance {Tolerance.ToString("0.###", c)} mm");
             sb.Append($", error level {(ErrorLevel * 1000f).ToString("0.###", c)} mm, {Times.Total.ToString("0", c)} ms.");
+            if (HiddenRestored > 0)
+                sb.Append($"\n  {HiddenRestored} hidden triangles kept because decimation took their cover.");
             var refused = Renderers.Sum(r => r.ClearanceRefused);
             if (refused > 0)
                 sb.Append($"\n  clearance:{Renderers.Sum(r => r.NearVertices)} vertices near another layer, {refused} collapses refused.");
