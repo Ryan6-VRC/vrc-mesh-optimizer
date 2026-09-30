@@ -170,9 +170,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
         // across under the hole, which a configuration then sinks past the setback. The tile's bounds lie behind the speck,
         // outside the cone a ray leaves it by and too small to hold it, so only a risk test that knows a sample looks behind
         // itself re-casts it in the configuration, and only a full re-cast finds it uncovered: no ray of its cone was blocked.
-        [Test]
-        public void ACoverAConfigurationSinksPastTheSetback_Uncovers_ASampleItCoveredFromBehind()
+        // With a reach shorter than the tile lies behind the speck, the cone could not reach the tile, but the ray behind
+        // it still does, so the risk test does not stop at the reach.
+        [TestCase(1f)]
+        [TestCase(0.0002f)]
+        public void ACoverAConfigurationSinksPastTheSetback_Uncovers_ASampleItCoveredFromBehind(float reach)
         {
+            var settings = OcclusionSettings.Default;
+            settings.Reach = reach;
             var speck = Speck();
             scene.Add(speck, occludes: false);
             bool Hole(float x, float z) => math.abs(x) < 0.0005f && math.abs(z) < 0.0005f;
@@ -189,7 +194,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             var tile = Cover(tileBuilder);
             sheet.Setback = tile.Setback = 0.001f;
 
-            var r = scene.Solve(OcclusionSettings.Default, Bones);
+            var r = scene.Solve(settings, Bones);
 
             Assert.That(r[0].HiddenCount, Is.Zero, "sunk past the setback in the configuration, the tile no longer covers the speck");
             Assert.That(r[0].Declined.ExposedByFrame, Is.GreaterThan(0), "which it covered at rest");
@@ -199,7 +204,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
             scene.Add(speck, occludes: false);
             Cover(Sheet(Hole)).Setback = 0.001f;
             Cover(Tile()).Setback = 0.001f;
-            Assert.That(scene.Solve(OcclusionSettings.Default, Bones)[0].HiddenCount, Is.EqualTo(speck.TriangleCount), "at rest, the tile covers the speck through the hole");
+            Assert.That(scene.Solve(settings, Bones)[0].HiddenCount, Is.EqualTo(speck.TriangleCount), "at rest, the tile covers the speck through the hole");
         }
 
         // A speck drawn on both sides, under a sheet 2 mm over it and over one 2 mm under it, both drawn on both sides: each

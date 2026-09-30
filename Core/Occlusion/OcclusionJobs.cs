@@ -593,11 +593,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             var radius = math.length(tree.RiskMax - tree.RiskMin) * 0.5f;
             var to = centre - p;
             var dist = math.length(to);
+            // The ray behind the sample runs outside the cone the angle test below sees, and a setback deeper than Reach
+            // takes it past where the cone stops.
+            if (stretch > 0f && dist - radius <= stretch + OriginOffset) return true;
             // A ray starts OriginOffset along the normal, so it reaches that much past Reach from the sample.
             if (dist - radius > Reach + OriginOffset) return false;
             if (dist <= radius) return true;
-            // The ray behind the sample runs outside the cone the angle test below sees.
-            if (stretch > 0f && dist - radius <= stretch + OriginOffset) return true;
             var off = math.acos(math.clamp(math.dot(to / dist, n), -1f, 1f));
             return off - math.asin(math.saturate(radius / dist)) <= ConeRadians + 1e-3f;
         }
