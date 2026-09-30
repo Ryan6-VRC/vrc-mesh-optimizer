@@ -104,8 +104,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>Per vertex, how many of its pool entries are shape frames; its bends follow them.</summary>
         NativeArray<int> _shapeCount;
         NativeArray<int> _stamp;
-        /// <summary>Per triangle, its crossing length (see <see cref="CrossingOf"/>), NaN until measured; empty when the clearance rule is off.</summary>
-        NativeArray<float> _crossing;
         int _stampValue;
         long _wasted;
         long _peak;
@@ -168,8 +166,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _sparseCap = new NativeArray<int>(w, Allocator.Temp);
             _shapeCount = new NativeArray<int>(w, Allocator.Temp);
             _stamp = new NativeArray<int>(w, Allocator.Temp);
-            _crossing = new NativeArray<float>(_clearance ? t : 0, Allocator.Temp);
-            for (var i = 0; i < _crossing.Length; i++) _crossing[i] = float.NaN;
             _heap = new NativeList<int>(w, Allocator.Temp);
             _heapPos = new NativeArray<int>(w, Allocator.Temp);
             _heapKey = new NativeArray<float>(w, Allocator.Temp);
@@ -719,7 +715,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 if (_alive[t] == 0) continue;
                 var tri = _in.Triangles[t];
                 var layer = _in.TriangleLayer[t];
-                before += CrossingOf(t);
+                float3 a = _in.Positions[_in.Origin[tri.x]], b = _in.Positions[_in.Origin[tri.y]], d = _in.Positions[_in.Origin[tri.z]];
+                before += _in.Surface.CrossingLength(a, b, d, layer);
                 if (tri.x == v || tri.y == v || tri.z == v) continue;
                 var k = c - t * 3;
                 var px = _in.Positions[_in.Origin[tri[(k + 1) % 3]]];
@@ -728,22 +725,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 if (strays) return false;
             }
             return after <= before * (1f + CrossingSlack) + 1e-9f;
-        }
-
-        /// <summary>
-        /// The length along which live triangle t passes through the other layers. Its corners stand at their source
-        /// positions, so the length changes only when a collapse rewrites the triangle, which forgets it; every candidate
-        /// around one vertex asks for the same triangles, so each is measured once until then.
-        /// </summary>
-        float CrossingOf(int t)
-        {
-            var length = _crossing[t];
-            if (!float.IsNaN(length)) return length;
-            var tri = _in.Triangles[t];
-            float3 a = _in.Positions[_in.Origin[tri.x]], b = _in.Positions[_in.Origin[tri.y]], d = _in.Positions[_in.Origin[tri.z]];
-            length = _in.Surface.CrossingLength(a, b, d, _in.TriangleLayer[t]);
-            _crossing[t] = length;
-            return length;
         }
 
         /// <summary>
@@ -1026,11 +1007,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                     {
                         tri[c - t * 3] = v;
                         _in.Triangles[t] = tri;
-                        if (_clearance)
-                        {
-                            _in.TriangleClearance[t] = clearance;
-                            _crossing[t] = float.NaN;
-                        }
+                        if (_clearance) _in.TriangleClearance[t] = clearance;
                         if (tail == -1) head = c;
                         else _cornerNext[tail] = c;
                         tail = c;
