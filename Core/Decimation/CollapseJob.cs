@@ -138,7 +138,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// Metres a new triangle may stand off its own layer's source where it crosses another layer. A total length
         /// that does not grow could still move: shortened against one place, lengthened against another, or wandering
         /// across one large triangle. Held to its own source, a crossing stays where the source crossed, give or take
-        /// this over the sine of the angle the layers meet at: within the gate's 5 mm for any angle over 6 degrees.
+        /// this over the sine of the angle the layers meet at: against the other layer's source, within the gate's 5 mm
+        /// for any angle over 6 degrees. The gate reads one layer's cut against the other's, where both may stand this
+        /// off their sources and the two add, so this bound alone holds the 5 mm from about 11.5 degrees.
         /// </summary>
         const float CrossingDrift = 0.0005f;
 
