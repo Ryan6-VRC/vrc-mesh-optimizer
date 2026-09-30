@@ -150,18 +150,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(report.Skipped.Select(s => s.Name), Is.EqualTo(PoseBank.Default.Select(p => $"pose '{p.Name}'")));
         }
 
-        sealed class ThrowingPose : GatePose
-        {
-            public ThrowingPose() : base("throws") { }
-            internal override bool NeedsHumanoid => false;
-
-            internal override void Apply(Transform root, HumanPoseHandler humanoid)
-            {
-                root.Find("Armature/Lower").localRotation *= Quaternion.Euler(30, 0, 0);
-                throw new InvalidOperationException("forced failure mid-run");
-            }
-        }
-
         [Test]
         public void AvatarIsLeftAsFound_AfterARun_AndAfterAFailureMidRun()
         {

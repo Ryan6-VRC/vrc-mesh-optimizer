@@ -429,18 +429,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Gate
             Assert.That(renderer.sharedMesh, Is.SameAs(optimized));
         }
 
-        sealed class ThrowingPose : GatePose
-        {
-            public ThrowingPose() : base("throws") { }
-            internal override bool NeedsHumanoid => false;
-
-            internal override void Apply(Transform root, HumanPoseHandler humanoid)
-            {
-                root.Find("Armature/Lower").localRotation *= Quaternion.Euler(30, 0, 0);
-                throw new InvalidOperationException("forced failure mid-run");
-            }
-        }
-
         sealed class DestroyingPose : GatePose
         {
             public DestroyingPose() : base("destroys") { }

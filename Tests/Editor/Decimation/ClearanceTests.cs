@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Clearance;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Collections;
 using Unity.Mathematics;
 using static Ryan6Vrc.MeshOptimizer.Tests.Decimation.LayerFixtures;
@@ -126,7 +127,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         static int KeptNear(MeshBuilder b, in CutResult cut, float y, float band)
         {
             var n = 0;
-            foreach (var v in cut.KeptVertices)
+            foreach (var v in Fixtures.Kept(cut))
                 if (math.abs(b.Positions[v].y - y) < band) n++;
             return n;
         }
@@ -427,7 +428,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             scene.BuildSurface();
             var p = b.Positions.ToArray();
             var t = b.Triangles.ToArray();
-            var layers = scene.Layers[0];
             for (var i = 0; i < 300; i++)
             {
                 var a0 = o + rng.NextFloat3(-0.02f, 0.02f);
@@ -440,10 +440,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                     brute = math.min(brute, TriangleDistance.TriangleSq(a0, a1, a2, p[t[k].x], p[t[k].y], p[t[k].z]));
                 brute = math.min(math.sqrt(brute), 0.02f);
                 var s = scene.Surface;
-                var tree = ClearanceSurface.TriangleClearance(s.Nodes, s.Prims, s.PrimLayer, s.NodeLayer, a0, a1, a2, int.MaxValue, 0.02f);
+                var tree = s.TriangleClearance(a0, a1, a2, int.MaxValue, 0.02f);
                 Assert.That(tree, Is.EqualTo(brute).Within(1e-6f), $"query {i}");
             }
-            Assert.That(layers.Length, Is.EqualTo(t.Length));
         }
     }
 }

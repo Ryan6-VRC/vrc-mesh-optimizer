@@ -1,3 +1,4 @@
+using Ryan6Vrc.MeshOptimizer.Core.Geometry;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -135,8 +136,6 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
     [BurstCompile(CompileSynchronously = true)]
     internal struct CrossingJob : IJobParallelFor
     {
-        const int StackSize = 64;
-
         [ReadOnly] public NativeArray<float3> PositionsA;
         [ReadOnly] public NativeArray<int3> TrianglesA;
         [ReadOnly] public NativeArray<bool> ExcludedA;
@@ -158,7 +157,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
             float3 a0 = PositionsA[tri.x], a1 = PositionsA[tri.y], a2 = PositionsA[tri.z];
             var lo = math.min(a0, math.min(a1, a2)) - Touch;
             var hi = math.max(a0, math.max(a1, a2)) + Touch;
-            var stack = stackalloc int[StackSize];
+            var stack = stackalloc int[TriangleTree.StackSize];
             var top = 0;
             stack[top++] = 0;
             while (top > 0)

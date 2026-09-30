@@ -260,7 +260,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
 
         public static int3[] ToArray(NativeList<int3> list) => list.AsArray().ToArray();
 
-        public static HashSet<int> Kept(in CutResult cut) => new HashSet<int>(cut.KeptVertices.AsArray().ToArray());
+        /// <summary>The source vertices some triangle of the cut uses.</summary>
+        public static HashSet<int> Kept(in CutResult cut) => new HashSet<int>(ToArray(cut.Triangles).SelectMany(t => new[] { t.x, t.y, t.z }));
 
         /// <summary>
         /// Distance from each reference point to the nearest point of a triangle surface: the mean and the
@@ -334,8 +335,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             bary = new float3(1 - vv - ww, vv, ww);
             return a + ab * vv + ac * ww;
         }
-
-        public static void DisposeMesh(ref EvalMesh mesh) => mesh.Dispose();
 
         /// <summary>Records a whole sequence with default settings, overridden by <paramref name="tweak"/>.</summary>
         public static CollapseSequence Decimate(MeshBuilder b, Func<DecimationSettings, DecimationSettings> tweak = null, bool includeFrames = true, VertexProtection protection = default)
