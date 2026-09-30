@@ -22,8 +22,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
     // the garment as written, it must be written back. Where its faces sink past the body, the cover moved but did not go:
     // a viewer still sees the garment, so the triangle stays removed. Two fixtures part the two. A round cape 1 mm over a
     // flat body only draws back: its rim becomes a polygon whose sides cut inside the circle, and nothing flat sinks. A
-    // sphere 5 mm over a sphere mostly sinks: its faces cut inside the curve, and the clearance rule holds its rim. Each body
-    // carries a key, so each verdict holds in a configuration as well as at rest.
+    // sphere 5 mm over a sphere sinks where its faces cut inside the curve, but only with the switch that leaves removed
+    // triangles out of the clearance surface off: by default the body it hid is its neighbour, and holds it clear. Each
+    // body carries a key, so each verdict holds in a configuration as well as at rest.
     public class RejudgeTests
     {
         AvatarFixture a;
@@ -34,25 +35,16 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         /// <summary>
         /// The garment a band of sphere from <paramref name="garmentFrom"/> degrees down, over a body of
-        /// <paramref name="rings"/> rings, left undecimated unless <paramref name="bodyDecimated"/>. With
-        /// <paramref name="mirrored"/>, the garment is its own mirror image under a parent that mirrors it back, as
-        /// <see cref="MirrorTests"/> builds it: the world sees the same garment, drawn mirrored.
+        /// <paramref name="rings"/> rings, left undecimated unless <paramref name="bodyDecimated"/>.
         /// </summary>
-        void Build(float garmentFrom, int rings = 16, bool bodyDecimated = false, bool mirrored = false)
+        void Build(float garmentFrom, int rings = 16, bool bodyDecimated = false)
         {
             a = new AvatarFixture();
             chest = a.Bone("Armature/Hips/Chest");
             var bodyMesh = Welded(a.Sphere(0.1f, rings, 2 * rings, name: "body"));
             bodyMesh.AddBlendShapeFrame("Swell", 100f, bodyMesh.vertices.Select(v => v.y < -0.03f ? v.normalized * 0.001f : Vector3.zero).ToArray(), null, null);
             body = a.Skinned("Body", bodyMesh, new[] { chest });
-            var garmentMesh = Welded(a.Sphere(0.105f, rings + rings / 2, 3 * rings, garmentFrom, 180f, name: "garment"));
-            if (mirrored)
-            {
-                var mirror = a.Bone("Armature/Hips/Chest/Mirror");
-                mirror.localScale = new Vector3(-1, 1, 1);
-                garment = a.Skinned("Garment", a.MirroredX(garmentMesh), new[] { a.Bone("Armature/Hips/Chest/Mirror/Bone") }, parent: mirror);
-            }
-            else garment = a.Skinned("Garment", garmentMesh, new[] { chest });
+            garment = a.Skinned("Garment", Welded(a.Sphere(0.105f, rings + rings / 2, 3 * rings, garmentFrom, 180f, name: "garment")), new[] { chest });
             var c = a.Optimizer(decimate: true);
             c.alwaysOn.Add(garment);
             if (!bodyDecimated) c.renderers.Add(new RendererSettings { renderer = body, excludeFromDecimation = true });
@@ -60,16 +52,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         /// <summary>
         /// A flat body 20 cm across, left undecimated, under the always-on round cape of <see cref="Disc"/>, 5 cm in radius,
-        /// 1 mm over it. The body carries a key that lifts its -X half by 0.3 mm.
+        /// 1 mm over it. The body carries a key that lifts its -X half by 0.3 mm. With <paramref name="mirrored"/>, the cape
+        /// is its own mirror image under a parent that mirrors it back, as <see cref="MirrorTests"/> builds it: the world
+        /// sees the same cape, drawn mirrored.
         /// </summary>
-        void BuildCape()
+        void BuildCape(bool mirrored = false)
         {
             a = new AvatarFixture();
             chest = a.Bone("Armature/Hips/Chest");
             var bodyMesh = a.Grid(40, 0.005f, "body");
             bodyMesh.AddBlendShapeFrame("Lift", 100f, bodyMesh.vertices.Select(v => v.x < 0f ? new Vector3(0f, 0.0003f, 0f) : Vector3.zero).ToArray(), null, null);
             body = a.Skinned("Body", bodyMesh, new[] { chest });
-            garment = a.Skinned("Garment", Disc(0.05f, 0.001f, 10, 64), new[] { chest });
+            var cape = Disc(0.05f, 0.001f, 10, 64);
+            if (mirrored)
+            {
+                var mirror = a.Bone("Armature/Hips/Chest/Mirror");
+                mirror.localScale = new Vector3(-1, 1, 1);
+                garment = a.Skinned("Garment", a.MirroredX(cape), new[] { a.Bone("Armature/Hips/Chest/Mirror/Bone") }, parent: mirror);
+            }
+            else garment = a.Skinned("Garment", cape, new[] { chest });
             var c = a.Optimizer(decimate: true);
             c.alwaysOn.Add(garment);
             c.renderers.Add(new RendererSettings { renderer = body, excludeFromDecimation = true });
@@ -124,13 +125,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return mesh;
         }
 
-        OptimizationReport Run(TargetKind target, float value, bool rejudge)
+        OptimizationReport Run(TargetKind target, float value, bool rejudge, bool removedAsNeighbours = true)
         {
             var c = a.Optimizer(decimate: true);
             c.target = target;
             if (target == TargetKind.Tolerance) c.tolerance = value;
             else c.triangleBudget = (int)value;
-            return a.Run(apply: false, tweak: input => input.Rejudge = rejudge);
+            return a.Run(apply: false, tweak: input =>
+            {
+                input.Rejudge = rejudge;
+                input.RemovedAsNeighbours = removedAsNeighbours;
+            });
         }
 
         /// <summary>
@@ -288,16 +293,22 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 
-        // A closed garment cut at 6 mm sinks past body it hid. Judged by the rule from where each triangle stood, the
-        // triangles it sank past are uncovered; the cover moved, it did not go, so they stay removed, and the triangles
-        // written back are fewer than those the rule alone would write back.
+        // A closed garment cut at 6 mm. By default the body it hid is its neighbour: it sinks past none of it, the rule finds
+        // every removed triangle covered, and nothing comes back. With removed triangles left out of the clearance surface
+        // it sinks past body it hid. Judged by the rule from where each triangle stood, the triangles it sank past are
+        // uncovered; the cover moved, it did not go, so they stay removed, and the triangles written back are fewer than
+        // those the rule alone would write back.
         [Test]
         public void ACoverTheCutMovedPastATriangle_StillCoversIt()
         {
             Build(garmentFrom: 0f);
 
-            var off = Run(TargetKind.Tolerance, 6f, rejudge: false);
-            var on = Run(TargetKind.Tolerance, 6f, rejudge: true);
+            var held = Run(TargetKind.Tolerance, 6f, rejudge: true);
+            Assert.That(CheckWritten(held).Ok, Is.True, "by default the cut garment is held clear of the body it hid");
+            Assert.That(held.HiddenRestored, Is.Zero);
+
+            var off = Run(TargetKind.Tolerance, 6f, rejudge: false, removedAsNeighbours: false);
+            var on = Run(TargetKind.Tolerance, 6f, rejudge: true, removedAsNeighbours: false);
 
             var moved = CheckWritten(off);
             Assert.That(moved.Ok, Is.False, "the cut garment sank past body it hid");
@@ -412,32 +423,32 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 
-        // At 635 the first cut lands a triangle under what it was asked for and restores two, one over. Asking the next
-        // pass for the overage less than before hands that slack back and cuts the same again; asking it for this cut less
-        // the overage moves it, and the budget is met.
+        // At 718 the first cut lands a triangle under what it was asked for and restores four, three over. Asking each next
+        // pass for the overage less than before hands that slack back, and the passes stall a triangle over; asking it for
+        // this cut less the overage moves it, and the budget is met.
         [Test]
         public void ABudgetTheCutLandsUnder_IsNotHandedBackItsSlack_AndIsMet()
         {
             Build(garmentFrom: 60f, rings: 32, bodyDecimated: true);
 
-            var on = Run(TargetKind.TriangleBudget, 635, rejudge: true);
+            var on = Run(TargetKind.TriangleBudget, 718, rejudge: true);
 
             Assert.That(on.HiddenRestored, Is.GreaterThan(0));
             Assert.That(on.TargetMet, Is.True, $"{on.TrianglesAfter} after {on.RejudgePasses} passes");
-            Assert.That(on.TrianglesAfter, Is.LessThanOrEqualTo(635));
+            Assert.That(on.TrianglesAfter, Is.LessThanOrEqualTo(718));
             var check = CheckWritten(on, setback: true);
             Assert.That(check.Ok, Is.True, check.ToString());
         }
 
-        // The garment of MirrorTests, drawn mirrored, coarsened at 16 mm until its rim draws back. The re-judge reads its
-        // faces as Unity draws them, as the first solve did: it gives back what the cut uncovered, and every triangle still
-        // removed is covered, judged by the checker from the same winding.
+        // The cape, drawn mirrored as MirrorTests draws a garment, coarsened at 4 mm until its rim draws back. The re-judge
+        // reads its faces as Unity draws them, as the first solve did: it gives back what the cut uncovered, and every
+        // triangle still removed is covered, judged by the checker from the same winding.
         [Test]
         public void AMirroredGarment_GivesBackWhatItNoLongerCovers_AndWhatStaysRemovedIsCovered()
         {
-            Build(garmentFrom: 60f, mirrored: true);
+            BuildCape(mirrored: true);
 
-            var on = Run(TargetKind.Tolerance, 16f, rejudge: true);
+            var on = Run(TargetKind.Tolerance, 4f, rejudge: true);
 
             var check = CheckWritten(on, setback: true);
             TestContext.WriteLine($"{on.HiddenRestored} restored, {Of(on, body).HiddenRemoved} still removed; the garment cut from {Of(on, garment).TrianglesBefore} to {Of(on, garment).TrianglesAfter} triangles");

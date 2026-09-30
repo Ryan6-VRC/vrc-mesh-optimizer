@@ -127,9 +127,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
     /// pieces meeting at one vertex) are one layer; the gap is read per source triangle, so where it changes by a
     /// large part of itself across one source triangle, the least of it stands for the whole; and the other layers are
-    /// the triangles the caller hands in, so one left out is held clear of by nothing, and if it is drawn after all (the
-    /// pipeline leaves out a triangle occlusion removed unless told to hold it, and re-judging can write it back) it was
-    /// never a neighbour and a layer may cross it.
+    /// the triangles the caller hands in, so one left out is held clear of by nothing, and if it is drawn after all it was
+    /// never a neighbour and a layer may cross it. The pipeline hands in the triangles occlusion removed, which re-judging
+    /// can write back, as neighbours of every other layer; its RemovedAsNeighbours switch off leaves them out, and a
+    /// layer may then cross one written back.
     /// </summary>
     public struct ClearanceSettings
     {
