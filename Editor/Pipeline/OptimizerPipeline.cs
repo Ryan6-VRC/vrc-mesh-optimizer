@@ -69,7 +69,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 live.AddRange(jobs.Where(j => j.Extracted));
                 stage.Restart();
                 input.BeforeStep?.Invoke(AvatarStep.Occlusion);
-                if (settings.removeHiddenTriangles) RemoveHidden(live, input, bones, prepared);
+                if (settings.removeHiddenTriangles && input.Occlude) RemoveHidden(live, input, bones, prepared);
                 prepared.Times.Occlusion = stage.Elapsed.TotalMilliseconds;
 
                 if (settings.decimate) Record(live, jobs, input, bones, prepared);

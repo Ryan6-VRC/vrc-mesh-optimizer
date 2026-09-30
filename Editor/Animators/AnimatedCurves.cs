@@ -184,6 +184,27 @@ namespace Ryan6Vrc.MeshOptimizer.Animators
             }
         }
 
+        /// <summary>
+        /// Curves in controllers as authored, outside a build (<see cref="AuthoredControllers"/>): every clip a controller
+        /// holds, its paths relative to the controller's owner. Each controller is one layer, played outside the animators'
+        /// order and unmasked, since its layers are not read one by one; that counts a curve live wherever any layer could
+        /// play it.
+        /// </summary>
+        public static IEnumerable<AnimatedCurve> FromControllers(IEnumerable<AuthoredController> controllers, Func<EditorCurveBinding, bool> wanted)
+        {
+            foreach (var controller in controllers)
+            foreach (var clip in controller.Controller.animationClips.Where(c => c != null).Distinct())
+            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                if (!wanted(binding)) continue;
+                var target = Resolve(controller.Owner, binding.path);
+                if (target == null) continue;
+                var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (curve == null) continue;
+                yield return new AnimatedCurve(target, binding, curve, clip, controller.Controller, null, false);
+            }
+        }
+
         /// <summary>A path relative to a component's transform; the empty path is that transform itself.</summary>
         static Transform Resolve(Transform owner, string path) => path.Length == 0 ? owner : owner.Find(path);
     }

@@ -27,6 +27,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
+        /// <summary>
+        /// Whether <see cref="OptimizerPipeline.Prepare"/> removes hidden triangles when the component asks it to. On for a
+        /// build; the edit-mode preview turns it off, since occlusion is the costly step and the preview shows decimation.
+        /// </summary>
+        public bool Occlude = true;
         public DecimationSettings Decimation = BuildSettings.Decimation;
         /// <summary>
         /// Whether a cut judges the removed triangles again against the meshes it writes (<see cref="OptimizerPipeline.Cut"/>).
