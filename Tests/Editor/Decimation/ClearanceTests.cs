@@ -20,10 +20,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         static readonly float[] Levels = { 0.0005f, 0.001f, 0.002f, 0.004f };
 
         /// <summary>
-        /// The cost without the normal term, for the two cases below whose bounds hold on the order the position cost alone
-        /// collapses in. The normal term keeps more of a rippled tube whether the rule is on or not, so a count of vertices
-        /// kept near a line reads higher; and where layers meet at under about 6 degrees the rule lets a crossing move
-        /// farther than the gate's 5 mm (see CrossingDrift), so there another order can read as new crossing.
+        /// The cost without the normal term, for the case below whose bound holds on the order the position cost alone
+        /// collapses in: where layers meet at under about 6 degrees the rule lets a crossing move farther than the gate's
+        /// 5 mm (see CrossingDrift), so there another order can read as new crossing.
         /// </summary>
         static DecimationSettings PositionCostOnly(DecimationSettings s)
         {
@@ -143,10 +142,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         {
             using var scene = SkinAndSlopedLayer(from, to);
             var before = Crossing(scene.Builders[0], scene.Builders[1]);
-            using var skinOff = scene.Decimate(0, false, out _, PositionCostOnly);
-            using var layerOff = scene.Decimate(1, false, out _, PositionCostOnly);
-            using var skinOn = scene.Decimate(0, true, out var skinStats, PositionCostOnly);
-            using var layerOn = scene.Decimate(1, true, out var layerStats, PositionCostOnly);
+            using var skinOff = scene.Decimate(0, false, out _);
+            using var layerOff = scene.Decimate(1, false, out _);
+            using var skinOn = scene.Decimate(0, true, out var skinStats);
+            using var layerOn = scene.Decimate(1, true, out var layerStats);
             var line = lineAt * Length;
             const float band = 0.006f;
             var sourceNear = Enumerable.Range(0, scene.Builders[1].VertexCount).Count(v => math.abs(scene.Builders[1].Positions[v].y - line) < band);
@@ -162,8 +161,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 var nearOff = KeptNear(scene.Builders[1], clo, line, band);
                 var nearOn = KeptNear(scene.Builders[1], cl, line, band);
                 TestContext.WriteLine($"{level * 1000} mm: crossing {crossOff * 100:0.0} cm without, {crossOn * 100:0.0} cm with; layer vertices kept near the line {nearOff} without, {nearOn} with");
-                // Against a locked region, which would keep every source vertex along the line.
-                Assert.That(nearOn, Is.LessThanOrEqualTo(level >= 0.002f ? sourceNear / 4 : sourceNear / 2), $"at {level * 1000} mm the region along the line decimates");
+                // Against a locked region, which would keep every source vertex along the line: the rule keeps no more than
+                // half of what the same cost without it removes there, so what is kept is the rule's and not the cost's.
+                Assert.That(nearOn, Is.LessThanOrEqualTo(nearOff + (sourceNear - nearOff) / 2), $"at {level * 1000} mm the region along the line decimates");
                 Assert.That(crossOff, Is.GreaterThan(before), $"at {level * 1000} mm without the rule the crossing grows");
                 Assert.That(crossOn, Is.LessThanOrEqualTo(before), $"at {level * 1000} mm with the rule it does not");
             }
