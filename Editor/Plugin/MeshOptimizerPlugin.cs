@@ -8,6 +8,7 @@ using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Localization;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
+using Ryan6Vrc.MeshOptimizer.Preview;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -41,7 +42,9 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                 // Compatible rather than required: an avatar without the component should not pay for NDMF cloning
                 // its animators, and one that has it activates them in the pass. Either way NDMF leaves an active
                 // context standing across this pass instead of committing it.
-                .WithCompatibleExtension(typeof(AnimatorServicesContext), s => s.Run(MeshOptimizerPass.Instance));
+                .WithCompatibleExtension(typeof(AnimatorServicesContext), s => s.Run(MeshOptimizerPass.Instance)
+                    // Edit-mode preview only; NDMF never calls a render filter in a build.
+                    .PreviewingWith(new DecimationPreview()));
         }
     }
 

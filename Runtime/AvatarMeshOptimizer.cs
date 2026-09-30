@@ -52,6 +52,20 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
 
         public List<MaterialOcclusion> materials = new List<MaterialOcclusion>();
         public List<RendererSettings> renderers = new List<RendererSettings>();
+
+        /// <summary>
+        /// The share of its triangles the viseme renderer keeps whatever the target: lip sync and expressions deform it most
+        /// and it is the surface other players watch, so an aggressive target is spent elsewhere first. A component saved
+        /// before this field existed reads the default.
+        /// </summary>
+        [Range(0f, 1f)] public float faceFloor = 0.5f;
+        /// <summary>Whether decimation keeps every finger vertex, found through the humanoid mapping. On for a component saved before this field existed.</summary>
+        public bool lockFingers = true;
+        /// <summary>
+        /// With <see cref="lockFingers"/> on, a vertex with at least this much weight on a finger is a finger vertex. Kept
+        /// above 0, where every vertex would count. A component saved before this field existed reads the default.
+        /// </summary>
+        [Range(0.001f, 1f)] public float fingerWeight = 0.01f;
     }
 
     /// <summary>A saved component holds this as a number, so a value's number never changes.</summary>

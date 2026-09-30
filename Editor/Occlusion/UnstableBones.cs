@@ -167,6 +167,10 @@ namespace Ryan6Vrc.MeshOptimizer.Occlusion
         public static IEnumerable<ScaleCurve> FromAnimatorServices(AnimatorServicesContext services, Transform root) =>
             ScaleCurves(AnimatedCurves.FromAnimatorServices(services, root, IsScale));
 
+        /// <summary>Scale curves in controllers as authored, outside a build; see <see cref="AnimatedCurves.FromControllers"/>.</summary>
+        public static IEnumerable<ScaleCurve> FromControllers(IEnumerable<AuthoredController> controllers) =>
+            ScaleCurves(AnimatedCurves.FromControllers(controllers, IsScale));
+
         /// <summary>Scale curves in legacy Animation components.</summary>
         public static IEnumerable<ScaleCurve> FromLegacyAnimations(Transform root) =>
             ScaleCurves(AnimatedCurves.FromLegacyAnimations(root, IsScale));

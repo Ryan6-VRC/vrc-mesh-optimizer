@@ -33,10 +33,21 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             out List<(LinkedKey key, LinkRefusal reason)> unlinked)
         {
             var root = context.AvatarRootTransform;
-            var inputs = renderers.Select(r => Describe(r, root)).ToList();
-
             var bindings = FromAnimatorServices(context.Extension<AnimatorServicesContext>(), root)
                 .Concat(FromLegacyAnimations(root)).ToList();
+            return Classify(root, renderers, bindings, out links, out unlinked);
+        }
+
+        /// <summary>
+        /// Classifies every shape key of each renderer under <paramref name="root"/> against the curves in
+        /// <paramref name="bindings"/> and the keys the descriptor and MMD worlds drive, and finds the links, as the build's
+        /// overload taking a <see cref="BuildContext"/> does from its animator services.
+        /// </summary>
+        public static Dictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Classify(
+            Transform root, IReadOnlyList<SkinnedMeshRenderer> renderers, List<ShapeKeyBinding> bindings, out List<LinkedKey[]> links,
+            out List<(LinkedKey key, LinkRefusal reason)> unlinked)
+        {
+            var inputs = renderers.Select(r => Describe(r, root)).ToList();
             var driven = FromDescriptor(root).Concat(MmdKeys(root)).ToList();
 
             var table = ShapeKeyClassifier.Classify(inputs, bindings, driven);
@@ -71,6 +82,10 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// <summary>Every shape-key curve in every controller NDMF holds; see <see cref="AnimatedCurves.FromAnimatorServices"/>.</summary>
         public static IEnumerable<ShapeKeyBinding> FromAnimatorServices(AnimatorServicesContext services, Transform root) =>
             AnimatedCurves.FromAnimatorServices(services, root, IsShapeKey).Select(c => Binding(root, c));
+
+        /// <summary>Shape-key curves in controllers as authored, outside a build; see <see cref="AnimatedCurves.FromControllers"/>.</summary>
+        public static IEnumerable<ShapeKeyBinding> FromControllers(IEnumerable<AuthoredController> controllers, Transform root) =>
+            AnimatedCurves.FromControllers(controllers, IsShapeKey).Select(c => Binding(root, c));
 
         /// <summary>Shape-key curves in legacy Animation components, which NDMF does not virtualize.</summary>
         public static IEnumerable<ShapeKeyBinding> FromLegacyAnimations(Transform root) =>

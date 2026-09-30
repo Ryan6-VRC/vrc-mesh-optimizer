@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
+using Ryan6Vrc.MeshOptimizer.Inspector;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
@@ -93,6 +94,59 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             try
             {
                 Assert.That(fresh.AddComponent<AvatarMeshOptimizer>().maxError, Is.EqualTo(5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+            }
+        }
+
+        // The protect settings were constants before they were fields: the face keeps half its triangles and a vertex with a
+        // hundredth of its weight on a finger is locked. A component saved before the fields existed, as the fixture was,
+        // reads those same values, so it builds as it did.
+        [Test]
+        public void TheProtectSettings_ReadTheFormerConstants_FreshAndForAComponentSavedBeforeThem()
+        {
+            var text = System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture));
+            foreach (var field in new[] { "faceFloor", "lockFingers", "fingerWeight" })
+                Assert.That(text, Does.Not.Contain(field), "the fixture stands for a component saved before the fields");
+            var fresh = new GameObject("Fresh");
+            try
+            {
+                foreach (var c in new[] { AssetDatabase.LoadAssetAtPath<GameObject>(Fixture).GetComponent<AvatarMeshOptimizer>(), fresh.AddComponent<AvatarMeshOptimizer>() })
+                {
+                    Assert.That(c.faceFloor, Is.EqualTo(0.5f));
+                    Assert.That(c.lockFingers, Is.True);
+                    Assert.That(c.fingerWeight, Is.EqualTo(0.01f));
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+            }
+        }
+
+        // A preset is read from the tolerance and never stored: each preset writes its tolerance and reads back as itself,
+        // the component's default reads as Standard, and a tolerance no preset names reads as Custom, which writes nothing.
+        [Test]
+        public void EachPreset_MapsToItsTolerance_AndBack()
+        {
+            var expected = new[] { (TolerancePreset.Fine, 0.5f), (TolerancePreset.Standard, 1f), (TolerancePreset.Medium, 2f), (TolerancePreset.Coarse, 3f) };
+            foreach (var (preset, millimetres) in expected)
+            {
+                Assert.That(TolerancePresets.TryTolerance(preset, out var value), Is.True, preset.ToString());
+                Assert.That(value, Is.EqualTo(millimetres), preset.ToString());
+                Assert.That(TolerancePresets.Of(value), Is.EqualTo(preset), preset.ToString());
+            }
+            Assert.That(System.Enum.GetValues(typeof(TolerancePreset)).Length, Is.EqualTo(expected.Length + 1), "every named preset is checked");
+            Assert.That(TolerancePresets.TryTolerance(TolerancePreset.Custom, out _), Is.False);
+            Assert.That(TolerancePresets.Of(1.5f), Is.EqualTo(TolerancePreset.Custom));
+            Assert.That(TolerancePresets.Of(0f), Is.EqualTo(TolerancePreset.Custom));
+
+            var fresh = new GameObject("Fresh");
+            try
+            {
+                Assert.That(TolerancePresets.Of(fresh.AddComponent<AvatarMeshOptimizer>().tolerance), Is.EqualTo(TolerancePreset.Standard));
             }
             finally
             {
