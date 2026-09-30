@@ -226,3 +226,12 @@ msgstr "{0} was left as it was: more than one of its shape keys is named {1}, an
 
 msgid "MeshOptimizer:diag:duplicate-shape-key:hint"
 msgstr "Rename the shape keys in the mesh's source so that each name is used once, and re-export it."
+
+msgid "MeshOptimizer:diag:gate-failed"
+msgstr "Mesh Optimizer could not measure the gate"
+
+msgid "MeshOptimizer:diag:gate-failed:description"
+msgstr "The gate measurement this build was switched on for failed, so the report holds no gate figures. The avatar is optimized as it would be without it: {0}"
+
+msgid "MeshOptimizer:diag:gate-failed:hint"
+msgstr "The console holds the full error. The gate is a measurement that runs only when switched on, so nothing on the avatar needs fixing."

@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using nadena.dev.ndmf;
 using NUnit.Framework;
+using Ryan6Vrc.MeshOptimizer.Extraction;
+using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.OrderProbes;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Plugin;
@@ -269,6 +272,83 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
             Assert.That(body.sharedMesh, Is.SameAs(source));
             Assert.That(OptimizationReports.Latest, Is.SameAs(before), "no report, so the pipeline never ran");
+        }
+
+        /// <summary>Each written mesh by its report path, hashed as the renderer holds it now.</summary>
+        static Dictionary<string, ulong> HeldHashes(OptimizationReport report)
+        {
+            foreach (var r in report.Renderers.Where(r => r.OutputMesh != null))
+                Assert.That(RendererExtraction.MeshOf(r.Renderer), Is.SameAs(r.OutputMesh), $"{r.Path} holds the mesh the pass wrote");
+            return report.Renderers.Where(r => r.OutputMesh != null).ToDictionary(r => r.Path, r => MeshContent.Hash(r.OutputMesh));
+        }
+
+        // The same avatar built twice through NDMF, the gate off and then on. Off, the report carries no gate and the console
+        // no gate line. On, the gate measured crossing, the geometric channel on every renderer the pass wrote, and every row's
+        // hashes, and wrote the same meshes as off, each still on its renderer.
+        [Test]
+        public void TheGateSwitch_OnAttachesTheFiguresToTheReport_AndChangesNoMesh()
+        {
+            Avatar(withComponent: true);
+            Process();
+            var off = OptimizationReports.Latest;
+            Assert.That(errors, Is.Empty, "the build logs no error");
+            Assert.That(off.Gate, Is.Null, "off, nothing is measured");
+            Assert.That(log.Any(l => l.StartsWith("[Mesh Optimizer]") && l.Contains(" gate:")), Is.False, "off, no gate line reaches the console");
+            var offHashes = HeldHashes(off);
+
+            a.Dispose();
+            a = new AvatarFixture("Plugin Test Avatar");
+            Avatar(withComponent: true);
+            using (BuildSettings.OverrideGate(true)) Process();
+            var on = OptimizationReports.Latest;
+
+            Assert.That(on, Is.Not.SameAs(off));
+            Assert.That(errors, Is.Empty, "the build logs no error");
+            var gate = on.Gate;
+            Assert.That(gate, Is.Not.Null, "on, the report carries the gate");
+            Assert.That(gate.Failures, Is.Empty, string.Join("\n", gate.Failures));
+            Assert.That(gate.Crossing, Is.Not.Null);
+            Assert.That(gate.Crossing.Configurations[0], Is.EqualTo("as it stands"));
+            Assert.That(gate.Crossing.Pairs.Any(p => p.Configuration == "as it stands" && p.RendererA != p.RendererB), "crossing measured pairs as the avatar stands");
+            var written = on.Renderers.Where(r => r.OutputMesh != null).Select(r => r.Path).ToArray();
+            Assert.That(written, Is.Not.Empty);
+            Assert.That(gate.Geometry.Select(g => g.Path), Is.EquivalentTo(written), "the geometric channel measured every renderer the pass wrote");
+            Assert.That(gate.Hashes.Select(h => h.Path), Is.EqualTo(on.Renderers.Select(r => r.Path)), "a hash row for every report row");
+            foreach (var h in gate.Hashes)
+            {
+                Assert.That(h.Source.HasValue, h.Path);
+                Assert.That(h.Output.HasValue, Is.EqualTo(written.Contains(h.Path)), h.Path);
+            }
+
+            var onHashes = HeldHashes(on);
+            Assert.That(onHashes, Is.EqualTo(offHashes), "the gate on writes the meshes the gate off writes");
+            Assert.That(gate.Hashes.Where(h => h.Output.HasValue).ToDictionary(h => h.Path, h => h.Output.Value), Is.EqualTo(onHashes),
+                "the gate's hashes are of the meshes the renderers hold after the build");
+            var line = log.Single(l => l.StartsWith($"[Mesh Optimizer] {on.AvatarName} gate:"));
+            TestContext.WriteLine(line);
+            Assert.That(line, Does.Contain("crossing as it stands new").And.Contain("geometry largest max").And.Not.Contain("FAILED"));
+        }
+
+        // A measure that throws is named on the report and fails nothing: the meshes stay applied. Here the gate is handed a
+        // report naming a renderer destroyed since the cut, which it refuses by throwing.
+        [Test]
+        public void AGateThatThrows_IsADiagnostic_AndTheAvatarKeepsItsMeshes()
+        {
+            var (body, _) = Avatar(withComponent: true);
+            PipelineInput input = null;
+            var report = a.Run(tweak: i =>
+            {
+                input = i;
+                i.Gate = new GateRunOptions();
+            });
+            Object.DestroyImmediate(inner.gameObject);
+            LogAssert.Expect(LogType.Exception, new Regex("destroyed"));
+
+            Assert.DoesNotThrow(() => OptimizerPipeline.MeasureGate(report, input));
+
+            Assert.That(report.Gate, Is.Null);
+            Assert.That(report.Diagnostics.Select(d => d.Key), Has.Member(DiagnosticKeys.GateFailed));
+            Assert.That(body.sharedMesh, Is.SameAs(Of(report, body).OutputMesh), "the written mesh stays on its renderer");
         }
     }
 }

@@ -35,11 +35,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public const string NonFiniteShapeKey = "MeshOptimizer:diag:non-finite-shape-key";
         /// <summary>{0} the renderer, {1} the shape key's name.</summary>
         public const string DuplicateShapeKey = "MeshOptimizer:diag:duplicate-shape-key";
+        /// <summary>{0} the exception's message.</summary>
+        public const string GateFailed = "MeshOptimizer:diag:gate-failed";
 
         public static readonly string[] All =
         {
             NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, BudgetCeilingHeld, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
             NonFiniteVertex, NonFiniteShapeKey, DuplicateShapeKey,
+            GateFailed,
         };
     }
 }
