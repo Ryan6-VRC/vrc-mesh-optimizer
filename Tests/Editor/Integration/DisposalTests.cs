@@ -133,7 +133,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             OptimizationReport failed, off;
             using (var prepared = OptimizerPipeline.Prepare(Input()))
             {
-                prepared.OcclusionSettings.Reach = 0f;
+                prepared.Input.Occlusion.Reach = 0f;
                 failed = OptimizerPipeline.Cut(prepared);
                 prepared.Input.Rejudge = false;
                 off = OptimizerPipeline.Cut(prepared);
