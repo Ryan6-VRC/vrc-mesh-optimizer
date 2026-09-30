@@ -141,6 +141,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<int> SampleBones;
         /// <summary>Per sample: a reason decided before any ray (unweighted, no normal), or Covered to cast.</summary>
         [ReadOnly] public NativeArray<byte> SampleState;
+        /// <summary>Per mesh, <see cref="OcclusionMesh.Setback"/>.</summary>
+        [ReadOnly] public NativeArray<float> MeshSetback;
+        /// <summary>Per sample, the meshes whose faces behind it may cover it (<see cref="OcclusionMesh.CoveredBy"/>).</summary>
+        [ReadOnly] public NativeArray<ulong> SampleCoveredBy;
+        /// <summary>Per sample, the deepest setback of the meshes it names: how far behind it a cover may lie (<see cref="Behind"/>). Zero for none.</summary>
+        [ReadOnly] public NativeArray<float> SampleStretch;
         public float Share;
         public float Reach;
         public float OriginOffset;
@@ -153,6 +159,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// first failing ray's reason. With <paramref name="onlyRisky"/>, for a sample covered at rest and not
         /// moved by the configuration, only rays through the rest bounds of another mesh's moved faces are cast:
         /// any other ray's rest blocker is unmoved, so it is still blocked.
+        ///
+        /// A sample the cone finds uncovered is still covered when its cover moved past it (<see cref="Behind"/>).
         /// </summary>
         public byte Evaluate(int sample, float3 p, float3 n, out ulong witness, out int rays, bool onlyRisky = false)
         {
@@ -188,9 +196,46 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 if (onlyRisky && !TowardMoved(o, d, mesh)) continue;
                 rays++;
                 var res = CastRay(o, d, mesh, ref allowed, ref last, ref witness);
-                if (res != Reason.Covered) return res;
+                if (res == Reason.Covered) continue;
+                return SampleStretch[sample] > 0f && Behind(sample, o, n, mesh, ref allowed, ref witness, ref rays) ? Reason.Covered : res;
             }
             return Reason.Covered;
+        }
+
+        /// <summary>
+        /// Whether a cover moved past the sample: a face that blocks by the rule's own tests, of a mesh the sample names
+        /// (<see cref="SampleCoveredBy"/>), lies on the line straight behind its origin <paramref name="o"/>, back along its
+        /// normal <paramref name="n"/>, within that mesh's setback behind the sample. A viewer then sees that cover where the
+        /// sample stood. A face of a mesh it does not name, or past the setback, does not count, and nothing between the
+        /// sample and the cover stops the ray. The ray runs out along the normal from the setback's depth to the origin, as
+        /// a ray of the cone runs from the sample toward a viewer, so a face blocks it exactly when it renders to one.
+        /// </summary>
+        bool Behind(int sample, float3 o, float3 n, int ownMesh, ref FixedList512Bytes<int2> allowed, ref ulong witness, ref int rays)
+        {
+            rays++;
+            bool metAny = false, metCoMoving = false;
+            var names = SampleCoveredBy[sample];
+            var inv = new float3(SafeInv(n.x), SafeInv(n.y), SafeInv(n.z));
+            var ray = new ShearedRay(n);
+            for (var k = 0; k < FrameTrees.Length; k++)
+            {
+                var m = FrameTrees[k].Mesh;
+                if (m == ownMesh || (names & Bit(m)) == 0 || MeshSetback[m] <= 0f) continue;
+                var depth = OriginOffset + MeshSetback[m];
+                if (!Traverse(FrameNodes, FramePrims, FrameTrees[k].Root, false, o - n * depth, n, inv, ray, depth, ref allowed, ref metAny, ref metCoMoving)) continue;
+                witness |= Bit(m);
+                return true;
+            }
+            for (var k = 0; k < MeshOrder.Length; k++)
+            {
+                var m = MeshOrder[k];
+                if (m == ownMesh || (names & Bit(m)) == 0 || MeshSetback[m] <= 0f) continue;
+                var depth = OriginOffset + MeshSetback[m];
+                if (!Traverse(Nodes, Prims, MeshRoot[m], true, o - n * depth, n, inv, ray, depth, ref allowed, ref metAny, ref metCoMoving)) continue;
+                witness |= Bit(m);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>Whether the ray enters the rest bounds of faces the configuration moves on a mesh other than the sample's own.</summary>
@@ -200,7 +245,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             for (var k = 0; k < FrameTrees.Length; k++)
             {
                 var tree = FrameTrees[k];
-                if (tree.Mesh != ownMesh && Slab(new BvhNode { Min = tree.RiskMin, Max = tree.RiskMax }, o, inv, out _)) return true;
+                if (tree.Mesh != ownMesh && Slab(new BvhNode { Min = tree.RiskMin, Max = tree.RiskMax }, o, inv, Reach, out _)) return true;
             }
             return false;
         }
@@ -237,12 +282,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             for (var k = 0; k < FrameTrees.Length; k++)
             {
                 var tree = FrameTrees[k];
-                if (tree.Mesh == ownMesh || !Traverse(FrameNodes, FramePrims, tree.Root, false, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving)) continue;
+                if (tree.Mesh == ownMesh || !Traverse(FrameNodes, FramePrims, tree.Root, false, o, d, inv, ray, Reach, ref allowed, ref metAny, ref metCoMoving)) continue;
                 witness |= Bit(tree.Mesh);
                 return Reason.Covered;
             }
             // The mesh that blocked the previous ray usually blocks this one.
-            if (last >= 0 && Traverse(Nodes, Prims, MeshRoot[last], true, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving))
+            if (last >= 0 && Traverse(Nodes, Prims, MeshRoot[last], true, o, d, inv, ray, Reach, ref allowed, ref metAny, ref metCoMoving))
             {
                 witness |= Bit(last);
                 return Reason.Covered;
@@ -251,7 +296,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             {
                 var m = MeshOrder[k];
                 if (m == ownMesh || m == last) continue;
-                if (!Traverse(Nodes, Prims, MeshRoot[m], true, o, d, inv, ray, ref allowed, ref metAny, ref metCoMoving)) continue;
+                if (!Traverse(Nodes, Prims, MeshRoot[m], true, o, d, inv, ray, Reach, ref allowed, ref metAny, ref metCoMoving)) continue;
                 last = m;
                 witness |= Bit(m);
                 return Reason.Covered;
@@ -265,20 +310,21 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 
         // Conservative (Ize, 2013): the far distance is stretched past float rounding, so a ray that grazes a box
         // is let in; a box let in wrongly costs only time.
-        bool Slab(in BvhNode node, float3 o, float3 inv, out float tNear)
+        static bool Slab(in BvhNode node, float3 o, float3 inv, float reach, out float tNear)
         {
             var t0 = (node.Min - o) * inv;
             var t1 = (node.Max - o) * inv;
             tNear = math.cmax(math.min(t0, t1));
             var tFar = math.cmin(math.max(t0, t1)) * 1.000001f;
-            return tNear <= tFar && tFar >= 0f && tNear <= Reach;
+            return tNear <= tFar && tFar >= 0f && tNear <= reach;
         }
 
+        /// <summary>Whether a face of the tree blocks the ray within <paramref name="reach"/> along it.</summary>
         unsafe bool Traverse(NativeArray<BvhNode> nodes, NativeArray<BvhTri> prims, int root, bool skipMoved,
-                             float3 o, float3 d, float3 inv, in ShearedRay ray, ref FixedList512Bytes<int2> allowed,
+                             float3 o, float3 d, float3 inv, in ShearedRay ray, float reach, ref FixedList512Bytes<int2> allowed,
                              ref bool metAny, ref bool metCoMoving)
         {
-            if (root < 0 || !Slab(nodes[root], o, inv, out _)) return false;
+            if (root < 0 || !Slab(nodes[root], o, inv, reach, out _)) return false;
             var stack = stackalloc int[Bvh.MaxDepth + 8];
             var sp = 0;
             stack[sp++] = root;
@@ -290,7 +336,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     for (var i = node.First; i < node.First + node.Count; i++)
                     {
                         var t = prims[i];
-                        if (!Intersect(t, o, ray, out var bu, out var bv)) continue;
+                        if (!Intersect(t, o, ray, reach, out var bu, out var bv)) continue;
                         var occ = t.Occ;
                         if (Disabled[occ] || (skipMoved && Moved[occ])) continue;
                         metAny = true;
@@ -305,8 +351,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     continue;
                 }
                 var l = node.First;
-                var hl = Slab(nodes[l], o, inv, out var tl);
-                var hr = Slab(nodes[l + 1], o, inv, out var tr);
+                var hl = Slab(nodes[l], o, inv, reach, out var tl);
+                var hr = Slab(nodes[l + 1], o, inv, reach, out var tr);
                 if (hl && hr)
                 {
                     // Nearer child on top: the first layer out is the likeliest blocker.
@@ -325,7 +371,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// from each and a ray along it meets at least one of them, while a ray outside a face by any margin
         /// misses it. <paramref name="u"/> and <paramref name="v"/> are the weights of corners y and z.
         /// </summary>
-        bool Intersect(in BvhTri t, float3 o, in ShearedRay r, out float u, out float v)
+        static bool Intersect(in BvhTri t, float3 o, in ShearedRay r, float reach, out float u, out float v)
         {
             u = v = 0f;
             float3 a = t.V0 - o, b = t.V1 - o, c = t.V2 - o;
@@ -347,7 +393,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             if (det == 0f) return false;
             // The hit is tz / det along the ray; it must lie past the origin and within reach.
             var tz = r.Sz * (e0 * a[r.Kz] + e1 * b[r.Kz] + e2 * c[r.Kz]);
-            if (det > 0f ? tz <= 0f || tz > Reach * det : tz >= 0f || tz < Reach * det) return false;
+            if (det > 0f ? tz <= 0f || tz > reach * det : tz >= 0f || tz < reach * det) return false;
             u = e1 / det;
             v = e2 / det;
             return true;

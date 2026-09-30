@@ -176,8 +176,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     }
 
     /// <summary>
-    /// Interior samples on a lattice over each large triangle whose corners are all covered, so a hole
-    /// in the cover smaller than the triangle and away from its corners still keeps it. A triangle that
+    /// Interior samples on a lattice over each large candidate triangle whose corners are all covered, so a
+    /// hole in the cover smaller than the triangle and away from its corners still keeps it. A triangle that
     /// renders its back gets the lattice on each side.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
@@ -186,6 +186,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         [ReadOnly] public NativeArray<float3> Pos;
         [ReadOnly] public NativeArray<int3> Tris;
         [ReadOnly] public NativeArray<int> TriMesh;
+        [ReadOnly] public NativeArray<bool> TriCandidate;
         [ReadOnly] public NativeArray<bool> TriTwoSided;
         [ReadOnly] public NativeArray<int> VertBack;
         [ReadOnly] public NativeArray<int> WeightStart;
@@ -213,6 +214,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             if (Spacing <= 0f) return;
             for (var t = 0; t < Tris.Length; t++)
             {
+                if (!TriCandidate[t]) continue;
                 var tri = Tris[t];
                 var twoSided = TriTwoSided[t];
                 if (!Covered[tri.x] || !Covered[tri.y] || !Covered[tri.z]) continue;
@@ -338,7 +340,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
     /// moves in the frame trees, the rest where they stand. Every other sample, on a moved mesh or not, is at risk only
     /// if the configuration moves a face of another mesh that was its witness: a ray blocked at rest by an unmoved face
     /// stays blocked, and a face moved into a ray can only add cover. So such a sample is re-cast when its witness set
-    /// names a moved mesh other than its own and its cone can reach that mesh's moved faces' rest bounds.
+    /// names a moved mesh other than its own and its cone, or the ray straight behind it, can reach that mesh's moved
+    /// faces' rest bounds. A sample that a cover behind it may cover is re-cast in full, since its rest verdict may rest
+    /// on that cover alone, with a ray of its cone never blocked.
     /// </summary>
     [BurstCompile(CompileSynchronously = true)]
     internal struct FramePrepJob : IJob
@@ -351,6 +355,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public float OriginOffset;
         public float ConeRadians;
         public BvhSplit Split;
+        /// <summary>Per sample, how far behind it a cover may lie (<see cref="CoverageKernel.Evaluate"/>).</summary>
+        [ReadOnly] public NativeArray<float> SampleStretch;
         [ReadOnly] public NativeArray<ShapeDelta> Deltas;
         [ReadOnly] public NativeArray<float3> Pos;
         [ReadOnly] public NativeArray<float3> GeoN;
@@ -548,8 +554,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     for (var k = 0; k < FrameTrees.Length; k++)
                     {
                         var tree = FrameTrees[k];
-                        if (tree.Mesh == own || (witness & CoverageKernel.Bit(tree.Mesh)) == 0 || !Reaches(p, SampleNrm[s], tree)) continue;
-                        Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = SampleNrm[s], OnlyRisky = true });
+                        if (tree.Mesh == own || (witness & CoverageKernel.Bit(tree.Mesh)) == 0 || !Reaches(p, SampleNrm[s], SampleStretch[s], tree)) continue;
+                        Work.Add(new FrameWork { Sample = s, Pos = p, Nrm = SampleNrm[s], OnlyRisky = SampleStretch[s] <= 0f });
                         break;
                     }
                 }
@@ -577,13 +583,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
             Work.Add(w);
         }
 
-        /// <summary>Whether the sample's cone, from its ray origins out to reach, can meet the tree's rest bounds.</summary>
-        bool Reaches(float3 p, float3 n, in FrameTree tree)
+        /// <summary>
+        /// Whether the sample's cone, from its ray origins out to reach, or the ray straight behind it out to
+        /// <paramref name="stretch"/>, can meet the tree's rest bounds.
+        /// </summary>
+        bool Reaches(float3 p, float3 n, float stretch, in FrameTree tree)
         {
             var centre = (tree.RiskMin + tree.RiskMax) * 0.5f;
             var radius = math.length(tree.RiskMax - tree.RiskMin) * 0.5f;
             var to = centre - p;
             var dist = math.length(to);
+            // The ray behind the sample runs outside the cone the angle test below sees, and a setback deeper than Reach
+            // takes it past where the cone stops.
+            if (stretch > 0f && dist - radius <= stretch + OriginOffset) return true;
             // A ray starts OriginOffset along the normal, so it reaches that much past Reach from the sample.
             if (dist - radius > Reach + OriginOffset) return false;
             if (dist <= radius) return true;

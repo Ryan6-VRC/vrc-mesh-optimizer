@@ -18,7 +18,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
     // any step, of one renderer or of the whole avatar, must leave none of it behind. Unity's leak tracking counts every
     // native allocation made since it last forgave and not yet freed, which is what each case reads after the pipeline
     // has returned or thrown. The avatar exercises every owner: occlusion, the clearance surface with a renderer the pass
-    // leaves as it was, recorded sequences and cuts.
+    // leaves as it was, recorded sequences and cuts, and judging the removals again, since the budget cuts the garment
+    // deep enough to uncover some of the body it hides.
     public class DisposalTests
     {
         AvatarFixture a;
@@ -99,6 +100,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             foreach (var r in first.Renderers.Concat(second.Renderers)) if (r.OutputMesh != null) a.Made(r.OutputMesh);
 
             Assert.That(UnsafeUtility.CheckForLeaks(), Is.Zero);
+            Assert.That(first.HiddenRestored, Is.GreaterThan(0), "the cut writes back what it uncovered, so re-judging is part of what is compared");
             AssertSameCut(first, second);
         }
 
@@ -112,6 +114,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             {
                 first = OptimizerPipeline.Cut(prepared);
                 Assert.That(Of(first, body).HiddenRemoved, Is.GreaterThan(0), "the garment hides some of the body");
+                Assert.That(Of(first, body).HiddenRestored, Is.GreaterThan(0), "and the cut uncovers some of it");
                 foreach (var r in first.Renderers)
                     if (r.HiddenSourceTriangles != null) Array.Clear(r.HiddenSourceTriangles, 0, r.HiddenSourceTriangles.Length);
                 second = OptimizerPipeline.Cut(prepared);
@@ -119,6 +122,29 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             foreach (var r in first.Renderers.Concat(second.Renderers)) if (r.OutputMesh != null) a.Made(r.OutputMesh);
 
             AssertSameCut(first, second);
+        }
+
+        // A re-judge that fails is named, and the cut writes what it writes with re-judging off: the removals as first
+        // judged. Settings the solver refuses stand in for any failure inside it, met once its own inputs are allocated.
+        [Test]
+        public void ARejudgeThatThrows_IsNamed_WritesTheRemovalsAsFirstJudged_AndLeavesNoNativeMemory()
+        {
+            LogAssert.Expect(LogType.Exception, new Regex("Reach"));
+            OptimizationReport failed, off;
+            using (var prepared = OptimizerPipeline.Prepare(Input()))
+            {
+                prepared.OcclusionSettings.Reach = 0f;
+                failed = OptimizerPipeline.Cut(prepared);
+                prepared.Input.Rejudge = false;
+                off = OptimizerPipeline.Cut(prepared);
+            }
+            foreach (var r in failed.Renderers.Concat(off.Renderers)) if (r.OutputMesh != null) a.Made(r.OutputMesh);
+
+            Assert.That(UnsafeUtility.CheckForLeaks(), Is.Zero);
+            Assert.That(failed.Diagnostics.Count(d => d.Key == DiagnosticKeys.RejudgeFailed && d.Warning), Is.EqualTo(1));
+            Assert.That(failed.HiddenRestored, Is.Zero);
+            Assert.That(Of(failed, body).HiddenRemoved, Is.GreaterThan(0));
+            AssertSameCut(off, failed);
         }
 
         [Test]
