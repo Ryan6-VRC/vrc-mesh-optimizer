@@ -117,13 +117,18 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// of that triangle's own clearance and the clearance around the new triangle's corners. The gap is read on source
     /// triangles, which stay as small as the source's own however far decimation goes, so it is the gap where the two
     /// layers approach rather than the least gap anywhere under a grown triangle. The other layers are judged as they
-    /// were before decimation, which is what lets each mesh be decimated alone and in any order: with Share under one
-    /// half, two layers that each keep to their share of the gap between them cannot meet. Surface that already touches
+    /// were before decimation, which is what lets each mesh be decimated alone and in any order. Each clearance is to
+    /// the nearest other layer of any, so a layer is held to its share of its gap to the nearest other layer, and with
+    /// Share under one half two layers whose nearest layers are each other cannot meet. Surface that already touches
     /// or crosses another layer has no clearance to keep; there a collapse is refused only when it lengthens the line
     /// along which the layers cross.
     ///
     /// Limits: clearance is measured at rest; in a bend of the rig a collapse is held only to a share of that gap (see
     /// <see cref="BendSettings.ClearanceShare"/>), and a shape key that moves two layers differently is not checked;
+    /// a pair of layers each with a nearer third layer on its far side (skin, tights, lining, outer) may cross by up to
+    /// the sum of the two sides' errors, since each is held only to its share of the smaller gap on its far side and not
+    /// of the gap between the pair (the case on record is four tubes, in
+    /// ClearanceTests.TwoLayersEachWithANearerLayerBeyond_CrossByNoMoreThanTheirErrors);
     /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
     /// pieces meeting at one vertex) are one layer; the gap is read per source triangle, so where it changes by a
     /// large part of itself across one source triangle, the least of it stands for the whole; and the other layers are
