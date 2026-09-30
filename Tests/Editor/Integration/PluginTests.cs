@@ -98,8 +98,10 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(OptimizationReports.Latest?.AvatarName, Is.EqualTo(a.Root.name));
             Assert.That(OptimizationReports.Latest.Renderers.Single(r => r.Renderer == body).OutputMesh, Is.SameAs(body.sharedMesh));
             var g = OptimizationReports.Latest.Renderers.Single(r => r.Renderer == garment);
-            TestContext.WriteLine($"garment: {g.SequenceLength} steps recorded, {g.TrianglesBefore} to {g.TrianglesAfter} triangles; {OptimizationReports.Latest.HiddenRestored} restored");
+            TestContext.WriteLine($"garment: {g.SequenceLength} steps recorded, {g.TrianglesBefore} to {g.TrianglesAfter} triangles, {g.NearVertices} vertices near the body; {OptimizationReports.Latest.HiddenRestored} restored");
             Assert.That(g.SequenceLength, Is.GreaterThan(0), "the build decimated");
+            Assert.That(g.NearVertices, Is.GreaterThan(0), "with the clearance rule");
+            Assert.That(OptimizationReports.Latest.HiddenRestored, Is.GreaterThan(0), "and re-judged what the cut uncovered");
             Assert.That(OptimizationReports.Latest.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.RendererFailed).And.No.Member(DiagnosticKeys.RejudgeFailed));
             Assert.That(log.Any(l => l.StartsWith("[Mesh Optimizer] " + a.Root.name)), "a summary reaches the console");
 
