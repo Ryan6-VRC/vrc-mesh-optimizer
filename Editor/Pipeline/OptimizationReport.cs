@@ -285,6 +285,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         internal const string SummaryBudgetNotMet = "MeshOptimizer:summary:budget-not-met";
         internal const string SummaryTolerance = "MeshOptimizer:summary:tolerance";
 
+        /// <summary>Each first-line key's English, which the line falls back to when the localizer has no string for it.</summary>
+        internal static readonly Dictionary<string, string> SummaryEnglish = new Dictionary<string, string>
+        {
+            [SummaryBudgetMet] = "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Budget {5} met, error level {6} mm, {7} ms.",
+            [SummaryBudgetNotMet] = "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Budget {5} NOT met, error level {6} mm, {7} ms.",
+            [SummaryTolerance] = "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Tolerance {5} mm, error level {6} mm, {7} ms.",
+        };
+
         /// <summary>
         /// A few lines for the console. The first is the user's, in their language. The rest are English detail for whoever
         /// is tuning the optimizer, which tests and measurement tools read.
@@ -294,7 +302,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var c = CultureInfo.InvariantCulture;
             var sb = new StringBuilder();
             var key = Target == TargetKind.Tolerance ? SummaryTolerance : TargetMet ? SummaryBudgetMet : SummaryBudgetNotMet;
-            sb.Append(string.Format(c, L10n.Tr(key), AvatarName, TrianglesBefore, TrianglesAfter, HiddenRemoved,
+            sb.Append(string.Format(c, L10n.Tr(key, SummaryEnglish[key]), AvatarName, TrianglesBefore, TrianglesAfter, HiddenRemoved,
                 TrianglesBefore - HiddenRemoved - TrianglesAfter,
                 Target == TargetKind.TriangleBudget ? TriangleBudget.ToString(c) : Tolerance.ToString("0.###", c),
                 (ErrorLevel * 1000f).ToString("0.###", c), Times.Total.ToString("0", c)));

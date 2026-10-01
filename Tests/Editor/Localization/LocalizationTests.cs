@@ -47,15 +47,32 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
             Assert.That(en.Keys.Where(k => ja.ContainsKey(k) && Placeholders(en[k]) != Placeholders(ja[k])), Is.Empty);
         }
 
-        // Keys built in code rather than drawn by the inspector: the stage a renderer failed at, and the summary's first line.
+        // A stray brace makes string.Format throw, which loses the build's summary from the console.
         [Test]
-        public void EveryStageAndSummaryKey_HasAnEnglishString()
+        public void EveryString_InEitherLanguage_Formats()
+        {
+            var args = Enumerable.Range(0, 16).Select(i => (object)i).ToArray();
+            var bad = new[] { "en-us.po", "ja-jp.po" }.SelectMany(file => Entries(file).Where(e =>
+            {
+                try { string.Format(e.Value, args); return false; }
+                catch (System.FormatException) { return true; }
+            }).Select(e => $"{file} {e.Key}"));
+
+            Assert.That(bad, Is.Empty);
+        }
+
+        // Keys built in code rather than drawn by the inspector: the stage a renderer failed at, and the summary's first line.
+        // Their English in the file is the English the code falls back to when the localizer has no string, so a build logs
+        // the same line either way.
+        [Test]
+        public void EveryStageAndSummaryKey_HasTheEnglishItsCodeFallsBackTo()
         {
             var en = Entries("en-us.po");
-            var keys = System.Enum.GetValues(typeof(PipelineStage)).Cast<PipelineStage>().Select(DiagnosticKeys.Stage)
-                .Concat(new[] { OptimizationReport.SummaryBudgetMet, OptimizationReport.SummaryBudgetNotMet, OptimizationReport.SummaryTolerance });
+            var fallbacks = System.Enum.GetValues(typeof(PipelineStage)).Cast<PipelineStage>()
+                .ToDictionary(DiagnosticKeys.Stage, s => s.ToString())
+                .Concat(OptimizationReport.SummaryEnglish);
 
-            Assert.That(keys.Where(k => !en.ContainsKey(k)), Is.Empty);
+            Assert.That(fallbacks.Where(f => !en.TryGetValue(f.Key, out var s) || s != f.Value).Select(f => f.Key), Is.Empty);
         }
 
         [Test]

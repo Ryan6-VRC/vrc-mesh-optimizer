@@ -163,7 +163,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Names a renderer's failure at a stage, and logs it.</summary>
         static void NameFailure(Renderer renderer, List<Diagnostic> diagnostics, PipelineStage stage, Exception e)
         {
-            diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, renderer, L10n.Tr(DiagnosticKeys.Stage(stage)), e.Message));
+            diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, renderer, L10n.Tr(DiagnosticKeys.Stage(stage), stage.ToString()), e.Message));
             Debug.LogException(e);
         }
 
