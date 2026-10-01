@@ -207,10 +207,13 @@ msgid "MeshOptimizer:preview"
 msgstr "ポリゴン削減をプレビュー"
 
 msgid "MeshOptimizer:preview:tooltip"
-msgstr "ポリゴン削減後のメッシュをシーンビューに表示します。初回はすべてのメッシュを処理するため数秒かかることがありますが、その後は目標を変えるとほぼすぐに反映されます。"
+msgstr "ポリゴン削減後のメッシュをシーンビューに表示します。初回はすべてのメッシュを処理するため数秒かかることがありますが、その後は目標を変えるとほぼすぐに反映されます。シーンを開くたびにオフになります。"
 
 msgid "MeshOptimizer:preview:off"
 msgstr "プレビューはオフです。"
+
+msgid "MeshOptimizer:list:empty"
+msgstr "空です。オブジェクトをここにドラッグしてください(複数まとめても構いません)。"
 
 msgid "MeshOptimizer:preview:pending"
 msgstr "プレビューを計算しています。"

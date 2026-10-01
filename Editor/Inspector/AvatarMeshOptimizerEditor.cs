@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
 using L10n = Ryan6Vrc.MeshOptimizer.Localization.L10n;
+using Object = UnityEngine.Object;
 
 namespace Ryan6Vrc.MeshOptimizer.Inspector
 {
@@ -28,6 +29,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             _materials, _renderers, _faceFloor, _lockFingers, _fingerWeight;
 
         ReorderableList _rendererList, _alwaysOnList, _materialList;
+        Drop _rendererDrop, _alwaysOnDrop, _materialDrop;
 
         void OnEnable()
         {
@@ -59,7 +61,54 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                 EditorGUI.LabelField(columns[0], Label(_materials));
                 EditorGUI.LabelField(columns[1], MaterialOcclusionDrawer.ModeHeader);
             });
+
+            _rendererDrop = new Drop(Renderers, nameof(RendererSettings.renderer), entry =>
+            {
+                entry.FindPropertyRelative(nameof(RendererSettings.excludeFromDecimation)).boolValue = false;
+                entry.FindPropertyRelative(nameof(RendererSettings.protection)).floatValue = 1f;
+            });
+            _alwaysOnDrop = new Drop(Renderers, null, null);
+            _materialDrop = new Drop(Materials, nameof(MaterialOcclusion.material),
+                entry => entry.FindPropertyRelative(nameof(MaterialOcclusion.mode)).enumValueIndex = (int)OcclusionMode.Automatic);
         }
+
+        /// <summary>
+        /// What dropping objects on a list adds: what the dropped objects resolve to, the field of an entry that holds one
+        /// (null when the entry is the object), and what a new entry's other fields start as, since growing an array copies
+        /// its last entry.
+        /// </summary>
+        sealed class Drop
+        {
+            public readonly Func<Object[], IEnumerable<Object>> Resolve;
+            public readonly string Field;
+            public readonly Action<SerializedProperty> Reset;
+
+            public Drop(Func<Object[], IEnumerable<Object>> resolve, string field, Action<SerializedProperty> reset)
+            {
+                Resolve = resolve;
+                Field = field;
+                Reset = reset;
+            }
+        }
+
+        /// <summary>
+        /// The renderers dropped objects stand for: a renderer itself, a GameObject's own renderer, or, for a GameObject
+        /// with none such as an outfit's root, every renderer under it.
+        /// </summary>
+        static IEnumerable<Object> Renderers(Object[] dropped) => dropped.SelectMany(o =>
+        {
+            if (o is Renderer renderer) return IsMesh(renderer) ? new[] { renderer } : Array.Empty<Renderer>();
+            if (!(o is GameObject go)) return Array.Empty<Renderer>();
+            var own = go.GetComponents<Renderer>().Where(IsMesh).ToArray();
+            return own.Length > 0 ? own : go.GetComponentsInChildren<Renderer>(true).Where(IsMesh).ToArray();
+        });
+
+        static bool IsMesh(Renderer renderer) => renderer is SkinnedMeshRenderer || renderer is MeshRenderer;
+
+        /// <summary>Dropped materials, and every material of the renderers the other dropped objects stand for.</summary>
+        static IEnumerable<Object> Materials(Object[] dropped) =>
+            dropped.OfType<Material>().Cast<Object>()
+                .Concat(Renderers(dropped).SelectMany(r => ((Renderer)r).sharedMaterials)).Where(m => m != null);
 
         /// <summary>
         /// A list of one-line entries under a header drawn by <paramref name="header"/>. The header's rect is widened to the
@@ -80,6 +129,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                     rect.height = EditorGUIUtility.singleLineHeight;
                     EditorGUI.PropertyField(rect, property.GetArrayElementAtIndex(index), GUIContent.none);
                 },
+                drawNoneElementCallback = rect => EditorGUI.LabelField(rect, L10n.G(InspectorKeys.ListEmpty)),
             };
 
         /// <summary>How much further right a list's entries start than its header, for the drag handle.</summary>
@@ -96,7 +146,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             {
                 DrawTarget();
                 Gap();
-                DrawList(_rendererList, _renderers);
+                DrawList(_rendererList, _renderers, _rendererDrop);
                 Gap();
                 DrawPreview();
             }
@@ -106,11 +156,11 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             if (removeHidden)
             {
                 Intro(InspectorKeys.AlwaysOnHelp);
-                DrawList(_alwaysOnList, _alwaysOn);
+                DrawList(_alwaysOnList, _alwaysOn, _alwaysOnDrop);
                 DrawCheck();
                 Gap();
                 Intro(InspectorKeys.MaterialsHelp);
-                DrawList(_materialList, _materials);
+                DrawList(_materialList, _materials, _materialDrop);
             }
 
             DrawAdvanced(decimate, removeHidden);
@@ -349,14 +399,56 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         }
 
         /// <summary>
-        /// A list as one-line entries under its column header. With several components selected Unity's own array field
-        /// draws it instead, since a reorderable list edits one array; its entries still draw one line each.
+        /// A list as one-line entries under its column header, taking objects dropped anywhere on it. With several components
+        /// selected Unity's own array field draws it instead, since a reorderable list edits one array; its entries still
+        /// draw one line each.
         /// </summary>
-        void DrawList(ReorderableList list, SerializedProperty property)
+        void DrawList(ReorderableList list, SerializedProperty property, Drop drop)
         {
-            if (serializedObject.isEditingMultipleObjects) EditorGUILayout.PropertyField(property, Label(property), true);
-            else list.DoLayoutList();
+            if (serializedObject.isEditingMultipleObjects)
+            {
+                EditorGUILayout.PropertyField(property, Label(property), true);
+                return;
+            }
+            // The rect is the one the layout pass gave the list, so a drop is taken before an entry's field can take only
+            // its first object.
+            var rect = EditorGUILayout.BeginVertical();
+            AcceptDrop(rect, property, drop);
+            list.DoLayoutList();
+            EditorGUILayout.EndVertical();
         }
+
+        /// <summary>Takes a drag over the list when anything dragged resolves to an entry, and appends on the drop.</summary>
+        static void AcceptDrop(Rect rect, SerializedProperty property, Drop drop)
+        {
+            var e = Event.current;
+            if (e.type != EventType.DragUpdated && e.type != EventType.DragPerform || !rect.Contains(e.mousePosition)) return;
+            if (!drop.Resolve(DragAndDrop.objectReferences).Any()) return;
+            DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+            if (e.type == EventType.DragPerform)
+            {
+                DragAndDrop.AcceptDrag();
+                Append(property, drop, DragAndDrop.objectReferences);
+            }
+            e.Use();
+        }
+
+        /// <summary>Appends what the dropped objects resolve to, each once and only if the list does not hold it already.</summary>
+        static void Append(SerializedProperty property, Drop drop, Object[] dropped)
+        {
+            var held = new HashSet<Object>();
+            for (var i = 0; i < property.arraySize; i++) held.Add(Reference(property.GetArrayElementAtIndex(i), drop).objectReferenceValue);
+            foreach (var o in drop.Resolve(dropped).Where(held.Add))
+            {
+                property.arraySize++;
+                var entry = property.GetArrayElementAtIndex(property.arraySize - 1);
+                Reference(entry, drop).objectReferenceValue = o;
+                drop.Reset?.Invoke(entry);
+            }
+        }
+
+        static SerializedProperty Reference(SerializedProperty entry, Drop drop) =>
+            drop.Field == null ? entry : entry.FindPropertyRelative(drop.Field);
 
         /// <summary>A feature's toggle drawn as its section's header: a rule above, then the toggle in bold with the box on the left.</summary>
         static void Header(SerializedProperty property)

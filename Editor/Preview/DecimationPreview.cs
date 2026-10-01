@@ -9,6 +9,7 @@ using Ryan6Vrc.MeshOptimizer.Inspector;
 using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEditorInternal;
 using UnityEngine;
 using L10n = Ryan6Vrc.MeshOptimizer.Localization.L10n;
@@ -54,9 +55,16 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
     /// </summary>
     internal sealed class DecimationPreview : IRenderFilter
     {
-        /// <summary>Off until the user turns it on: a first preview holds the Editor while it records.</summary>
+        /// <summary>
+        /// Off until the user turns it on, and off again whenever a scene opens or the Editor reloads: a first preview holds
+        /// the Editor while it records, so it never starts on its own. Hence no saved state, which NDMF keeps under a
+        /// qualified name and would restore.
+        /// </summary>
         public static readonly TogglablePreviewNode Toggle = TogglablePreviewNode.Create(
-            () => L10n.Tr(InspectorKeys.Preview), "com.ryan6vrc.mesh-optimizer.decimation-preview", false);
+            () => L10n.Tr(InspectorKeys.Preview), initialState: false);
+
+        [InitializeOnLoadMethod]
+        static void OffWhenASceneOpens() => EditorSceneManager.sceneOpened += (scene, mode) => Toggle.IsEnabled.Value = false;
 
         public IEnumerable<TogglablePreviewNode> GetPreviewControlNodes()
         {

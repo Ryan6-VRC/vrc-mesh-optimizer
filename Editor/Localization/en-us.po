@@ -207,10 +207,13 @@ msgid "MeshOptimizer:preview"
 msgstr "Preview decimation"
 
 msgid "MeshOptimizer:preview:tooltip"
-msgstr "Show the decimated meshes in the Scene view. The first time it processes every mesh, which can take a few seconds. After that, changing the target updates it almost at once."
+msgstr "Show the decimated meshes in the Scene view. The first time it processes every mesh, which can take a few seconds. After that, changing the target updates it almost at once. It turns off whenever a scene opens."
 
 msgid "MeshOptimizer:preview:off"
 msgstr "The preview is off."
+
+msgid "MeshOptimizer:list:empty"
+msgstr "Empty. Drag objects here, several at once if you like."
 
 msgid "MeshOptimizer:preview:pending"
 msgstr "Computing the preview."
