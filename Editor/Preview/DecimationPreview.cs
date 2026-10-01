@@ -63,8 +63,15 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
         public static readonly TogglablePreviewNode Toggle = TogglablePreviewNode.Create(
             () => L10n.Tr(InspectorKeys.Preview), initialState: false);
 
+        /// <summary>
+        /// NDMF reopens its own hidden preview scene around play mode and reloads, which raises the same event; it learns
+        /// that scene only once opening returns, so the check waits a tick to tell the two apart.
+        /// </summary>
         [InitializeOnLoadMethod]
-        static void OffWhenASceneOpens() => EditorSceneManager.sceneOpened += (scene, mode) => Toggle.IsEnabled.Value = false;
+        static void OffWhenASceneOpens() => EditorSceneManager.sceneOpened += (scene, mode) => EditorApplication.delayCall += () =>
+        {
+            if (!NDMFPreviewSceneManager.IsPreviewScene(scene)) Toggle.IsEnabled.Value = false;
+        };
 
         public IEnumerable<TogglablePreviewNode> GetPreviewControlNodes()
         {
