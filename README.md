@@ -1,3 +1,5 @@
+<p align="center"><img src="Documentation~/images/mesh-optimizer.png" width="128" height="128" alt="Mesh Optimizer logo: a hexagonal cube with one face cut away"></p>
+
 # Mesh Optimizer
 
 A non-destructive mesh optimizer for VRChat avatars, built as an [NDMF](https://github.com/bdunderscore/ndmf) plugin. Drop the component on an avatar, set a few things, and build: the avatar is decimated with a deformation-aware error metric, and triangles that are guaranteed hidden are removed. It is designed for what avatars actually do: toggled meshes, transparent garments, and faces carrying hundreds of shape keys.
@@ -36,3 +38,5 @@ Nothing has been copied from these projects; a `NOTICE` file will carry the lice
 ## License
 
 MIT. See `LICENSE`.
+
+By [Ryan6-VRC](https://github.com/Ryan6-VRC) <img src="Documentation~/images/ryan6-mark.png" width="20" height="20" alt="Ryan6-VRC mark">

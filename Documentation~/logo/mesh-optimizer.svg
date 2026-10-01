@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Mesh Optimizer (Ryan6-VRC)</title>
+  <g fill="#151C27" stroke="#151C27" stroke-width="5" stroke-linejoin="round">
+    <polygon points="32,3 57.1,17.5 32,32"/>
+    <polygon points="57.1,17.5 57.1,46.5 32,32"/>
+    <polygon points="32,61 6.9,46.5 32,32"/>
+    <polygon points="6.9,46.5 6.9,17.5 32,32"/>
+    <polygon points="6.9,17.5 32,3 32,32"/>
+  </g>
+  <polygon points="50.7,46.5 35.2,55.46 35.2,37.54" fill="none" stroke="#6F7E98" stroke-width="1.75" stroke-dasharray="3.5,2.5" stroke-linejoin="round"/>
+  <polygon points="33,4.73 55.1,17.5 33,30.27" fill="#A6BEDA"/>
+  <polygon points="56.1,19.23 56.1,44.77 34,32" fill="#56708F"/>
+  <polygon points="31,59.27 8.9,46.5 31,33.73" fill="#6C2A4A"/>
+  <polygon points="7.9,44.77 7.9,19.23 30,32" fill="#A5476F"/>
+  <polygon points="8.9,17.5 31,4.73 31,30.27" fill="#E2EBF6"/>
+</svg>
