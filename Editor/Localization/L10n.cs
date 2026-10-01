@@ -26,6 +26,12 @@ namespace Ryan6Vrc.MeshOptimizer.Localization
 
         public static string Tr(string key) => Localizer.GetLocalizedString(key);
 
+        /// <summary>
+        /// The key's string, or <paramref name="english"/> when the localizer has none, as when its files were not yet
+        /// loadable. For text a build logs or records, which must never become the key in angle brackets.
+        /// </summary>
+        public static string Tr(string key, string english) => Localizer.TryGetLocalizedString(key, out var s) ? s : english;
+
         public static string Tooltip(string key) => Localizer.TryGetLocalizedString(key + ":tooltip", out var tip) ? tip : null;
 
         /// <summary>A label and its tooltip, for an IMGUI field.</summary>

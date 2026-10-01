@@ -367,3 +367,21 @@ msgstr "The gate measurement switched on for this build failed, so the report ha
 
 msgid "MeshOptimizer:diag:gate-failed:hint"
 msgstr "The full error is in the console. The gate only runs when it is switched on, so nothing on the avatar needs fixing."
+
+msgid "PipelineStage:Extraction"
+msgstr "Extraction"
+
+msgid "PipelineStage:Decimation"
+msgstr "Decimation"
+
+msgid "PipelineStage:Writing"
+msgstr "Writing"
+
+msgid "MeshOptimizer:summary:budget-met"
+msgstr "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Budget {5} met, error level {6} mm, {7} ms."
+
+msgid "MeshOptimizer:summary:budget-not-met"
+msgstr "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Budget {5} NOT met, error level {6} mm, {7} ms."
+
+msgid "MeshOptimizer:summary:tolerance"
+msgstr "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Tolerance {5} mm, error level {6} mm, {7} ms."

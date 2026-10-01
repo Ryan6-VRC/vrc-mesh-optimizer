@@ -10,6 +10,7 @@ using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Decimation;
 using Ryan6Vrc.MeshOptimizer.Extraction;
 using Ryan6Vrc.MeshOptimizer.Liveness;
+using Ryan6Vrc.MeshOptimizer.Localization;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using Unity.Collections;
@@ -162,7 +163,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Names a renderer's failure at a stage, and logs it.</summary>
         static void NameFailure(Renderer renderer, List<Diagnostic> diagnostics, PipelineStage stage, Exception e)
         {
-            diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, renderer, stage.ToString(), e.Message));
+            diagnostics.Add(new Diagnostic(DiagnosticKeys.RendererFailed, true, renderer, L10n.Tr(DiagnosticKeys.Stage(stage), stage.ToString()), e.Message));
             Debug.LogException(e);
         }
 

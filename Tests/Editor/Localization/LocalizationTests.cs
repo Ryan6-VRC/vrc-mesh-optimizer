@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Inspector;
+using Ryan6Vrc.MeshOptimizer.Pipeline;
 using Ryan6Vrc.MeshOptimizer.Runtime;
 using UnityEditor;
 using UnityEngine;
@@ -33,6 +34,45 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
 
             Assert.That(ja.Keys, Is.EquivalentTo(en.Keys));
             Assert.That(ja.Where(e => string.IsNullOrWhiteSpace(e.Value)).Select(e => e.Key), Is.Empty);
+        }
+
+        // A placeholder one language drops loses that value for its readers, and one it adds that the English lacks throws.
+        [Test]
+        public void EveryJapaneseString_TakesTheSamePlaceholders_AsItsEnglish()
+        {
+            var en = Entries("en-us.po");
+            var ja = Entries("ja-jp.po");
+            string Placeholders(string s) => string.Join(",", Regex.Matches(s, @"\{\d+\}").Cast<Match>().Select(m => m.Value).Distinct().OrderBy(p => p));
+
+            Assert.That(en.Keys.Where(k => ja.ContainsKey(k) && Placeholders(en[k]) != Placeholders(ja[k])), Is.Empty);
+        }
+
+        // A stray brace makes string.Format throw, which loses the build's summary from the console.
+        [Test]
+        public void EveryString_InEitherLanguage_Formats()
+        {
+            var args = Enumerable.Range(0, 16).Select(i => (object)i).ToArray();
+            var bad = new[] { "en-us.po", "ja-jp.po" }.SelectMany(file => Entries(file).Where(e =>
+            {
+                try { string.Format(e.Value, args); return false; }
+                catch (System.FormatException) { return true; }
+            }).Select(e => $"{file} {e.Key}"));
+
+            Assert.That(bad, Is.Empty);
+        }
+
+        // Keys built in code rather than drawn by the inspector: the stage a renderer failed at, and the summary's first line.
+        // Their English in the file is the English the code falls back to when the localizer has no string, so a build logs
+        // the same line either way.
+        [Test]
+        public void EveryStageAndSummaryKey_HasTheEnglishItsCodeFallsBackTo()
+        {
+            var en = Entries("en-us.po");
+            var fallbacks = System.Enum.GetValues(typeof(PipelineStage)).Cast<PipelineStage>()
+                .ToDictionary(DiagnosticKeys.Stage, s => s.ToString())
+                .Concat(OptimizationReport.SummaryEnglish);
+
+            Assert.That(fallbacks.Where(f => !en.TryGetValue(f.Key, out var s) || s != f.Value).Select(f => f.Key), Is.Empty);
         }
 
         [Test]

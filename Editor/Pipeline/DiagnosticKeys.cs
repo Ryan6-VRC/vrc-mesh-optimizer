@@ -38,6 +38,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>{0} the exception's message.</summary>
         public const string GateFailed = "MeshOptimizer:diag:gate-failed";
 
+        /// <summary>The key of a stage's name, which <see cref="RendererFailed"/> shows as its {1}.</summary>
+        public static string Stage(PipelineStage stage) => "PipelineStage:" + stage;
+
         public static readonly string[] All =
         {
             NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, BudgetCeilingHeld, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
