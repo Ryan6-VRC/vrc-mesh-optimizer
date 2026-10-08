@@ -56,6 +56,9 @@ msgstr "Renderers that are never hidden. Only these can hide triangles on other 
 msgid "MeshOptimizer:alwaysOn:help"
 msgstr "Triangles covered by a renderer on this list are removed. Only list renderers that are never toggled off, because if one is hidden in game, whatever it covered shows as a hole."
 
+msgid "MeshOptimizer:alwaysOn:outside"
+msgstr "Not part of {1}, so they hide nothing here: {0}. Replace them with this avatar's own renderers."
+
 msgid "MeshOptimizer:outlinesShowInside"
 msgstr "Outlines show the inside"
 
@@ -307,6 +310,15 @@ msgstr "{0} is listed as always on, but it is disabled or inactive when the avat
 
 msgid "MeshOptimizer:diag:always-on-is-off:hint"
 msgstr "Remove it from the always-on list, or make it active in the scene."
+
+msgid "MeshOptimizer:diag:always-on-outside-avatar"
+msgstr "An always-on renderer belongs to another avatar"
+
+msgid "MeshOptimizer:diag:always-on-outside-avatar:description"
+msgstr "{0} is listed as always on, but it is not part of {1}, so it hides nothing on this avatar."
+
+msgid "MeshOptimizer:diag:always-on-outside-avatar:hint"
+msgstr "Replace it with this avatar's own renderer. Copying the component's values from another avatar carries its renderers over."
 
 msgid "MeshOptimizer:diag:multiple-components"
 msgstr "More than one Mesh Optimizer on the avatar"

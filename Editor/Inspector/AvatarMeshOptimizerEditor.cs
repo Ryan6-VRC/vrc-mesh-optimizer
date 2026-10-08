@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using nadena.dev.ndmf.runtime;
 using nadena.dev.ndmf.ui;
 using Ryan6Vrc.MeshOptimizer.Preview;
 using Ryan6Vrc.MeshOptimizer.Runtime;
@@ -157,6 +158,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             {
                 Intro(InspectorKeys.AlwaysOnHelp);
                 DrawList(_alwaysOnList, _alwaysOn, _alwaysOnDrop);
+                DrawOutsideAvatar();
                 DrawCheck();
                 Gap();
                 Intro(InspectorKeys.MaterialsHelp);
@@ -166,6 +168,19 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             DrawAdvanced(decimate, removeHidden);
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        /// <summary>
+        /// A warning naming the always-on entries that are not part of the avatar the component is on: a build matches the
+        /// list against that avatar's renderers only, so such an entry covers nothing.
+        /// </summary>
+        void DrawOutsideAvatar()
+        {
+            if (serializedObject.isEditingMultipleObjects) return;
+            var optimizer = (AvatarMeshOptimizer)target;
+            var root = RuntimeUtil.FindAvatarInParents(optimizer.transform) ?? optimizer.transform.root;
+            var outside = optimizer.alwaysOn.Where(r => r != null && !r.transform.IsChildOf(root)).Select(r => r.name).ToList();
+            if (outside.Count > 0) Warning(string.Format(L10n.Tr(InspectorKeys.AlwaysOnOutside), string.Join(", ", outside), root.name));
         }
 
         /// <summary>The target, then the fields it reads. Numbers are delayed, so a value is taken on Enter or leaving the field.</summary>

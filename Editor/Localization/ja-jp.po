@@ -56,6 +56,9 @@ msgstr "非表示になることのないレンダラーです。他のメッシ
 msgid "MeshOptimizer:alwaysOn:help"
 msgstr "このリストのレンダラーに覆われたポリゴンは削除されます。ゲーム内で非表示にすると、覆っていた部分が穴になって見えてしまうので、オフにすることのないレンダラーだけを入れてください。"
 
+msgid "MeshOptimizer:alwaysOn:outside"
+msgstr "{1}の一部ではないため、ここでは何も隠しません：{0}。このアバター自身のレンダラーに置き換えてください。"
+
 msgid "MeshOptimizer:outlinesShowInside"
 msgstr "アウトラインで内側が見える"
 
@@ -307,6 +310,15 @@ msgstr "{0}は常時表示に登録されていますが、アバターの読み
 
 msgid "MeshOptimizer:diag:always-on-is-off:hint"
 msgstr "常時表示のリストから外すか、シーン上でアクティブにしてください。"
+
+msgid "MeshOptimizer:diag:always-on-outside-avatar"
+msgstr "常時表示のレンダラーが別のアバターのものです"
+
+msgid "MeshOptimizer:diag:always-on-outside-avatar:description"
+msgstr "{0}は常時表示に登録されていますが、{1}の一部ではないので、このアバターでは何も隠しません。"
+
+msgid "MeshOptimizer:diag:always-on-outside-avatar:hint"
+msgstr "このアバター自身のレンダラーに置き換えてください。別のアバターからコンポーネントの値をコピーすると、そのアバターのレンダラーが引き継がれます。"
 
 msgid "MeshOptimizer:diag:multiple-components"
 msgstr "アバターにMesh Optimizerが複数あります"
