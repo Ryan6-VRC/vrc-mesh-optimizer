@@ -22,6 +22,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public const string BudgetCeilingHeld = "MeshOptimizer:diag:budget-ceiling-held";
         /// <summary>{0} the renderer.</summary>
         public const string AlwaysOnIsOff = "MeshOptimizer:diag:always-on-is-off";
+        /// <summary>{0} the renderer, {1} the avatar being built.</summary>
+        public const string AlwaysOnOutsideAvatar = "MeshOptimizer:diag:always-on-outside-avatar";
         /// <summary>{0} the paths of every component found, {1} the one used.</summary>
         public const string MultipleComponents = "MeshOptimizer:diag:multiple-components";
         /// <summary>{0} the exception's message.</summary>
@@ -43,7 +45,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         public static readonly string[] All =
         {
-            NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, BudgetCeilingHeld, AlwaysOnIsOff, MultipleComponents, PassFailed, NeverOccludesUnmatched,
+            NotReadable, Cloth, RendererFailed, OcclusionFailed, RejudgeFailed, BudgetNotMet, BudgetCeilingHeld, AlwaysOnIsOff, AlwaysOnOutsideAvatar, MultipleComponents, PassFailed, NeverOccludesUnmatched,
             NonFiniteVertex, NonFiniteShapeKey, DuplicateShapeKey,
             GateFailed,
         };

@@ -20,6 +20,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         public const string ListEmpty = "MeshOptimizer:list:empty";
         public const string ColumnExclude = "MeshOptimizer:column:exclude";
         public const string AlwaysOnHelp = "MeshOptimizer:alwaysOn:help";
+        public const string AlwaysOnOutside = "MeshOptimizer:alwaysOn:outside";
         public const string MaterialsHelp = "MeshOptimizer:materials:help";
         public const string Check = "MeshOptimizer:check";
         public const string Override = "MeshOptimizer:override";

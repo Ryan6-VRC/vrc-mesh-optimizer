@@ -113,6 +113,20 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(report.Diagnostics.Any(d => d.Key == DiagnosticKeys.AlwaysOnIsOff && d.Args.Contains(garment)));
         }
 
+        // Copying a component's values from another avatar leaves its list naming that avatar's renderers.
+        [Test]
+        public void AlwaysOnGarmentOfAnotherAvatar_HidesNothing_AndIsNamed()
+        {
+            using var other = new AvatarFixture("Other");
+            var garment = other.Skinned("Garment", Bowl(), new[] { other.Bone("Armature/Hips/Chest") });
+            a.Optimizer().alwaysOn.Add(garment);
+
+            var report = a.Run();
+
+            Assert.That(HiddenOnBody(report), Is.Zero);
+            Assert.That(report.Diagnostics.Any(d => d.Key == DiagnosticKeys.AlwaysOnOutsideAvatar && d.Args.Contains(garment)));
+        }
+
         // Modular Avatar moves toggle-deletable vertices onto a "NaNimatedBone for ..." bone one step under the
         // original; at two kin steps those faces would cover the body though a toggle can delete them.
         [TestCase("NaNimatedBone for Hide sleeves", false)]

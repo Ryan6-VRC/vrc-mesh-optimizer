@@ -270,6 +270,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         static void RemoveHidden(List<PreparedRenderer> jobs, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
+            // Matched only against this avatar's renderers, so an entry from another avatar, as copying a component's values
+            // across avatars leaves, would cover nothing without a word.
+            foreach (var r in alwaysOn)
+                if (!r.transform.IsChildOf(input.Root))
+                    prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.AlwaysOnOutsideAvatar, false, r, input.Root.name));
             var materials = new OccluderMaterials(input.Settings.materials);
             var outlines = input.Settings.outlinesShowInside;
             foreach (var job in jobs)
