@@ -179,7 +179,9 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             if (serializedObject.isEditingMultipleObjects) return;
             var optimizer = (AvatarMeshOptimizer)target;
             var root = RuntimeUtil.FindAvatarInParents(optimizer.transform) ?? optimizer.transform.root;
-            var outside = optimizer.alwaysOn.Where(r => r != null && !r.transform.IsChildOf(root)).Select(r => r.name).ToList();
+            var outside = optimizer.alwaysOn.Where(r => r != null && !r.transform.IsChildOf(root))
+                // Named with the root each comes from, since this avatar's own renderer usually has the same name.
+                .Select(r => r.transform.root.name + "/" + r.name).ToList();
             if (outside.Count > 0) Warning(string.Format(L10n.Tr(InspectorKeys.AlwaysOnOutside), string.Join(", ", outside), root.name));
         }
 
