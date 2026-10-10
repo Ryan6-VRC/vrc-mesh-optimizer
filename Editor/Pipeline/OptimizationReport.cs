@@ -119,14 +119,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public bool[] HiddenSourceTriangles { get; internal set; }
         /// <summary>Output vertex i is source vertex KeptVertices[i]. Null when no mesh was written.</summary>
         public int[] KeptVertices { get; internal set; }
-        /// <summary>
-        /// The farthest a written triangle stands from the piece of the source mesh it was cut from, in metres; 0 for a
-        /// renderer that was not decimated. A triangle past <see cref="Error"/> shows something the source did not there,
-        /// such as a rim drawn across a face.
-        /// </summary>
-        public float Stray { get; internal set; }
-        /// <summary>Written triangles standing farther from their source piece than <see cref="Error"/>.</summary>
-        public int StrayTriangles { get; internal set; }
         /// <summary>Per shape key of the source mesh, what the pass evaluated it as. Null for a renderer that applies no shape keys.</summary>
         public ShapeKeyLiveness[] Liveness { get; internal set; }
     }
@@ -338,9 +330,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var fur = Renderers.Sum(r => r.KeptForFur);
             if (fur > 0)
                 sb.Append($"\n  fur kept {fur} covered triangles.");
-            var stray = Renderers.Where(r => r.StrayTriangles > 0).OrderByDescending(r => r.Stray).ToList();
-            if (stray.Count > 0)
-                sb.Append($"\n  {stray.Sum(r => r.StrayTriangles)} triangles on {stray.Count} renderers stand farther from their source than the error their cut reached, the farthest {(stray[0].Stray * 1000f).ToString("0.###", c)} mm on {stray[0].Path}.");
             if (KeptForOutline > 0)
                 sb.Append($"\n  outlines kept up to {KeptForOutline} triangles whose front was covered.");
             foreach (var m in UnmatchedMaterialOverrides)

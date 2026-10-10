@@ -14,7 +14,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         /// UV chart over its own vertices, so the front and the back outline are each a closed loop of paired wedges. The
         /// outline is two lobes and one straight run; both faces have interior vertices, which a cut absorbs onto the loops.
         /// </summary>
-        internal static MeshBuilder Plate(out float3[] frontLoop, out float3[] backLoop, out int[] straight)
+        static MeshBuilder Plate(out float3[] frontLoop, out float3[] backLoop, out int[] straight)
         {
             const int n = 40;
             const int run = 6;

@@ -5,7 +5,6 @@ using System.Linq;
 using nadena.dev.ndmf;
 using Ryan6Vrc.MeshOptimizer.Core.Allocation;
 using Ryan6Vrc.MeshOptimizer.Core.Decimation;
-using Ryan6Vrc.MeshOptimizer.Core.Gate;
 using Ryan6Vrc.MeshOptimizer.Core.Occlusion;
 using Ryan6Vrc.MeshOptimizer.Gate;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
@@ -71,7 +70,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             var stage = Stopwatch.StartNew();
             input.BeforeStep?.Invoke(AvatarStep.Writing);
             for (var i = 0; i < jobs.Count; i++)
-                if (pass.Kept[i] != null) Write(jobs[i], pass.Written(i, jobs[i]), pass.Steps[i], pass.Outcomes[i], input, report);
+                if (pass.Kept[i] != null) Write(jobs[i], pass.Written(i, jobs[i]), pass.Outcomes[i], input, report);
             report.Times.Writing += stage.Elapsed.TotalMilliseconds;
 
             for (var i = 0; i < jobs.Count; i++) report.Renderers.Add(ReportOf(jobs[i], pass.Steps[i], pass.Outcomes[i]));
@@ -321,9 +320,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             public int Hidden;
             /// <summary>Of the triangles occlusion removed, those written back because the cut took their cover.</summary>
             public int Restored;
-            /// <summary>How far the written triangles stand from their own source pieces, and how many stand past the cut's error (<see cref="PieceDistance"/>).</summary>
-            public float Stray;
-            public int StrayTriangles;
             /// <summary>Per evaluation triangle, true for one the written mesh leaves out; null when that is every triangle occlusion removed.</summary>
             public bool[] Removed;
             public SkipReason Skip;
@@ -377,8 +373,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 // What the written mesh leaves out; otherwise a copy, since the prepared flags are what the next cut reads.
                 HiddenSourceTriangles = written && outcome.Removed != null ? outcome.Removed : (bool[])job.Hidden?.Clone(),
                 KeptVertices = written ? outcome.KeptVertices : null,
-                Stray = written ? outcome.Stray : 0f,
-                StrayTriangles = written ? outcome.StrayTriangles : 0,
                 Liveness = job.Liveness,
             };
         }
@@ -492,26 +486,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
-        /// <summary>
-        /// Reads how far the cut's triangles stand from the source pieces they came from, against the error the cut reached.
-        /// It is a reading, never a reason to leave the renderer uncut: a failure here is logged and reads as nothing.
-        /// </summary>
-        static void MeasureStray(PreparedRenderer job, KeptTriangles kept, float level, Outcome outcome)
-        {
-            try
-            {
-                using var written = new NativeArray<int3>(kept.Triangles, Allocator.TempJob);
-                var read = PieceDistance.Measure(job.Eval.Positions, job.Eval.Triangles, written, level);
-                outcome.Stray = read.Max;
-                outcome.StrayTriangles = read.Over;
-            }
-            catch (Exception e)
-            {
-                Debug.LogException(e);
-            }
-        }
-
-        static void Write(PreparedRenderer job, KeptTriangles kept, int step, Outcome outcome, PipelineInput input, OptimizationReport report)
+        static void Write(PreparedRenderer job, KeptTriangles kept, Outcome outcome, PipelineInput input, OptimizationReport report)
         {
             try
             {
@@ -524,7 +499,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 outcome.Hidden = job.HiddenCount - outcome.Restored;
                 // Every evaluation triangle is on a submesh of triangles, so each kept one is drawn.
                 outcome.Triangles = kept.Triangles.Length;
-                if (job.Decimated && step > 0) MeasureStray(job, kept, job.Sequence.ErrorAt(step), outcome);
             }
             catch (Exception e)
             {
