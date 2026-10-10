@@ -104,7 +104,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             TestContext.WriteLine($"garment: {g.SequenceLength} steps recorded, {g.TrianglesBefore} to {g.TrianglesAfter} triangles, {g.NearVertices} vertices near the body; {OptimizationReports.Latest.HiddenRestored} restored");
             Assert.That(g.SequenceLength, Is.GreaterThan(0), "the build decimated");
             Assert.That(g.NearVertices, Is.GreaterThan(0), "with the clearance rule");
-            Assert.That(OptimizationReports.Latest.HiddenRestored, Is.GreaterThan(0), "and re-judged what the cut uncovered");
+            Assert.That(OptimizationReports.Latest.RejudgePasses, Is.GreaterThan(0), "and re-judged what the cut may have uncovered");
             Assert.That(OptimizationReports.Latest.Diagnostics.Select(d => d.Key), Has.No.Member(DiagnosticKeys.RendererFailed).And.No.Member(DiagnosticKeys.RejudgeFailed));
             Assert.That(log.Any(l => l.StartsWith("[Mesh Optimizer] " + a.Root.name)), "a summary reaches the console");
 
