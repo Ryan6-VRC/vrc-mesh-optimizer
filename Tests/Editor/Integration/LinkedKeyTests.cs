@@ -264,7 +264,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         [Test]
         public void TheGeometricGate_MeasuresTwoKeysLinkedOnOneRenderer_Together_AndNeverAlone()
         {
-            var mesh = a.Sphere(0.1f, 16, 32, name: "Body");
+            // Fine enough that its seam moves under the default tolerance when cut, so the pass writes it.
+            var mesh = a.Sphere(0.1f, 32, 64, name: "Body");
             mesh.AddBlendShapeFrame("left", 100f, mesh.vertices.Select(v => v.x < 0f ? v.normalized * 0.01f : Vector3.zero).ToArray(), null, null);
             mesh.AddBlendShapeFrame("right", 100f, mesh.vertices.Select(v => v.x < 0f ? Vector3.zero : v.normalized * 0.01f).ToArray(), null, null);
             var body = a.Skinned("Body", mesh, new[] { a.Bone("Armature/Hips/Leg") });

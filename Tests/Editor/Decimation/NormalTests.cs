@@ -65,7 +65,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.That(off.Share45, Is.GreaterThan(0.05f), "the fixture reproduces the defect with the term off");
             Assert.That(on.Share45, Is.LessThan(0.001f));
             Assert.That(on.Share10, Is.LessThan(0.03f));
-            Assert.That(on.MaxDistance, Is.LessThan(off.MaxDistance * 0.6f), "the front no longer drops toward the back");
+            // The outline bound already holds the open ends, so less of the drop is left for the term to remove.
+            Assert.That(on.MaxDistance, Is.LessThan(off.MaxDistance), "the front drops no farther toward the back");
+            Assert.That(on.MaxDistance, Is.LessThan(0.0013f), "and stays where the term has held it");
         }
 
         // A coin 10 mm across is all rim at a 1 mm tolerance: without the term its faces take the rim's tilted normals
