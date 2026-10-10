@@ -12,6 +12,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditorInternal;
 using UnityEngine;
+using VRC.SDK3.Avatars.Components;
 using L10n = Ryan6Vrc.MeshOptimizer.Localization.L10n;
 using Object = UnityEngine.Object;
 
@@ -47,31 +48,77 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
     }
 
     /// <summary>
-    /// Shows decimation in edit mode through NDMF's preview: each avatar with the component and decimation on is one render
-    /// group, since the target is spent over every renderer at once. The first preview prepares the avatar (extraction,
-    /// clearance and recording, without occlusion; <see cref="PreviewInput"/>), which is what costs; a change to the target
-    /// alone cuts the same prepared avatar again. Any other change to the component, or a renderer's mesh, prepares it anew.
-    /// NDMF calls a filter only to preview, so none of this runs in a build.
+    /// Shows decimation in edit mode through NDMF's preview, for the avatars chosen by their component's inspector
+    /// (<see cref="Show"/>) and no others: each is one render group, since the target is spent over every renderer at
+    /// once. The first preview of an avatar prepares it (extraction, clearance and recording, without occlusion;
+    /// <see cref="PreviewInput"/>), which is what costs. The prepared avatar is then kept (<see cref="Kept"/>), so
+    /// switching the preview off and on, or a change to the target or to a renderer's protection, only cuts it again.
+    /// Any other change to the component, to a renderer or to its mesh prepares it anew. NDMF calls a filter only to
+    /// preview, so none of this runs in a build.
     /// </summary>
     internal sealed class DecimationPreview : IRenderFilter
     {
         /// <summary>
-        /// Off until the user turns it on, and off again whenever a scene opens or the Editor reloads: a first preview holds
-        /// the Editor while it records, so it never starts on its own. Hence no saved state, which NDMF keeps under a
-        /// qualified name and would restore.
+        /// NDMF's switch for the whole filter: off hides every chosen avatar's preview, and on brings them back from what
+        /// was kept. Off until the user turns it on, and off again whenever a scene opens, the Editor reloads or play mode
+        /// starts: a first preview holds the Editor while it records, so it never starts on its own. Hence no saved state,
+        /// which NDMF keeps under a qualified name and would restore.
         /// </summary>
         public static readonly TogglablePreviewNode Toggle = TogglablePreviewNode.Create(
             () => L10n.Tr(InspectorKeys.Preview), initialState: false);
 
         /// <summary>
+        /// The avatars the preview shows, by their component. A scene of many avatars would otherwise prepare every one at
+        /// the first switch-on, to look at one.
+        /// </summary>
+        static readonly PublishedValue<ImmutableHashSet<AvatarMeshOptimizer>> Chosen =
+            new PublishedValue<ImmutableHashSet<AvatarMeshOptimizer>>(ImmutableHashSet<AvatarMeshOptimizer>.Empty, "MeshOptimizer/PreviewedAvatars");
+
+        /// <summary>Whether the avatar the component is on is being previewed: chosen, with the filter on.</summary>
+        public static bool Shows(AvatarMeshOptimizer component) => Toggle.IsEnabled.Value && Chosen.Value.Contains(component);
+
+        /// <summary>
+        /// Chooses the component's avatar for the preview, or drops it. Choosing one switches the filter on, which also
+        /// brings back every other avatar still chosen.
+        /// </summary>
+        public static void Show(AvatarMeshOptimizer component, bool on)
+        {
+            Chosen.Value = on ? Chosen.Value.Add(component) : Chosen.Value.Remove(component);
+            if (on) Toggle.IsEnabled.Value = true;
+        }
+
+        /// <summary>
+        /// Switches the preview off, forgets which avatars were chosen and frees every prepared avatar no node still shows.
+        /// </summary>
+        internal static void Reset()
+        {
+            Toggle.IsEnabled.Value = false;
+            Chosen.Value = ImmutableHashSet<AvatarMeshOptimizer>.Empty;
+            FreeKept();
+        }
+
+        static void FreeKept()
+        {
+            foreach (var component in Kept.Keys.ToList()) Forget(component);
+        }
+
+        /// <summary>
         /// NDMF reopens its own hidden preview scene around play mode and reloads, which raises the same event; it learns
-        /// that scene only once opening returns, so the check waits a tick to tell the two apart.
+        /// that scene only once opening returns, so the check waits a tick to tell the two apart. Play mode resets too:
+        /// where it starts without a reload the switch would otherwise still be on at the return to edit mode.
         /// </summary>
         [InitializeOnLoadMethod]
-        static void OffWhenASceneOpens() => EditorSceneManager.sceneOpened += (scene, mode) => EditorApplication.delayCall += () =>
+        static void ResetWhenASceneOpensOrPlayStarts()
         {
-            if (!NDMFPreviewSceneManager.IsPreviewScene(scene)) Toggle.IsEnabled.Value = false;
-        };
+            EditorSceneManager.sceneOpened += (scene, mode) => EditorApplication.delayCall += () =>
+            {
+                if (!NDMFPreviewSceneManager.IsPreviewScene(scene)) Reset();
+            };
+            EditorApplication.playModeStateChanged += change =>
+            {
+                if (change == PlayModeStateChange.ExitingEditMode) Reset();
+            };
+        }
 
         public IEnumerable<TogglablePreviewNode> GetPreviewControlNodes()
         {
@@ -86,13 +133,15 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             foreach (var root in context.GetAvatarRoots())
             {
                 var component = context.GetComponentsInChildren<AvatarMeshOptimizer>(root, true).FirstOrDefault();
-                if (component == null || !context.Observe(component, c => c.decimate)) continue;
-                var renderers = context.GetComponentsInChildren<Renderer>(root, true)
-                    .Where(r => r is SkinnedMeshRenderer || r is MeshRenderer).ToList();
+                if (component == null || !context.Observe(Chosen, chosen => chosen.Contains(component))) continue;
+                if (!context.Observe(component, c => c.decimate)) continue;
+                var renderers = context.GetComponentsInChildren<Renderer>(root, true).Where(IsMesh).ToList();
                 if (renderers.Count > 0) groups.Add(RenderGroup.For(renderers));
             }
             return groups.ToImmutable();
         }
+
+        static bool IsMesh(Renderer renderer) => renderer is SkinnedMeshRenderer || renderer is MeshRenderer;
 
         public Task<IRenderFilterNode> Instantiate(RenderGroup group, IEnumerable<(Renderer, Renderer)> proxyPairs, ComputeContext context)
         {
@@ -104,7 +153,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             Shared shared;
             try
             {
-                shared = Prepare(root, component, originals.Count);
+                shared = PreparedFor(root, component, key.Settings, originals.Count);
             }
             catch (Exception e)
             {
@@ -113,23 +162,81 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 PreviewStatus.Set(component, failed);
                 return Task.FromResult<IRenderFilterNode>(new Node(component, null, key, failed));
             }
-            return Task.FromResult<IRenderFilterNode>(Node.Cut(component, shared, key));
+            return Task.FromResult<IRenderFilterNode>(Node.Cut(component, shared.Hold(), key));
+        }
+
+        /// <summary>
+        /// The latest prepared avatar of each component, held here beside the nodes cut from it so that it outlives them:
+        /// NDMF disposes every node when the preview is switched off, and switching it on again would otherwise record the
+        /// avatar from nothing. One is freed when its avatar is prepared anew, when its component is gone, and by
+        /// <see cref="Reset"/> and a domain reload.
+        /// </summary>
+        static readonly Dictionary<AvatarMeshOptimizer, Shared> Kept = new Dictionary<AvatarMeshOptimizer, Shared>();
+
+        /// <summary>The avatar's kept prepared avatar where nothing it read has changed, otherwise a new one, kept in its place.</summary>
+        static Shared PreparedFor(Transform root, AvatarMeshOptimizer component, string settings, int renderers)
+        {
+            foreach (var gone in Kept.Keys.Where(c => c == null).ToList()) Forget(gone);
+            var meshes = MeshesUnder(root);
+            if (Kept.TryGetValue(component, out var kept) && kept.Fresh(settings, meshes)) return kept;
+            Forget(component);
+            // Watched from before preparing reads anything, so a change made while it records is not missed.
+            var watch = Watch(root);
+            return Kept[component] = new Shared(Prepare(root, component, renderers, out var liveness), liveness, settings, meshes, watch);
+        }
+
+        static void Forget(AvatarMeshOptimizer component)
+        {
+            if (!Kept.TryGetValue(component, out var kept)) return;
+            Kept.Remove(component);
+            kept.Release();
+        }
+
+        /// <summary>Every mesh preparing reads under the root, in hierarchy order, as one comparable value.</summary>
+        static string MeshesUnder(Transform root) => string.Join(",", root.GetComponentsInChildren<Renderer>(true).Where(IsMesh).Select(r =>
+        {
+            var mesh = RendererMesh(r);
+            return mesh != null ? mesh.GetInstanceID() : 0;
+        }));
+
+        static Mesh RendererMesh(Renderer renderer) => renderer is SkinnedMeshRenderer skinned ? skinned.sharedMesh
+            : renderer.TryGetComponent<MeshFilter>(out var filter) ? filter.sharedMesh : null;
+
+        /// <summary>
+        /// A context NDMF invalidates when anything preparing read is changed: which renderers the avatar has, any of them
+        /// (its shape-key weights, bones and materials), its mesh or a material, and the avatar descriptor the preview takes
+        /// shape-key liveness from. It is what tells a kept prepared avatar from a stale one while no node is watching.
+        /// </summary>
+        static ComputeContext Watch(Transform root)
+        {
+            var watch = new ComputeContext("Mesh Optimizer prepared avatar of " + root.name);
+            foreach (var renderer in watch.GetComponentsInChildren<Renderer>(root.gameObject, true).Where(IsMesh))
+            {
+                watch.Observe(renderer);
+                if (renderer.TryGetComponent<MeshFilter>(out var filter)) watch.Observe(filter);
+                var mesh = RendererMesh(renderer);
+                if (mesh != null) watch.Observe(mesh);
+                foreach (var material in renderer.sharedMaterials)
+                    if (material != null) watch.Observe(material);
+            }
+            if (root.TryGetComponent<VRCAvatarDescriptor>(out var descriptor)) watch.Observe(descriptor);
+            return watch;
         }
 
         /// <summary>Prepares the scene avatar as the preview reads it, behind a progress bar, since this is the step that holds the Editor.</summary>
-        static Shared Prepare(Transform root, AvatarMeshOptimizer component, int renderers)
+        static PreparedAvatar Prepare(Transform root, AvatarMeshOptimizer component, int renderers, out PreviewLiveness liveness)
         {
             var title = L10n.Tr(InspectorKeys.PreviewProgress);
             PipelineInput input = null;
             try
             {
                 EditorUtility.DisplayProgressBar(title, root.name, 0f);
-                input = PreviewInput.For(root, component, out var liveness);
+                input = PreviewInput.For(root, component, out liveness);
                 var stages = 0;
                 input.BeforeStage = (renderer, stage) =>
                     EditorUtility.DisplayProgressBar(title, string.Format(L10n.Tr(InspectorKeys.PreviewProgressInfo), renderer.name),
                         Mathf.Clamp01(++stages / (2f * Math.Max(renderers, 1))));
-                return new Shared(OptimizerPipeline.Prepare(input), liveness);
+                return OptimizerPipeline.Prepare(input);
             }
             finally
             {
@@ -140,18 +247,34 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             }
         }
 
-        /// <summary>One prepared avatar, shared by every node cut from it; disposed when the last lets go.</summary>
+        /// <summary>
+        /// One prepared avatar, with what it was prepared from, shared by <see cref="Kept"/> and every node cut from it;
+        /// disposed when the last lets go.
+        /// </summary>
         sealed class Shared
         {
             public readonly PreparedAvatar Prepared;
             public readonly PreviewLiveness Liveness;
+            readonly string _settings, _meshes;
+            readonly ComputeContext _watch;
+            bool _spoiled;
             int _holders = 1;
 
-            public Shared(PreparedAvatar prepared, PreviewLiveness liveness)
+            public Shared(PreparedAvatar prepared, PreviewLiveness liveness, string settings, string meshes, ComputeContext watch)
             {
                 Prepared = prepared;
                 Liveness = liveness;
+                _settings = settings;
+                _meshes = meshes;
+                _watch = watch;
             }
+
+            /// <summary>Whether a preview from these settings and meshes can be cut from this, with nothing it read changed since.</summary>
+            public bool Fresh(string settings, string meshes) =>
+                !_spoiled && !_watch.IsInvalidated && _settings == settings && _meshes == meshes;
+
+            /// <summary>Marks it stale, for a change NDMF reported to a node cut from it.</summary>
+            public void Spoil() => _spoiled = true;
 
             public Shared Hold()
             {
@@ -161,37 +284,53 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
 
             public void Release()
             {
-                if (--_holders == 0) Prepared.Dispose();
+                if (--_holders != 0) return;
+                Prepared.Dispose();
+                _watch.Invalidate();
             }
         }
 
         /// <summary>
-        /// What a node was made from, observed through the compute context so a change to either invalidates it: the
-        /// preparing key (every setting a prepare reads, and each renderer's mesh), and the cut key (the target and its values).
+        /// What a node was made from, observed through the compute context so a change to any invalidates it: the settings
+        /// preparing reads, each renderer's mesh, and what a cut reads (the target, its values and each renderer's protection).
         /// </summary>
         readonly struct Keys
         {
-            public readonly string Preparing;
-            public readonly (TargetKind, float, int, float) Cutting;
+            public readonly string Settings;
+            public readonly string Meshes;
+            public readonly (TargetKind, float, int, float, string) Cutting;
 
-            Keys(string preparing, (TargetKind, float, int, float) cutting)
+            Keys(string settings, string meshes, (TargetKind, float, int, float, string) cutting)
             {
-                Preparing = preparing;
+                Settings = settings;
+                Meshes = meshes;
                 Cutting = cutting;
             }
 
             public static Keys Observe(ComputeContext context, AvatarMeshOptimizer component, IEnumerable<Renderer> renderers)
             {
-                var preparing = context.Observe(component, c => string.Join("|",
-                    c.decimate, F(c.faceFloor), c.lockFingers, F(c.fingerWeight),
-                    string.Join(";", c.renderers.Where(s => s != null).Select(s =>
-                        $"{(s.renderer != null ? s.renderer.GetInstanceID() : 0)},{s.excludeFromDecimation},{F(s.protection)}"))));
-                var meshes = renderers.Select(r => r is SkinnedMeshRenderer skinned
+                var settings = context.Observe(component, c => string.Join("|",
+                    c.decimate, F(c.faceFloor), c.lockFingers, F(c.fingerWeight), PerRenderer(c, s => s.excludeFromDecimation ? "x" : null)));
+                var meshes = string.Join(",", renderers.Select(r => r is SkinnedMeshRenderer skinned
                     ? context.Observe(skinned, s => s.sharedMesh)
-                    : r.TryGetComponent<MeshFilter>(out var filter) ? context.Observe(filter, f => f.sharedMesh) : null);
-                preparing += "|" + string.Join(",", meshes.Select(m => m != null ? m.GetInstanceID() : 0));
-                var cutting = context.Observe(component, c => (c.target, c.tolerance, c.triangleBudget, c.maxError));
-                return new Keys(preparing, cutting);
+                    : r.TryGetComponent<MeshFilter>(out var filter) ? context.Observe(filter, f => f.sharedMesh) : null)
+                    .Select(m => m != null ? m.GetInstanceID() : 0));
+                var cutting = context.Observe(component, c => (c.target, c.tolerance, c.triangleBudget, c.maxError,
+                    PerRenderer(c, s => s.protection != 1f ? F(s.protection) : null)));
+                return new Keys(settings, meshes, cutting);
+            }
+
+            /// <summary>
+            /// What the per-renderer entries come to for one of their fields, the last entry naming a renderer counting as
+            /// the pipeline counts it, with the renderers at the field's neutral value (null) left out: an entry that
+            /// changes nothing, as a renderer just added to the list is, is no change.
+            /// </summary>
+            static string PerRenderer(AvatarMeshOptimizer component, Func<RendererSettings, string> field)
+            {
+                var last = new SortedDictionary<int, string>();
+                foreach (var s in component.renderers)
+                    if (s != null && s.renderer != null) last[s.renderer.GetInstanceID()] = field(s);
+                return string.Join(";", last.Where(e => e.Value != null).Select(e => e.Key + ":" + e.Value));
             }
 
             static string F(float value) => value.ToString("R", CultureInfo.InvariantCulture);
@@ -202,8 +341,8 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
 
         /// <summary>
         /// One cut of a prepared avatar: its meshes, put on the proxies each frame, and destroyed with it. NDMF disposes no
-        /// preview session before a domain reload, so every live node is disposed then, or its meshes and the prepared
-        /// avatar's native memory would outlive the domain that could free them.
+        /// preview session before a domain reload, so every live node and every kept prepared avatar is let go then, or
+        /// the meshes and the prepared avatars' native memory would outlive the domain that could free them.
         /// </summary>
         sealed class Node : IRenderFilterNode
         {
@@ -213,6 +352,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             static void DisposeBeforeReload() => AssemblyReloadEvents.beforeAssemblyReload += () =>
             {
                 foreach (var node in Live.ToList()) node.Dispose();
+                FreeKept();
             };
 
             readonly AvatarMeshOptimizer _component;
@@ -235,7 +375,10 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 Live.Add(this);
             }
 
-            /// <summary>Cuts the prepared avatar at the component's target as it stands, and records what the cut reached.</summary>
+            /// <summary>
+            /// Cuts the prepared avatar at the component's target and protections as they stand, and records what the cut
+            /// reached. The node takes over the caller's hold on <paramref name="shared"/>.
+            /// </summary>
             public static Node Cut(AvatarMeshOptimizer component, Shared shared, Keys keys)
             {
                 PreviewStatus status;
@@ -270,15 +413,20 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             }
 
             /// <summary>
-            /// A change to the target alone cuts the same prepared avatar again. Anything NDMF reports changed on a renderer
-            /// (its mesh, materials, textures, shape-key weights or bones) was read by preparing, as was every other setting,
-            /// so either prepares the avatar anew.
+            /// A change to the target or to a protection cuts the same prepared avatar again. Anything NDMF reports changed
+            /// on a renderer (its mesh, materials, textures, shape-key weights or bones) was read by preparing, as was every
+            /// other setting, so either prepares the avatar anew.
             /// </summary>
             public Task<IRenderFilterNode> Refresh(IEnumerable<(Renderer, Renderer)> proxyPairs, ComputeContext context, RenderAspects updatedAspects)
             {
-                if (_shared == null || updatedAspects != 0) return Task.FromResult<IRenderFilterNode>(null);
+                if (_shared == null) return Task.FromResult<IRenderFilterNode>(null);
+                if (updatedAspects != 0)
+                {
+                    _shared.Spoil();
+                    return Task.FromResult<IRenderFilterNode>(null);
+                }
                 var keys = Keys.Observe(context, _component, proxyPairs.Select(p => p.Item1).ToList());
-                if (keys.Preparing != _keys.Preparing) return Task.FromResult<IRenderFilterNode>(null);
+                if (keys.Settings != _keys.Settings || keys.Meshes != _keys.Meshes) return Task.FromResult<IRenderFilterNode>(null);
                 if (keys.Cutting.Equals(_keys.Cutting)) return Task.FromResult<IRenderFilterNode>(this);
                 return Task.FromResult<IRenderFilterNode>(Cut(_component, _shared.Hold(), keys));
             }

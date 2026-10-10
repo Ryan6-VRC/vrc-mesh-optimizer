@@ -57,8 +57,11 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             EditorGUI.PropertyField(columns[0], property.FindPropertyRelative(nameof(RendererSettings.renderer)), GUIContent.none);
             EditorGUI.PropertyField(exclude, property.FindPropertyRelative(nameof(RendererSettings.excludeFromDecimation)),
                 new GUIContent(string.Empty, L10n.Tooltip(InspectorKeys.ColumnExclude)));
-            EditorGUI.PropertyField(columns[2], property.FindPropertyRelative(nameof(RendererSettings.protection)),
-                new GUIContent(string.Empty, L10n.Tooltip(Protection)));
+            // Delayed, as the target's numbers are: a value is taken on Enter or leaving the field, not at each digit.
+            var protection = property.FindPropertyRelative(nameof(RendererSettings.protection));
+            EditorGUI.BeginChangeCheck();
+            EditorGUI.DelayedFloatField(columns[2], protection, new GUIContent(string.Empty, L10n.Tooltip(Protection)));
+            if (EditorGUI.EndChangeCheck() && !(protection.floatValue >= 0f)) protection.floatValue = 0f;
         }
     }
 

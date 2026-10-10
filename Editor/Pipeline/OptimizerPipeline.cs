@@ -35,6 +35,19 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         const float MinWeight = 1e-3f;
 
         /// <summary>
+        /// A renderer's allocation weight: its protection as the component holds it when a cut asks, 1 with no entry. Read
+        /// by the cut and not kept by preparing, so a changed protection needs a new cut and no new recording.
+        /// </summary>
+        static float WeightOf(PreparedRenderer job, AvatarMeshOptimizer settings)
+        {
+            var protection = 1f;
+            // The last entry naming a renderer is the one that counts, as for its exclusion.
+            foreach (var s in settings.renderers)
+                if (s != null && s.renderer != null && s.renderer == job.Renderer) protection = s.protection;
+            return Mathf.Max(protection, MinWeight);
+        }
+
+        /// <summary>
         /// Surveys, extracts, removes hidden triangles and records every decimated renderer's collapse sequence. The
         /// caller owns the result and disposes it; if this throws, everything it made is already disposed.
         /// </summary>
@@ -368,7 +381,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 foreach (var job in live)
                 {
                     perRenderer.TryGetValue(job.Renderer, out var own);
-                    job.Weight = Mathf.Max(own?.protection ?? 1f, MinWeight);
                     if (own != null && own.excludeFromDecimation)
                     {
                         job.ExcludedFromDecimation = true;

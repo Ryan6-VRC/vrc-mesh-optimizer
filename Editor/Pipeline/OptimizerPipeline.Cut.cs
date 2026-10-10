@@ -21,6 +21,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     {
         /// <summary>
         /// Spends the component's target over the prepared sequences, cuts each and writes the meshes, and reports it all.
+        /// The target and each renderer's protection are read from the component as they stand, so a change to either
+        /// needs only another cut.
         /// Before writing, every triangle occlusion removed is judged again against what the always-on renderers are written
         /// with, since decimation moves the faces that covered it, and one no longer covered is written back
         /// (<see cref="PipelineInput.Rejudge"/>); a budget pays for those by cutting deeper, never past
@@ -73,7 +75,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 if (pass.Kept[i] != null) Write(jobs[i], pass.Written(i, jobs[i]), pass.Outcomes[i], input, report);
             report.Times.Writing += stage.Elapsed.TotalMilliseconds;
 
-            for (var i = 0; i < jobs.Count; i++) report.Renderers.Add(ReportOf(jobs[i], pass.Steps[i], pass.Outcomes[i]));
+            for (var i = 0; i < jobs.Count; i++) report.Renderers.Add(ReportOf(jobs[i], pass.Steps[i], pass.Outcomes[i], settings));
             if (settings.target == TargetKind.TriangleBudget) report.TargetMet = report.TrianglesAfter <= settings.triangleBudget;
             // The ceiling is named only when the pass was over the budget before writing: one it held short of an allocation
             // reduced by a reserve can still meet the budget, and a write that fails is then what leaves it unmet.
@@ -337,7 +339,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>The renderer's report, written once from what preparing found and what the cut did.</summary>
-        static RendererReport ReportOf(PreparedRenderer job, int step, Outcome outcome)
+        static RendererReport ReportOf(PreparedRenderer job, int step, Outcome outcome, AvatarMeshOptimizer settings)
         {
             var written = outcome?.Mesh != null;
             return new RendererReport
@@ -359,7 +361,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 AllocationCut = step,
                 Error = job.Decimated ? job.Sequence.ErrorAt(step) : 0f,
                 FloorTriangles = job.FloorTriangles,
-                Weight = job.Weight,
+                Weight = WeightOf(job, settings),
                 LockedVertices = job.LockedVertices,
                 LockedFromZeroScale = job.LockedFromZeroScale,
                 LockedForFur = job.LockedForFur,
@@ -438,7 +440,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
             // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
             fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - j.HiddenCount - j.Sequence.InitialTriangleCount);
-            var entries = decimated.Select(j => AllocationEntry.From(j.Sequence, j.FloorTriangles, j.Weight)).ToList();
+            var entries = decimated.Select(j => AllocationEntry.From(j.Sequence, j.FloorTriangles, WeightOf(j, settings))).ToList();
             if (entries.Count == 0) return 0f;
             var result = settings.target == TargetKind.TriangleBudget
                 ? BudgetAllocator.ForBudget(entries, Math.Max(0, settings.triangleBudget - fixedTriangles - reserve), settings.maxError / 1000f)

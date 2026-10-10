@@ -216,15 +216,17 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         }
 
         /// <summary>
-        /// The preview's switch, NDMF's own for this filter, then a quiet box with what the latest preview of this avatar
-        /// reached and where its shape-key liveness came from. A failed preview is the one warning.
+        /// The preview's switch for the avatars selected, and no others, then a quiet box with what the latest preview of
+        /// this avatar reached and where its shape-key liveness came from. A failed preview is the one warning.
         /// </summary>
         void DrawPreview()
         {
-            var on = DecimationPreview.Toggle.IsEnabled.Value;
+            var optimizers = targets.Cast<AvatarMeshOptimizer>().ToList();
+            var on = optimizers.All(DecimationPreview.Shows);
             EditorGUI.BeginChangeCheck();
             on = GUILayout.Toggle(on, L10n.G(InspectorKeys.Preview), "Button");
-            if (EditorGUI.EndChangeCheck()) DecimationPreview.Toggle.IsEnabled.Value = on;
+            if (EditorGUI.EndChangeCheck())
+                foreach (var optimizer in optimizers) DecimationPreview.Show(optimizer, on);
 
             var status = targets.Length == 1 ? PreviewStatus.Of((AvatarMeshOptimizer)target) : null;
             if (on && status?.Failure != null)

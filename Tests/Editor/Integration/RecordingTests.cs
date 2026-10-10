@@ -237,8 +237,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(y.Records.ToArray(), Is.EqualTo(x.Records.ToArray()), $"{name}: records");
             Assert.That(y.WorkingOrigin.ToArray(), Is.EqualTo(x.WorkingOrigin.ToArray()), $"{name}: working origin");
             Assert.That(y.WorkingTriangles.ToArray(), Is.EqualTo(x.WorkingTriangles.ToArray()), $"{name}: working triangles");
-            Assert.That((actual.SequenceLength, actual.NearVertices, actual.ClearanceRefused, actual.FloorTriangles, actual.Weight),
-                Is.EqualTo((expected.SequenceLength, expected.NearVertices, expected.ClearanceRefused, expected.FloorTriangles, expected.Weight)), $"{name}: figures");
+            Assert.That((actual.SequenceLength, actual.NearVertices, actual.ClearanceRefused, actual.FloorTriangles),
+                Is.EqualTo((expected.SequenceLength, expected.NearVertices, expected.ClearanceRefused, expected.FloorTriangles)), $"{name}: figures");
             Assert.That((actual.LockedVertices, actual.LockedFromZeroScale, actual.LockedForFur, actual.CostRaisedForGrowth),
                 Is.EqualTo((expected.LockedVertices, expected.LockedFromZeroScale, expected.LockedForFur, expected.CostRaisedForGrowth)), $"{name}: protection");
         }
