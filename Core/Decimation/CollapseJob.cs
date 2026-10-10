@@ -120,6 +120,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         NativeList<int> _nexts;
         NativeList<int> _prevs;
         NativeList<Candidate> _cand;
+        /// <summary>How far, squared, the line through the wedge whose candidates are being listed moves if it is removed; the same whichever neighbour takes it.</summary>
+        double _line2;
         NativeList<int> _nu;
         NativeList<int> _nv;
         NativeList<int> _opp;
@@ -178,6 +180,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _nexts = new NativeList<int>(32, Allocator.Temp);
             _prevs = new NativeList<int>(32, Allocator.Temp);
             _cand = new NativeList<Candidate>(32, Allocator.Temp);
+            _line2 = 0.0;
             _nu = new NativeList<int>(64, Allocator.Temp);
             _nv = new NativeList<int>(64, Allocator.Temp);
             _opp = new NativeList<int>(8, Allocator.Temp);
@@ -268,6 +271,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         void Candidates(int r)
         {
             _cand.Clear();
+            _line2 = _in.Kind[r] != VertexKind.Interior ? LineDeviation2(r) : 0.0;
             var u1 = r;
             var u2 = _in.Partner[r] != r ? _in.Partner[r] : -1;
             if (u2 < 0)
@@ -406,7 +410,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             if (_shading) sum2 += Shading2(u1, v1, u2, v2);
             // A wedge on a border or seam takes its line with it, and the planes above read a slide along the surface as
             // nearly free, so the line's own movement bounds the cost from below. A pair's two lines coincide.
-            if (_in.Kind[u1] != VertexKind.Interior) sum2 = math.max(sum2, LineDeviation2(u1));
+            sum2 = math.max(sum2, _line2);
             return (float)(math.sqrt(sum2) * mult);
         }
 

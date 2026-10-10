@@ -101,7 +101,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
         /// Burst and managed code round some sums differently, which can swap two collapses of near-equal cost, so the records
         /// may part; every step's error level, a running maximum, stays within a hundredth of the managed one or a micrometre.
         /// Compared up to 5 mm, the most a build cuts to by default: a line's movement is exact in the vertices left on it, so
-        /// past the last few vertices of a border two parted records no longer read alike.
+        /// past the last few vertices of a border two parted records no longer read alike. A budget with no error ceiling can cut
+        /// past 5 mm, and nothing here compares the paths there.
         /// </summary>
         static void AssertAlike(in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst, in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence managed, string name)
         {
