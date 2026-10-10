@@ -185,6 +185,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
                 PositionId = topology.Position,
                 Partner = topology.Partner,
                 Kind = topology.Kind,
+                OpenOut = topology.OpenOut,
+                OpenIn = topology.OpenIn,
                 DeltaStart = topology.DeltaStart,
                 DeltaFrame = topology.DeltaFrame,
                 DeltaValue = topology.DeltaValue,

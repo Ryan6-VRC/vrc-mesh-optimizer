@@ -60,6 +60,10 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         /// <summary>Per triangle: bit k set when edge k (corner k to corner k+1) is open; bit 3+k when that open
         /// edge is a seam rather than a border.</summary>
         public NativeArray<byte> EdgeFlags;
+        /// <summary>Per working vertex, the far end of its open edge leaving it and of the one arriving, in the source mesh:
+        /// -1 none, -2 several. Along a border or seam line these are a wedge's neighbours before any collapse.</summary>
+        public NativeArray<int> OpenOut;
+        public NativeArray<int> OpenIn;
 
         /// <summary>Per source vertex, length VertexCount + 1: its live deltas are DeltaFrame/DeltaValue[DeltaStart[v] ..
         /// DeltaStart[v + 1]), frame ascending, deltas at or below the settings' epsilon dropped.</summary>
@@ -71,7 +75,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         public int WorkingVertexCount => Origin.Length;
 
         public long ByteSize =>
-            (long)Origin.Length * 4 * 3 + Kind.Length + (long)Triangles.Length * 13 +
+            (long)Origin.Length * 4 * 5 + Kind.Length + (long)Triangles.Length * 13 +
             (long)DeltaStart.Length * 4 + (long)DeltaFrame.Length * 16;
 
         public void Dispose()
@@ -82,6 +86,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             if (Partner.IsCreated) Partner.Dispose();
             if (Kind.IsCreated) Kind.Dispose();
             if (EdgeFlags.IsCreated) EdgeFlags.Dispose();
+            if (OpenOut.IsCreated) OpenOut.Dispose();
+            if (OpenIn.IsCreated) OpenIn.Dispose();
             if (DeltaStart.IsCreated) DeltaStart.Dispose();
             if (DeltaFrame.IsCreated) DeltaFrame.Dispose();
             if (DeltaValue.IsCreated) DeltaValue.Dispose();
@@ -160,8 +166,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
                 DeltaValue = topo.DeltaValue,
             }.Run();
 
-            using var openOut = new NativeArray<int>(w, Allocator.Persistent);
-            using var openIn = new NativeArray<int>(w, Allocator.Persistent);
+            topo.OpenOut = new NativeArray<int>(w, allocator);
+            topo.OpenIn = new NativeArray<int>(w, allocator);
             using var openOutTri = new NativeArray<int>(w, Allocator.Persistent);
             using var openInTri = new NativeArray<int>(w, Allocator.Persistent);
             using var nonManifold = new NativeArray<byte>(w, Allocator.Persistent);
@@ -169,8 +175,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
             new EdgeJob
             {
                 Triangles = topo.Triangles,
-                OpenOut = openOut,
-                OpenIn = openIn,
+                OpenOut = topo.OpenOut,
+                OpenIn = topo.OpenIn,
                 OpenOutTriangle = openOutTri,
                 OpenInTriangle = openInTri,
                 NonManifold = nonManifold,
@@ -188,8 +194,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
                 Triangles = topo.Triangles,
                 Position = topo.Position,
                 GroupNext = groupNext,
-                OpenOut = openOut,
-                OpenIn = openIn,
+                OpenOut = topo.OpenOut,
+                OpenIn = topo.OpenIn,
                 OpenOutTriangle = openOutTri,
                 OpenInTriangle = openInTri,
                 NonManifold = nonManifold,

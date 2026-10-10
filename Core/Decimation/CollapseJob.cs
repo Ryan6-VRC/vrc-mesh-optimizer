@@ -23,6 +23,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         [ReadOnly] public NativeArray<int> PositionId;
         [ReadOnly] public NativeArray<int> Partner;
         [ReadOnly] public NativeArray<VertexKind> Kind;
+        /// <summary>Per working vertex, its open-edge neighbours in the source mesh (<see cref="MeshTopology.OpenOut"/>).</summary>
+        [ReadOnly] public NativeArray<int> OpenOut;
+        [ReadOnly] public NativeArray<int> OpenIn;
         [ReadOnly] public NativeArray<int> DeltaStart;
         [ReadOnly] public NativeArray<int> DeltaFrame;
         [ReadOnly] public NativeArray<float3> DeltaValue;
@@ -401,7 +404,44 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             var sum2 = agg2 + uv2 + skin * skin;
             // Off, the term touches nothing, so the sequence is exactly the one without it.
             if (_shading) sum2 += Shading2(u1, v1, u2, v2);
+            // A wedge on a border or seam takes its line with it, and the planes above read a slide along the surface as
+            // nearly free, so the line's own movement bounds the cost from below. A pair's two lines coincide.
+            if (_in.Kind[u1] != VertexKind.Interior) sum2 = math.max(sum2, LineDeviation2(u1));
             return (float)(math.sqrt(sum2) * mult);
+        }
+
+        /// <summary>
+        /// How far, squared, the border or seam line through u moves when u is removed. The collapse joins u's two live
+        /// neighbours along the line with one segment, and every source vertex of the line between them, u and those
+        /// removed before it, still stands where it did, so the farthest of them from that segment is the line's movement,
+        /// exactly, at rest. Zero where the line has no live neighbour on one side.
+        /// </summary>
+        double LineDeviation2(int u)
+        {
+            var a = LiveAlong(_in.OpenIn, u);
+            var b = LiveAlong(_in.OpenOut, u);
+            if (a < 0 || b < 0 || a == u || b == u || a == b) return 0.0;
+            var pa = _p[a];
+            var ab = _p[b] - pa;
+            var len2 = math.lengthsq(ab);
+            var worst = 0.0;
+            for (var x = u; x != a; x = _in.OpenIn[x]) worst = math.max(worst, FromSegment2(_p[x], pa, ab, len2));
+            for (var x = _in.OpenOut[u]; x != b; x = _in.OpenOut[x]) worst = math.max(worst, FromSegment2(_p[x], pa, ab, len2));
+            return worst;
+        }
+
+        /// <summary>The first wedge along the source line from u that no collapse has removed: -1 or -2 where the line ends or forks, u where it closes on itself.</summary>
+        int LiveAlong(NativeArray<int> link, int u)
+        {
+            var x = link[u];
+            while (x >= 0 && _dead[x] != 0) x = link[x];
+            return x;
+        }
+
+        static double FromSegment2(double3 p, double3 a, double3 ab, double len2)
+        {
+            var t = len2 > 0.0 ? math.saturate(math.dot(p - a, ab) / len2) : 0.0;
+            return math.lengthsq(p - (a + t * ab));
         }
 
         float2 Uv(int w) => _in.Uv0.Length > 0 ? _in.Uv0[_in.Origin[w]] : float2.zero;
