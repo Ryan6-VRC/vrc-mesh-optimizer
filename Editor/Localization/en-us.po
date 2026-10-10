@@ -210,7 +210,7 @@ msgid "MeshOptimizer:preview"
 msgstr "Preview decimation"
 
 msgid "MeshOptimizer:preview:tooltip"
-msgstr "Show the decimated meshes in the Scene view. The first time it processes every mesh, which can take a few seconds. After that, changing the target updates it almost at once. It turns off whenever a scene opens."
+msgstr "Show this avatar's decimated meshes in the Scene view. The first time it processes every mesh of the avatar, which can take a few seconds. After that, switching it off and on, or changing the target or a renderer's protection, updates it almost at once. It turns off whenever a scene opens or Play mode starts."
 
 msgid "MeshOptimizer:preview:off"
 msgstr "The preview is off."

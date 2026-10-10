@@ -94,7 +94,6 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int KeptForOutline;
         public DeclineCounts Declined;
 
-        public float Weight = 1f;
         public bool ExcludedFromDecimation;
         public int LockedVertices;
         public int LockedFromZeroScale;
