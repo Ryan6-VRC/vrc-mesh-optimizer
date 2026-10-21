@@ -45,7 +45,7 @@ An **always-on renderer** is one that no animation ever hides or fades. Only ren
 | --- | --- | --- |
 | **Component** | | |
 | Decimate | On | Collapses edges to lower the triangle count while the surface stays within the target wherever the avatar bends or animates. |
-| Remove hidden triangles | On | Removes triangles covered from every direction by an always-on renderer that moves on the same bones. |
+| Remove hidden triangles | On | Removes triangles that an always-on renderer moving on the same bones covers from every direction within a 75° cone around the surface normal. |
 | Target | Tolerance | Whether the optimizer stops at a surface-deviation tolerance or pursues a triangle count. |
 | Preset | Standard (1 mm) | A starting tolerance. Fine is 0.5 mm, Standard 1 mm, Medium 2 mm, Coarse 3 mm. Any other value is Custom. |
 | Tolerance (mm) | 1 | The largest surface deviation allowed when the target is a tolerance. |
@@ -74,15 +74,15 @@ An outline never counts as cover. **Outlines show the inside** only decides whet
 
 After each build, Mesh Optimizer writes a summary to the Unity Console: triangles before and after, how many hidden triangles were removed and how many decimation removed, whether a triangle-count target was met or the tolerance used, the error level reached, and the time taken.
 
-Anything that needs your attention appears in NDMF's Error Report window: an unmet triangle target, a target stopped by Max error, an always-on entry that is not under the avatar, a skipped mesh, a material override that matched nothing, and any failure during processing, with the full exception also written to the Console.
+Anything that needs your attention appears in NDMF's Error Report window: an unmet triangle target, a target stopped by Max error, an always-on entry that is not under the avatar, a skipped mesh, a See-through material override that matched nothing, and any failure during processing, with the full exception also written to the Console.
 
-Failures are contained. A renderer that fails is reported and left unchanged while the others are still optimized, and the avatar still builds. If hidden-triangle detection fails, decimation still runs. If the pass fails before anything is applied, the avatar is left as it was.
+Failures are contained. A renderer that fails is reported while the others are still optimized, and the avatar still builds. One that fails while its mesh is read or written is left unchanged; one that fails during decimation keeps its hidden-triangle removals. If hidden-triangle detection fails, decimation still runs. If the pass fails before anything is applied, the avatar is left as it was.
 
 The report also explains why a triangle-count target could not be reached (excluded renderers, the face floor, locked finger vertices, skipped meshes, clearance between clothing layers), and names triangles kept for a reason you may not expect: bones an animation can grow from zero scale, materials that render fur, outlined back sides when **Outlines show the inside** is on, and hidden triangles whose cover decimation removed.
 
 ## Preview
 
-Enable **Preview decimation** in the inspector, or the Mesh Optimizer toggle in NDMF's preview menu, to see the decimated meshes in the Scene view while editing.
+Enable **Preview decimation** in the avatar's inspector to see the decimated meshes in the Scene view while editing. The Mesh Optimizer toggle in NDMF's preview menu hides and restores the previews of avatars already chosen there; it does not start one.
 
 The first preview processes every mesh on the avatar and can take a few seconds. The result is kept, so switching the preview off and on, changing the target or changing a renderer's protection updates quickly. A change to a mesh, a material, a renderer or the component prepares the avatar again.
 
@@ -96,7 +96,7 @@ The preview shows decimation only. Hidden triangles are removed at build. The pr
 
 For each mesh, Mesh Optimizer records a sequence of edge collapses and the error each one introduces. It then chooses how far along those sequences to go across the avatar. A tolerance accepts every collapse within that error. A triangle count spends the available triangles across renderers at a common error level, weighted by protection and bounded by the face floor, the finger lock and Max error.
 
-The error is a quadric error metric over the rest shape, every shape-key frame an animation can reach, UV coordinates and vertex normals, with a skin-weight term that resists collapses across a joint. Open edges carry a boundary constraint. Every collapse is checked for topology, for flips in every configuration, and for clearance: the gap between nearby clothing layers, which each layer keeps its share of, so decimation never drives one layer through another.
+The error is a quadric error metric over the rest shape, every shape-key frame an animation can reach, UV coordinates and vertex normals, with a skin-weight term that resists collapses across a joint. Open edges carry a boundary constraint. Every collapse is checked for topology, for flips in every configuration, and for clearance: the gap between a layer of clothing and its nearest other layer, of which each layer keeps its share, so the two cannot meet.
 
 Hidden-triangle removal samples each triangle's vertices and interior points, casts rays in a cone around the surface normal, and accepts cover only from opaque faces on always-on renderers that ride the same bones. It checks the avatar at rest and in every relevant shape-key configuration, checks both sides where a material renders its back, and rechecks after removing hidden faces that were themselves cover, so every triangle removed stays covered by geometry that remains.
 
@@ -107,10 +107,12 @@ Building the same avatar with the same package commit writes the same meshes on 
 ## Limitations
 
 - Hidden-triangle removal depends on the manual always-on list. Listing a renderer that an animation can hide or fade creates a hole.
+- Hidden-triangle cover is tested within a 75° cone around the surface normal, so a triangle visible only at a grazing angle can be removed.
+- Clearance holds each layer to its share of the gap to its nearest other layer, measured at rest. A pair of layers that each have a nearer third layer beyond them, such as skin, tights, lining and outer, can cross by up to the sum of their errors; a shape key that moves two layers differently is not checked; and two pieces joined into one mesh count as one layer.
 - Automatic material analysis reads the render queue, the render type and texture alpha. A shader whose behavior does not match those signals needs an override.
 - The preview reads shape-key weights and bones from the scene avatar, so a weight an earlier preview filter changes only in its preview is not reflected in the preview's error estimate.
 - The preview does not show hidden-triangle removal, and its counts are estimates.
-- A renderer with a Unity Cloth component is not decimated, because Cloth addresses vertices by index.
+- A renderer with a Unity Cloth component is left unchanged, neither decimated nor trimmed of hidden triangles, because Cloth addresses vertices by index.
 - A triangle-count target is not guaranteed to be reachable. The face floor, locked vertices, exclusions, skipped meshes, layer clearance and Max error can stop the reduction first.
 - A mesh that cannot be read in Play mode is left unchanged there. An upload build can read it even when the model's Read/Write option is off.
 
