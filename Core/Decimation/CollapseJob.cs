@@ -996,18 +996,26 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>
         /// The moved triangle (u, x, y) becoming (v, x, y) in one configuration: rejected if it turns too far in
         /// this step, shrinks to a sliver, or ends up facing against the source surface at its corners, which
-        /// catches a flip built up over many small steps.
+        /// catches a flip built up over many small steps. A triangle already zero-area here has no turn or
+        /// shrink to measure, so only the facing test applies, and only if the collapse gives it area: one that
+        /// stays zero-area, as a frame that brings corners together leaves it, is allowed.
         /// </summary>
         bool TriangleHolds(double3 pu, double3 pv, double3 px, double3 py, float3 reference)
         {
             var nb = math.cross(px - pu, py - pu);
             var nb2 = math.lengthsq(nb);
-            if (nb2 <= 1e-36) return true; // already degenerate in this configuration: nothing to protect
             var na = math.cross(px - pv, py - pv);
             var na2 = math.lengthsq(na);
-            var ratio = (double)_in.Settings.DegenerateRatio;
-            if (na2 <= ratio * ratio * nb2) return false;
-            if (math.dot(nb, na) <= _in.Settings.FlipCosine * math.sqrt(nb2 * na2)) return false;
+            if (nb2 <= 1e-36)
+            {
+                if (na2 <= 1e-36) return true;
+            }
+            else
+            {
+                var ratio = (double)_in.Settings.DegenerateRatio;
+                if (na2 <= ratio * ratio * nb2) return false;
+                if (math.dot(nb, na) <= _in.Settings.FlipCosine * math.sqrt(nb2 * na2)) return false;
+            }
             return math.lengthsq(reference) < 1e-6f || math.dot(na, (double3)reference) > 0.0;
         }
 

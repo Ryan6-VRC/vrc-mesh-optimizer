@@ -336,6 +336,42 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             }
         }
 
+        // A zero-area sliver with three distinct corners stays live and adds nothing to any quadric, so the corner u at
+        // one end of it looks free to move. Collapsing u onto a, its nearest neighbour and across the sliver's line from
+        // the rest of its fan, turns the sliver into a real triangle (a, x, y) facing -Z on a sheet facing +Z. Only u is
+        // free, so the run refuses that collapse and takes one onto x or d; onto d the sliver stays a zero-area sliver.
+        [Test]
+        public void ACollinearSliver_IsNotTurnedOverByACollapse()
+        {
+            var b = new MeshBuilder();
+            int V(float x, float y) => b.Add(new float3(x, y, 0f) * 0.01f, new float2(x, y) * 0.25f + 0.5f);
+            var u = V(-1f, 0f);
+            var x0 = V(0f, 0f);
+            var y0 = V(1f, 0f);
+            var a = V(-0.8f, -0.3f);
+            var c = V(0f, 1f);
+            var d = V(-2f, 0f);
+            b.Tri(u, x0, y0); // the sliver: u, x, y on one line
+            b.Tri(x0, u, a);
+            b.Tri(u, y0, c);
+            b.Tri(u, c, d);
+            b.Tri(u, d, a);
+            var locked = new byte[b.VertexCount];
+            for (var w = 0; w < locked.Length; w++) locked[w] = (byte)(w == u ? 0 : 1);
+            using var lockArray = new NativeArray<byte>(locked, Allocator.Persistent);
+            using var seq = Fixtures.Decimate(b, s => { s.UvWeight = 0f; s.Normal.Weight = 0f; return s; }, protection: new VertexProtection { Locked = lockArray });
+
+            Assert.That(seq.Length, Is.EqualTo(1), "u has a legal collapse, onto x or d");
+            Assert.That(seq.WorkingOrigin[seq.Records[seq.Steps[0].RecordStart].y], Is.Not.EqualTo(a), "the collapse onto a turns the sliver over");
+            using var cut = seq.Cut(seq.Length, Allocator.Persistent);
+            var p = b.Positions.ToArray();
+            foreach (var t in Fixtures.ToArray(cut.Triangles))
+            {
+                var n = math.cross(p[t.y] - p[t.x], p[t.z] - p[t.x]);
+                Assert.That(n.z, Is.GreaterThanOrEqualTo(0f), $"triangle {t} faces against the sheet");
+            }
+        }
+
         static float3[] VertexNormals(float3[] p, List<int3> tris)
         {
             var n = new float3[p.Length];
