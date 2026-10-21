@@ -41,7 +41,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
 
                 Assert.That((int)TargetKind.TriangleBudget, Is.EqualTo(0));
                 Assert.That((int)TargetKind.Tolerance, Is.EqualTo(1));
-                // A component saved under the old defaults, loaded into one that starts from the new.
+                // A component saved with a budget target and another tolerance keeps both when loaded over a fresh one.
                 c.target = TargetKind.TriangleBudget;
                 c.tolerance = 0.5f;
                 var json = EditorJsonUtility.ToJson(c);
@@ -58,8 +58,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
-        // Outlines take no part in hidden-triangle removal unless the user turns them on. A component saved before the
-        // setting existed, as the fixture was, holds no value for it and loads with the field's own default, off.
+        // Outlines take no part in hidden-triangle removal unless the user turns them on. A saved component that holds no
+        // value for the setting, as the fixture holds none, loads with the field's own default, off.
         [Test]
         public void OutlinesShowInside_IsOff_FreshAndForAComponentSavedBeforeIt()
         {
@@ -79,9 +79,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
-        // A budget stops at 5 mm of error unless the user sets the ceiling otherwise. Unlike outlinesShowInside, a component
-        // saved before the field existed, as the fixture was, reads the same 5: the field's initializer stands where the saved
-        // data holds nothing, so a saved budget stops at the ceiling too.
+        // A budget stops at 5 mm of error unless the user sets the ceiling otherwise. A saved component that holds no value
+        // for the field, as the fixture holds none, reads the same 5: the field's initializer stands where the saved data
+        // holds nothing, so a saved budget stops at the ceiling too.
         [Test]
         public void MaxError_IsFiveMillimetres_FreshAndForAComponentSavedBeforeIt()
         {
@@ -101,9 +101,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
-        // The protect settings were constants before they were fields: the face keeps half its triangles and a vertex with a
-        // hundredth of its weight on a finger is locked. A component saved before the fields existed, as the fixture was,
-        // reads those same values, so it builds as it did.
+        // The protect settings' defaults: the face keeps half its triangles, fingers are locked, and a vertex with a
+        // hundredth of its weight on a finger is a finger vertex. A saved component that holds none of the fields, as the
+        // fixture holds none, reads those same values.
         [Test]
         public void TheProtectSettings_ReadTheFormerConstants_FreshAndForAComponentSavedBeforeThem()
         {

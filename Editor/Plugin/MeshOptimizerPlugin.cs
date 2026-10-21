@@ -33,7 +33,8 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
 
         protected override void Configure()
         {
-            // AfterPass is not used: in NDMF 1.14.8 it records its constraint the other way round.
+            // Ordered by plugin, not AfterPass: NDMF 1.14.8, the floor this package requires, records an AfterPass
+            // constraint the other way round.
             InPhase(BuildPhase.Optimizing)
                 .AfterPlugin("nadena.dev.modular-avatar")
                 .BeforePlugin("com.anatawa12.avatar-optimizer")

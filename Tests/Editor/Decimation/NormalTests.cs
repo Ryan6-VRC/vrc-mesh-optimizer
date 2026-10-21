@@ -83,7 +83,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         }
 
         // A sphere's normals are a linear function of position, and its shading holds under decimation without the term;
-        // the term must leave it about as reducible as before.
+        // the term must leave it about as reducible as it is without the term.
         [Test]
         public void ASmoothSphere_StaysAsReducible([Values(0.05f, 0.02f)] float radius)
         {

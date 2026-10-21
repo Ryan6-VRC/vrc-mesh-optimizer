@@ -30,7 +30,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             public override string ToString() => _name;
         }
 
-        // As on the measured avatar: a garment's toggle layer at 13 holds the tights' heel, the boots' layer at 17 drives it.
+        // A garment's toggle layer at 13 holds the tights' heel, and the boots' layer at 17 drives it.
         static readonly Layer Toggles = new Layer("toggles", 13);
         static readonly Layer Boots = new Layer("boots", 17);
         static readonly Clip Heels = new Clip("heels", Boots);

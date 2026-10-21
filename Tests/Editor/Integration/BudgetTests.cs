@@ -221,7 +221,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         // Two balls at a budget no cut of theirs reaches. A component left at its default ceiling ships them cut no further
         // than 5 mm, naming the ceiling; at 0 the ceiling is off and they are cut as deep as the sequences go, past 5 mm,
-        // with the budget reported not met as before the ceiling existed.
+        // with the budget reported not met.
         [Test]
         public void ABudgetItCannotReach_StopsAtTheDefaultFiveMillimetres_AndAtZeroIsCutAsBefore()
         {

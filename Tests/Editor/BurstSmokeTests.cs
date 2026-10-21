@@ -101,7 +101,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
         /// Burst and managed code round some sums differently, which can swap two collapses of near-equal cost, so the records
         /// may part; every step's error level, a running maximum, stays within a hundredth of the managed one or a micrometre.
         /// Compared up to 5 mm, the most a build cuts to by default: a line's movement is exact in the vertices left on it, so
-        /// past the last few vertices of a border two parted records no longer read alike. A budget with no error ceiling can cut
+        /// past the last few vertices of a border two parted records do not read alike. A budget with no error ceiling can cut
         /// past 5 mm, and nothing here compares the paths there.
         /// </summary>
         static void AssertAlike(in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence burst, in Ryan6Vrc.MeshOptimizer.Core.Decimation.CollapseSequence managed, string name)
@@ -152,12 +152,12 @@ namespace Ryan6Vrc.MeshOptimizer.Tests
 
         // The loop with the clearance rule on, over the scenes the side-by-side test uses: near layers over a joint, measured in
         // bends, and a crossing, where the rule compares crossing lengths Burst and managed code round differently. It runs at the
-        // default crossing allowance, 1e-7 m. At 1e-9 the two paths part: where a collapse leaves a crossing as it was, the
-        // rule compares two sums of segment lengths equal but for rounding, the paths put that margin apart by up to about 1.5e-8 m,
-        // and at step 1,381 of the crossing scene's skin Burst refuses a collapse managed code makes, so from there the two record
-        // different meshes. At 1e-7 every crossing check decides alike, and the crossing scene must record bit for bit the same on
-        // both paths. The bent layers' records part among collapses of near-equal cost with the rule on or off, from rounding in the
-        // bends rather than the crossing check, so they are held only to the comparison above.
+        // default crossing allowance, 1e-7 m, which must stay above the margin rounding puts between the two paths: where a
+        // collapse leaves a crossing as it was, the rule compares two sums of segment lengths equal but for rounding, which the
+        // paths put up to about 1e-8 m apart, so an allowance below that lets one path refuse a collapse the other makes and the
+        // two record different meshes. At the default every crossing check decides alike, and the crossing scene must record bit
+        // for bit the same on both paths. The bent layers' records part among collapses of near-equal cost with the rule on or
+        // off, from rounding in the bends rather than the crossing check, so they are held only to the comparison above.
         [Test]
         public void TheCollapseLoop_WithTheClearanceRule_RecordsUnderBurstWhatItRecordsAsManagedCode()
         {

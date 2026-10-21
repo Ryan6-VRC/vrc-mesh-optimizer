@@ -15,21 +15,21 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
     [AddComponentMenu("Mesh Optimizer/Mesh Optimizer")]
     public sealed class AvatarMeshOptimizer : MonoBehaviour, INDMFEditorOnly
     {
+        /// <summary>Whether the build collapses edges to lower the triangle count, keeping the shape wherever the avatar bends or animates.</summary>
         public bool decimate = true;
+        /// <summary>Whether the build deletes triangles that an <see cref="alwaysOn"/> renderer covers from every direction.</summary>
         public bool removeHiddenTriangles = true;
 
         /// <summary>
-        /// A tolerance for a component added fresh: the reduction then follows from what each mesh can lose unseen, where a
-        /// fixed budget forces whatever error reaching it takes. A saved component keeps the target it holds.
+        /// What decimation aims for: a triangle count for the whole avatar, or a tolerance. Tolerance is the default, since the
+        /// reduction then follows from what each mesh can lose unseen, where a fixed budget forces whatever error reaching it takes.
         /// </summary>
         public TargetKind target = TargetKind.Tolerance;
         /// <summary>Triangles for the whole avatar, used when <see cref="target"/> is a budget.</summary>
         [Min(0)] public int triangleBudget = 70000;
         /// <summary>
         /// The most surface deviation a budget may spend, in millimetres, used when <see cref="target"/> is a budget and read
-        /// as a tolerance is read: a budget reachable only past it is cut to it and reported unmet. 0 turns it off. A
-        /// component saved before this field existed reads the default too, so a saved budget stops here rather than cutting
-        /// to its count at any error.
+        /// as a tolerance is read: a budget reachable only past it is cut to it and reported unmet. 0 turns it off.
         /// </summary>
         [Min(0)] public float maxError = 5f;
         /// <summary>Largest surface deviation allowed, in millimetres, used when <see cref="target"/> is a tolerance.</summary>
@@ -44,46 +44,51 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         /// <summary>
         /// Whether a material's outline counts as drawing the triangles under it when they might be hidden. An outline
         /// culled front draws its triangles' backs, which show only from inside the garment; with this on, a triangle whose
-        /// front is covered stays unless its back is covered too. Off by default, and off for a component saved before it
-        /// existed, since what it keeps is mostly skin under clothing; it is for a garment whose inside is seen through its
-        /// outline. An outline never counts as cover either way.
+        /// front is covered stays unless its back is covered too. Off by default, since what it keeps is mostly skin under
+        /// clothing; it is for a garment whose inside is seen through its outline. An outline never counts as cover either way.
         /// </summary>
         public bool outlinesShowInside;
 
+        /// <summary>Materials whose surface counts as cover other than <see cref="OcclusionMode.Automatic"/> decides; a material not listed is Automatic.</summary>
         public List<MaterialOcclusion> materials = new List<MaterialOcclusion>();
+        /// <summary>Per-renderer decimation settings; a renderer not listed is decimated at protection 1.</summary>
         public List<RendererSettings> renderers = new List<RendererSettings>();
 
         /// <summary>
         /// The share of its triangles the viseme renderer keeps whatever the target: lip sync and expressions deform it most
-        /// and it is the surface other players watch, so an aggressive target is spent elsewhere first. A component saved
-        /// before this field existed reads the default.
+        /// and it is the surface other players watch, so an aggressive target is spent elsewhere first.
         /// </summary>
         [Range(0f, 1f)] public float faceFloor = 0.5f;
-        /// <summary>Whether decimation keeps every finger vertex, found through the humanoid mapping. On for a component saved before this field existed.</summary>
+        /// <summary>Whether decimation keeps every finger vertex, found through the humanoid mapping.</summary>
         public bool lockFingers = true;
         /// <summary>
         /// With <see cref="lockFingers"/> on, a vertex with at least this much weight on a finger is a finger vertex. Kept
-        /// above 0, where every vertex would count. A component saved before this field existed reads the default.
+        /// above 0, where every vertex would count.
         /// </summary>
         [Range(0.001f, 1f)] public float fingerWeight = 0.01f;
     }
 
-    /// <summary>A saved component holds this as a number, so a value's number never changes.</summary>
+    /// <summary>What decimation aims for. A saved component holds this as a number, so a member's number never changes.</summary>
     public enum TargetKind
     {
+        /// <summary>The whole avatar cut to <see cref="AvatarMeshOptimizer.triangleBudget"/> triangles, within <see cref="AvatarMeshOptimizer.maxError"/>.</summary>
         TriangleBudget,
+        /// <summary>Every mesh cut as far as <see cref="AvatarMeshOptimizer.tolerance"/> allows.</summary>
         Tolerance,
     }
 
     /// <summary>How a material's surface counts when it stands in front of another triangle.</summary>
     public enum OcclusionMode
     {
-        /// <summary>Opaque by its render queue and render type, otherwise sampled from its alpha.</summary>
+        /// <summary>Opaque by its render queue and render type; otherwise sampled from its alpha, and see-through when its alpha cannot be read.</summary>
         Automatic,
+        /// <summary>Hides what is behind it wherever it is hit, whatever its alpha.</summary>
         ForceOpaque,
+        /// <summary>Hides nothing behind it.</summary>
         NeverOccludes,
     }
 
+    /// <summary>One material override: how <see cref="material"/> counts as cover.</summary>
     [Serializable]
     public sealed class MaterialOcclusion
     {
@@ -91,10 +96,12 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         public OcclusionMode mode;
     }
 
+    /// <summary>One renderer's decimation settings.</summary>
     [Serializable]
     public sealed class RendererSettings
     {
         public Renderer renderer;
+        /// <summary>Whether decimation leaves this renderer whole; its hidden triangles are still removed.</summary>
         public bool excludeFromDecimation;
         /// <summary>
         /// How many times over this renderer's error counts against the target, a budget or a tolerance alike. 1 is
