@@ -13,7 +13,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// <summary>What the pipeline needs; nothing here needs a build.</summary>
     internal sealed class PipelineInput
     {
+        /// <summary>The avatar root; every mesh and skinned renderer under it is surveyed.</summary>
         public Transform Root;
+        /// <summary>The component whose settings the pass runs with; a cut reads its target and protections as they stand.</summary>
         public AvatarMeshOptimizer Settings;
         /// <summary>Per skinned renderer, per shape key. A renderer missing from it has every key evaluated as live, from the weight it holds to full weight.</summary>
         public IReadOnlyDictionary<SkinnedMeshRenderer, ShapeKeyLiveness[]> Liveness;
@@ -32,12 +34,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// still read from the renderer itself. Null, or a renderer missing from it, reads the renderer itself.
         /// </summary>
         public IReadOnlyDictionary<Renderer, Renderer> Drawn;
+        /// <summary>The occlusion solve's settings, which the cut's re-judging reads too.</summary>
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
         /// <summary>
         /// Whether <see cref="OptimizerPipeline.Prepare"/> removes hidden triangles when the component asks it to. On for a
         /// build; the edit-mode preview turns it off, since occlusion is the costly step and the preview shows decimation.
         /// </summary>
         public bool Occlude = true;
+        /// <summary>The settings each renderer's collapse sequence is recorded with (<see cref="BuildSettings.Decimation"/>).</summary>
         public DecimationSettings Decimation = BuildSettings.Decimation;
         /// <summary>
         /// Whether a cut judges the removed triangles again against the meshes it writes (<see cref="OptimizerPipeline.Cut"/>).

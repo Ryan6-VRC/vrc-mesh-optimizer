@@ -15,6 +15,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// <summary>Why a renderer's mesh was left as it was.</summary>
     internal enum SkipReason
     {
+        /// <summary>The pass wrote the renderer a new mesh.</summary>
         None,
         /// <summary>The renderer draws no mesh.</summary>
         NoMesh,
@@ -47,30 +48,36 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public Renderer Renderer { get; internal set; }
         /// <summary>The renderer's path from the avatar root, as the hierarchy shows it.</summary>
         public string Path { get; internal set; }
-        /// <summary>The mesh the renderer drew before the pass.</summary>
+        /// <summary>The mesh the pass read for the renderer: its own, or in the preview its proxy's (<see cref="PipelineInput.Drawn"/>).</summary>
         public Mesh SourceMesh { get; internal set; }
         /// <summary>The mesh the pass wrote; null when the renderer was left as it was.</summary>
         public Mesh OutputMesh { get; internal set; }
 
+        /// <summary>The triangles <see cref="SourceMesh"/> draws.</summary>
         public int TrianglesBefore { get; internal set; }
         /// <summary>Triangles the written mesh leaves out as hidden: those set in <see cref="HiddenSourceTriangles"/>.</summary>
         public int HiddenRemoved { get; internal set; }
         /// <summary>
         /// Triangles occlusion found hidden but the written mesh draws, at their source corners, because decimation took
-        /// their cover: judged again against what the always-on renderers are written with, they were no longer hidden.
+        /// their cover: judged again against what the always-on renderers are written with, they show.
         /// Not counted in <see cref="HiddenRemoved"/>; counted in <see cref="TrianglesAfter"/>.
         /// </summary>
         public int HiddenRestored { get; internal set; }
+        /// <summary>The triangles the renderer draws after the pass: the written mesh's, or <see cref="TrianglesBefore"/> when none was written.</summary>
         public int TrianglesAfter { get; internal set; }
 
+        /// <summary>Why the renderer was left as it was; <see cref="SkipReason.None"/> when a mesh was written.</summary>
         public SkipReason Skip { get; internal set; }
+        /// <summary>True when the renderer was left as it was for a reason other than having nothing to change.</summary>
         public bool Skipped => Skip != SkipReason.None && Skip != SkipReason.Unchanged;
+        /// <summary>A failure's stage and message, and a note when the renderer could not stand in the clearance surface; null or empty otherwise.</summary>
         public string SkipDetail { get; internal set; }
 
         /// <summary>True for a renderer listed as always on and active at build: one that may hide others' triangles.</summary>
         public bool Occludes { get; internal set; }
         /// <summary>True when Unity draws the renderer mirrored, so occlusion read its faces with the winding reversed.</summary>
         public bool Mirrored { get; internal set; }
+        /// <summary>True when the component's entry for the renderer excludes it from decimation; occlusion still removes its hidden triangles.</summary>
         public bool ExcludedFromDecimation { get; internal set; }
         /// <summary>Collapse steps recorded for this renderer; 0 when it was not decimated.</summary>
         public int SequenceLength { get; internal set; }
@@ -78,7 +85,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int AllocationCut { get; internal set; }
         /// <summary>The error the cut reached, in metres, before the renderer's weight.</summary>
         public float Error { get; internal set; }
+        /// <summary>The fewest triangles the allocation may cut the renderer to: the face floor's share for the face, 0 for any other.</summary>
         public int FloorTriangles { get; internal set; }
+        /// <summary>
+        /// The allocation weight, the renderer's protection floored at <see cref="ProtectionLimit.Min"/>: the allocation ranks
+        /// its steps by error times weight, so a higher weight keeps more triangles.
+        /// </summary>
         public float Weight { get; internal set; }
         /// <summary>
         /// Vertices no collapse could remove: on a finger, on a bone a clip grows from zero scale, or of a triangle drawn
@@ -110,6 +122,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// judging the outline's side cost this renderer. Zero unless the component's outlines show the inside.
         /// </summary>
         public int KeptForOutline { get; internal set; }
+        /// <summary>Per reason, the vertices occlusion found uncovered on this renderer.</summary>
         public DeclineCounts Declined { get; internal set; }
 
         /// <summary>
@@ -199,10 +212,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// </summary>
     internal sealed class OptimizationReport
     {
+        /// <summary>The avatar root's name.</summary>
         public string AvatarName { get; internal set; }
+        /// <summary>Every mesh and skinned renderer under the root, in hierarchy order, whether or not the pass changed it.</summary>
         public List<RendererReport> Renderers { get; } = new List<RendererReport>();
 
+        /// <summary>Whether the cut spent a triangle budget or a tolerance, as the component holds it.</summary>
         public TargetKind Target { get; internal set; }
+        /// <summary>The component's triangle budget, read when <see cref="Target"/> is a budget.</summary>
         public int TriangleBudget { get; internal set; }
         /// <summary>In millimetres, as the component holds it.</summary>
         public float Tolerance { get; internal set; }
@@ -223,6 +240,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         public int TrianglesBefore => Renderers.Sum(r => r.TrianglesBefore);
         public int TrianglesAfter => Renderers.Sum(r => r.TrianglesAfter);
+        /// <summary>Hidden triangles the written meshes leave out (<see cref="RendererReport.HiddenRemoved"/>).</summary>
         public int HiddenRemoved => Renderers.Sum(r => r.HiddenRemoved);
         /// <summary>Removed triangles written back because the cut took their cover (<see cref="RendererReport.HiddenRestored"/>).</summary>
         public int HiddenRestored => Renderers.Sum(r => r.HiddenRestored);
@@ -233,6 +251,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public int RejudgePasses { get; internal set; }
         /// <summary>The common weighted error level every decimated renderer was cut at, in metres.</summary>
         public float ErrorLevel { get; internal set; }
+        /// <summary>False only when the target is a budget and the avatar draws more triangles than it after writing.</summary>
         public bool TargetMet { get; internal set; }
 
         /// <summary>Groups of shape keys the pass evaluated only together, over the renderers it extracted.</summary>
@@ -249,8 +268,14 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// </summary>
         public Dictionary<LinkRefusal, int> LinkRefusals { get; } = new Dictionary<LinkRefusal, int>();
 
+        /// <summary>
+        /// True when the occlusion solve ran to the end; false when the component or the preview turned it off, no always-on
+        /// renderer is on, or it failed (<see cref="DiagnosticKeys.OcclusionFailed"/>).
+        /// </summary>
         public bool OcclusionRan { get; internal set; }
+        /// <summary>Per reason, the vertices occlusion found uncovered, over every renderer.</summary>
         public DeclineCounts Declined { get; internal set; }
+        /// <summary>What the occlusion solve cost, for measurement.</summary>
         public OcclusionStats OcclusionStats { get; internal set; }
         /// <summary>
         /// Bones an animation can scale or Modular Avatar can delete from, and every bone under them, by path: faces
@@ -264,6 +289,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Material overrides on the component that matched no material on any renderer, so did nothing.</summary>
         public List<Material> UnmatchedMaterialOverrides { get; } = new List<Material>();
 
+        /// <summary>Wall-clock per stage, preparing and cutting both.</summary>
         public StageTimes Times;
 
         /// <summary>User-facing problems, which the pass raises through NDMF's error report.</summary>

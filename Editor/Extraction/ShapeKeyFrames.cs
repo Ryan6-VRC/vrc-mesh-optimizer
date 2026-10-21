@@ -6,8 +6,8 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
 {
     /// <summary>
     /// One shape key's frames, loaded from a mesh, evaluated at any weight the way a renderer blends them:
-    /// from nothing to the first frame below its weight, linearly between frames, and along the last segment
-    /// beyond the last frame. Reused across keys so a face with hundreds of keys allocates once.
+    /// from nothing to the first frame, scaled, up to the first frame's weight; linearly between frames; and along
+    /// the last segment beyond the last frame. Reused across keys so a face with hundreds of keys allocates once.
     /// </summary>
     internal sealed class ShapeKeyFrames
     {

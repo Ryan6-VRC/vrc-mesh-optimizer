@@ -18,6 +18,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// </summary>
     internal sealed class PreparedAvatar : IDisposable
     {
+        /// <summary>What the avatar was prepared from; a cut reads the component's target and protections through it.</summary>
         public readonly PipelineInput Input;
         /// <summary>Every mesh renderer and skinned renderer under the root, in hierarchy order.</summary>
         public readonly List<PreparedRenderer> Renderers = new List<PreparedRenderer>();
@@ -37,7 +38,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// judges its removals again by the same rule. Set only once occlusion ran.
         /// </summary>
         public int[] BoneParents;
+        /// <summary>Per bone id, true for an unstable bone, which the occlusion rule treats as vanishing; set only once occlusion ran.</summary>
         public bool[] VanishingBones;
+        /// <summary>The unstable bones by path, as <see cref="OptimizationReport.UnstableBones"/> reports them.</summary>
         public readonly List<string> UnstableBones = new List<string>();
         /// <summary>The problems preparing raised, in the order it raised them.</summary>
         public readonly List<Diagnostic> Diagnostics = new List<Diagnostic>();
@@ -65,6 +68,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     internal sealed class PreparedRenderer : IDisposable
     {
         public Renderer Renderer;
+        /// <summary>The mesh the pass reads for the renderer: its own, or its proxy's (<see cref="PipelineInput.DrawnBy(Renderer)"/>).</summary>
         public Mesh Source;
         public string Path;
         public int TrianglesBefore;
@@ -74,10 +78,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>This renderer's frames in the avatar's linked configurations.</summary>
         public readonly List<LiveFrame> Linked = new List<LiveFrame>();
 
+        /// <summary>The evaluation mesh, owned here; valid while <see cref="Extracted"/>.</summary>
         public EvalMesh Eval;
         public bool Extracted;
         public bool Mirrored;
 
+        /// <summary>True for an always-on renderer that is on as the avatar loads: one whose faces may cover others'.</summary>
         public bool Occludes;
         /// <summary>Per submesh, the sides it draws and how it blocks, as the occlusion solve read them; null when occlusion did not run.</summary>
         public OccluderSubmesh[] OccluderSubmeshes;
@@ -105,6 +111,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// only with <see cref="PipelineInput.RemovedAsNeighbours"/> off. Created only while recording with the rule on.
         /// </summary>
         public NativeArray<int> Layers;
+        /// <summary>The recorded collapse sequence, owned here; valid while <see cref="Decimated"/>.</summary>
         public CollapseSequence Sequence;
         public bool Decimated;
         public int SequenceLength => Decimated ? Sequence.Length : 0;

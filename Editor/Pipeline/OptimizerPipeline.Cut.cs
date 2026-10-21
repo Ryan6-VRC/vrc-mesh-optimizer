@@ -17,6 +17,7 @@ using Debug = UnityEngine.Debug;
 
 namespace Ryan6Vrc.MeshOptimizer.Pipeline
 {
+    // The cut half of OptimizerPipeline: the class summary in OptimizerPipeline.cs lists both halves' stages in order.
     internal static partial class OptimizerPipeline
     {
         /// <summary>
@@ -24,7 +25,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// The target and each renderer's protection are read from the component as they stand, so a change to either
         /// needs only another cut.
         /// Before writing, every triangle occlusion removed is judged again against what the always-on renderers are written
-        /// with, since decimation moves the faces that covered it, and one no longer covered is written back
+        /// with, since decimation moves the faces that covered it, and one the written faces leave uncovered is written back
         /// (<see cref="PipelineInput.Rejudge"/>); a budget pays for those by cutting deeper, never past
         /// the component's <see cref="AvatarMeshOptimizer.maxError"/>, and one the ceiling stops short is reported unmet under
         /// <see cref="DiagnosticKeys.BudgetCeilingHeld"/> rather than <see cref="DiagnosticKeys.BudgetNotMet"/>.
@@ -90,8 +91,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// How many times at most a budget is allocated, kept and judged again to pay for the triangles re-judging restores.
-        /// Each pass after the first withholds from the allocation what the pass before restored, and at least what it withheld
-        /// plus what it went over. When none meets the budget, the pass that came nearest is written and the budget reported
+        /// Each pass after the first withholds from the allocation the larger of what the pass before restored and what it
+        /// withheld plus what it went over. When none meets the budget, the pass that came nearest is written and the budget reported
         /// not met. A pass the error ceiling held is the last: any later one would take the same steps.
         /// </summary>
         const int BudgetPasses = 4;
@@ -114,7 +115,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             public Outcome[] Outcomes;
             public KeptTriangles[] Kept;
             public readonly List<Diagnostic> Diagnostics = new List<Diagnostic>();
-            /// <summary>Per renderer, per evaluation triangle, true for a removed one no longer covered; null where none is.</summary>
+            /// <summary>Per renderer, per evaluation triangle, true for a removed one the cut leaves uncovered; null where none is.</summary>
             public bool[][] Restored;
             public int RestoredCount;
 
@@ -279,8 +280,8 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         }
 
         /// <summary>
-        /// Judges the pass's removals again (<see cref="Rejudging.Restored"/>) and puts what is no longer hidden into
-        /// <see cref="Pass.Restored"/>. Every extracted renderer is entered at its index in the first solve, as the pass
+        /// Judges the pass's removals again (<see cref="Rejudging.Restored"/>) and puts the removed triangles the cut leaves
+        /// uncovered into <see cref="Pass.Restored"/>. Every extracted renderer is entered at its index in the first solve, as the pass
         /// leaves it: a renderer it writes draws what it keeps and leaves out what occlusion removed, and one it leaves as
         /// it was draws its whole source.
         /// </summary>
@@ -488,6 +489,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>
+        /// Writes one renderer's mesh from the triangles it keeps, each in its source triangle's submesh. A failure leaves the
+        /// renderer as it was and names it.
+        /// </summary>
         static void Write(PreparedRenderer job, KeptTriangles kept, Outcome outcome, PipelineInput input, OptimizationReport report)
         {
             try
