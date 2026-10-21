@@ -38,6 +38,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         public NativeArray<int> NormalCount;
         public NativeArray<FrameNormal> NormalFrames;
 
+        /// <summary>Bytes the bank holds, for benchmarks to report; nothing in the pipeline reads it.</summary>
         public long ByteSize =>
             (long)Rest.Length * UnsafeUtility.SizeOf<Quadric>() + (long)Uv.Length * UnsafeUtility.SizeOf<UvQuadric>() +
             (long)NormalField.Length * UnsafeUtility.SizeOf<NormalQuadric>() +

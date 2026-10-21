@@ -517,13 +517,12 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                 // Only a sample with a witness, at rest or in any frame, on a mesh that lost faces can lose
                 // cover: every ray of any other has a blocker on a mesh that keeps all its faces.
                 //
-                // Least-proven part of the module. Its soundness rests on bookkeeping that spans the rest
-                // pass, every configuration and this pass together: which samples are re-cast, which witnesses
-                // survive the re-cast, and which frames are re-run for them. A review found one hole here
-                // that no test caught. If it is wrong, the test that breaks it layers three or more covers
-                // with some hidden, puts configurations on the kept ones that move them away, orders meshes so
-                // a deleted face is found first, and checks that a triangle is hidden only if it is covered
-                // with every hidden face removed, in every frame.
+                // The invariant: a triangle is hidden only if it is covered with every hidden face removed, at rest
+                // and in every configuration. It rests on bookkeeping that spans the rest pass, every configuration
+                // and this pass together: which samples are re-cast, which witnesses survive the re-cast, and which
+                // frames are re-run for them. DeletionPassTests.RandomLayeredScenes checks it on scenes built to
+                // break it: three or more layered covers with some hidden, configurations that move the kept ones
+                // away, and mesh orders that meet a deleted face first.
                 ulong lostFaces = 0;
                 for (var o = 0; o < S.OccTri.Length; o++)
                 {
@@ -538,8 +537,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
                     {
                         foreach (var s in RelevantList) if (((Witness[s] | FrameWitness[s]) & lostFaces) != 0) again.Add(s);
                         stats.DeletionPassSamples = again.Length;
-                        // The re-cast replaces the rest witness. A frame pass 1 skipped because a now-deleted face
-                        // covered the sample must still be re-run, so the old dependency is kept.
+                        // The re-cast replaces the rest witness. A configuration the first frame pass skipped because a
+                        // face deleted here covered the sample must still be re-run, so the rest witness joins FrameWitness.
                         foreach (var s in again) FrameWitness[s] |= Witness[s];
                         RestEval(again.AsArray(), ExposedByDeletion);
                     }

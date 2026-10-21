@@ -44,6 +44,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>Error level after the first <paramref name="stepCount"/> steps, in metres.</summary>
         public float ErrorAt(int stepCount) => stepCount == 0 ? 0f : Steps[stepCount - 1].Error;
 
+        /// <summary>The mesh after the first <paramref name="stepCount"/> steps, in source indices; the caller owns the result.</summary>
         public CutResult Cut(int stepCount, Allocator allocator)
         {
             if (stepCount < 0 || stepCount > Length) throw new ArgumentOutOfRangeException(nameof(stepCount), stepCount, $"a cut lies in 0..{Length}");

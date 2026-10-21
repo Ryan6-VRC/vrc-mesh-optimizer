@@ -186,6 +186,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         /// <summary>A shape delta shorter than this, in metres, does not move its vertex.</summary>
         public float MoveEpsilon;
 
+        /// <summary>How the occluder trees split; anything but <see cref="BvhSplit.Sah"/> is for benchmarks to compare against.</summary>
         internal BvhSplit Split;
 
         public static OcclusionSettings Default => new OcclusionSettings

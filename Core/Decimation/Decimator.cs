@@ -9,7 +9,7 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 {
-    /// <summary>What a collapse run cost, for measurement.</summary>
+    /// <summary>What a collapse run cost, for measurement: benchmarks read it whole through <see cref="Decimator.Collapse"/>, and the pipeline reads only <see cref="ClearanceRefused"/>, through <see cref="ClearanceStats"/>.</summary>
     internal struct CollapseStats
     {
         /// <summary>Largest the frame-quadric pool grew, in bytes.</summary>
@@ -27,6 +27,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// </summary>
     internal static class Decimator
     {
+        /// <summary>Records the sequence with no other layers to keep clear of and no rig to bend.</summary>
         public static CollapseSequence Run(in EvalMesh mesh, in DecimationSettings settings, in VertexProtection protection, Allocator allocator) =>
             Run(mesh, settings, protection, default, default, allocator, out _);
 
@@ -109,7 +110,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// <summary>The collapse stage alone. Consumes the bank: its quadrics are accumulated in place, and its
         /// frame quadrics are moved into a growable pool and released. Keeps clear of the layers in <paramref name="clearance"/>
         /// where <paramref name="field"/> has been measured; its triangle clearances are updated in place as collapses replace
-        /// triangles. <paramref name="bends"/> must be the ones the bank was built with.</summary>
+        /// triangles. <paramref name="bends"/> must be the ones the bank was built with. Exists for benchmarks and tests, which
+        /// build the bank themselves to measure it; the pipeline records through <see cref="Schedule"/>.</summary>
         internal static CollapseSequence Collapse(in EvalMesh mesh, in MeshTopology topology, ref QuadricBank bank,
             in DecimationSettings settings, in VertexProtection protection, in ClearanceInput clearance, in ClearanceField field,
             in Bends bends, Allocator allocator, out CollapseStats stats)

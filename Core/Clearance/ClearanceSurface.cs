@@ -541,8 +541,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Clearance
 
         /// <summary>
         /// As the overload without <paramref name="drift"/>; with it above 0, also whether some point of that line lies
-        /// farther than <paramref name="drift"/> from <paramref name="layer"/>'s own source: a crossing where this layer
-        /// is no longer where it was, rather than where it already crossed.
+        /// farther than <paramref name="drift"/> from <paramref name="layer"/>'s own source: a crossing this layer reaches
+        /// by moving off its source, rather than one its source already had.
         /// </summary>
         internal unsafe float CrossingLength(float3 a, float3 b, float3 c, int layer, float drift, out bool strays)
         {

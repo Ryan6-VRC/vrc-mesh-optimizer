@@ -34,6 +34,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Allocation
         }
     }
 
+    /// <summary>Where <see cref="BudgetAllocator"/> cut each renderer, and whether that met its target.</summary>
     internal struct AllocationResult
     {
         /// <summary>Per entry, the step count to cut its sequence at.</summary>

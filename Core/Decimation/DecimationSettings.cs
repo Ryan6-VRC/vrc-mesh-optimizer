@@ -12,18 +12,19 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     {
         /// <summary>The largest error over the rest state and every frame.</summary>
         WorstCase = 0,
-        /// <summary>Rest error squared plus every frame's excess: favours density where many frames act.</summary>
+        /// <summary>Rest error squared plus every frame's excess: favours density where many frames act. Kept for measurement and tests; the pipeline uses <see cref="ShapeAggregation.WorstCase"/>.</summary>
         Sum = 1,
-        /// <summary>(1 - AggregationBlend) * WorstCase + AggregationBlend * Sum, on squared errors.</summary>
+        /// <summary>(1 - AggregationBlend) * WorstCase + AggregationBlend * Sum, on squared errors. Kept for measurement and tests.</summary>
         Blend = 2,
     }
 
+    /// <summary>Everything one decimation run is configured by; <see cref="Default"/> is what the pipeline runs with.</summary>
     internal struct DecimationSettings
     {
         public TopologySettings Topology;
 
         public ShapeAggregation Aggregation;
-        /// <summary>Blend only: 0 is worst case, 1 is sum.</summary>
+        /// <summary>Blend only, so measurement and tests only: 0 is worst case, 1 is sum.</summary>
         public float AggregationBlend;
 
         /// <summary>Scale on the UV0 term. At 1, a texel displaced d metres across the surface costs as much as
@@ -127,8 +128,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
     /// <see cref="BendSettings.ClearanceShare"/>), and a shape key that moves two layers differently is not checked;
     /// a pair of layers each with a nearer third layer on its far side (skin, tights, lining, outer) may cross by up to
     /// the sum of the two sides' errors, since each is held only to its share of the smaller gap on its far side and not
-    /// of the gap between the pair (the case on record is four tubes, in
-    /// ClearanceTests.TwoLayersEachWithANearerLayerBeyond_CrossByNoMoreThanTheirErrors);
+    /// of the gap between the pair (ClearanceTests.TwoLayersEachWithANearerLayerBeyond_CrossByNoMoreThanTheirErrors holds that bound on four nested tubes);
     /// a layer is a connected piece of a mesh, so two layers joined into one piece (a lining sewn to its skirt's hem, or
     /// pieces meeting at one vertex) are one layer; the gap is read per source triangle, so where it changes by a
     /// large part of itself across one source triangle, the least of it stands for the whole; and the other layers are
@@ -159,10 +159,9 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// count as not lengthening it, beyond a millionth of that line. The two lengths compared are sums of float
         /// segment lengths, which Burst and managed code round differently, so where a collapse leaves a crossing as it
         /// was, an allowance below that rounding can let the two decide it differently and record different sequences.
-        /// The default, 1e-7, clears that rounding and no more: on the test scenes the two paths put such a near-zero
-        /// margin apart by up to about 1.5e-8 m, every allowance from 3e-8 to 3e-7 records one mesh on both paths where
-        /// 1e-9 parts them, and 1e-6 already admits real lengthening. Each collapse may lengthen a crossing by up to
-        /// this, so it adds up over the collapses on one crossing.
+        /// The default, 1e-7, sits above that rounding and below any lengthening worth refusing; 1e-6 already admits
+        /// real lengthening. Each collapse may lengthen a crossing by up to this, so it adds up over the collapses on one
+        /// crossing.
         /// </summary>
         public float CrossingAllowance;
 
