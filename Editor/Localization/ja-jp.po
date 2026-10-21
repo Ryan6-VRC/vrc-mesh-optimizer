@@ -15,7 +15,7 @@ msgid "MeshOptimizer:removeHiddenTriangles"
 msgstr "隠れたポリゴンを削除する"
 
 msgid "MeshOptimizer:removeHiddenTriangles:tooltip"
-msgstr "同じボーンで動く常時表示のレンダラーに、どの方向から見ても隠れているポリゴンを削除します。"
+msgstr "同じボーンで動く常時表示のレンダラーに、面の法線を中心とした円錐内のどの方向から見ても隠れているポリゴンを削除します。"
 
 msgid "MeshOptimizer:target"
 msgstr "目標"

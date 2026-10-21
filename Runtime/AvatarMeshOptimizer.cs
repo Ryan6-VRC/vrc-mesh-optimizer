@@ -17,7 +17,7 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
     {
         /// <summary>Whether the build collapses edges to lower the triangle count, keeping the shape wherever the avatar bends or animates.</summary>
         public bool decimate = true;
-        /// <summary>Whether the build deletes triangles that an <see cref="alwaysOn"/> renderer covers from every direction.</summary>
+        /// <summary>Whether the build deletes triangles that an <see cref="alwaysOn"/> renderer covers from every direction within a cone around the surface normal.</summary>
         public bool removeHiddenTriangles = true;
 
         /// <summary>

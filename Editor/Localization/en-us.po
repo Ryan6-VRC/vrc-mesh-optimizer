@@ -15,7 +15,7 @@ msgid "MeshOptimizer:removeHiddenTriangles"
 msgstr "Remove hidden triangles"
 
 msgid "MeshOptimizer:removeHiddenTriangles:tooltip"
-msgstr "Delete triangles that an always-on renderer on the same bones covers from every direction."
+msgstr "Delete triangles that an always-on renderer on the same bones covers from every direction within a cone around the surface."
 
 msgid "MeshOptimizer:target"
 msgstr "Target"
