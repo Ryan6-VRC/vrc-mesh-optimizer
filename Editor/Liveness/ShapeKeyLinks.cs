@@ -44,7 +44,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         /// later, to a failed extraction, leaves the key in its link, and it is not counted.
         /// </summary>
         NotEvaluated,
-        /// <summary>Its link's members no longer stand at one normalised weight.</summary>
+        /// <summary>Its link's evaluated members do not stand at one normalised weight in the liveness the pass evaluates.</summary>
         HeldApart,
     }
 

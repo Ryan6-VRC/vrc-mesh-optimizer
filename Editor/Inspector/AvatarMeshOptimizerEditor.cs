@@ -311,7 +311,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         /// <summary>
         /// The check button, then one line per material of the always-on renderers and of the overrides: what Automatic
         /// reads it as, and a button that overrides it to the opposite. Checking adds nothing to the overrides list; only
-        /// the button beside a misread material does, and it is disabled once the material is listed.
+        /// the button beside a misread material does, and it is disabled until the material has a verdict and once it is listed.
         /// </summary>
         void DrawCheck()
         {
@@ -320,7 +320,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
                 {
                     serializedObject.ApplyModifiedProperties();
                     CheckAlwaysOn();
-                    // The progress bar broke this event's layout, so it ends here and the next one draws the verdicts.
+                    // The progress bar breaks this event's layout, so it ends here and the next one draws the verdicts.
                     GUIUtility.ExitGUI();
                 }
             if (_checked == null || targets.Length != 1) return;

@@ -94,6 +94,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         }
     }
 
+    /// <summary>The poses the gate measures in by default.</summary>
     internal static class PoseBank
     {
         /// <summary>

@@ -127,7 +127,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         /// <summary>
         /// A cut of the scene, with the error ceiling at <paramref name="ceiling"/> metres: 0, the ceiling off, unless a test
-        /// asks for one, so each budget here is cut as these tests measured it before the component carried the ceiling.
+        /// asks for one, so each budget here is cut as deep as reaching it takes.
         /// </summary>
         OptimizationReport Run(TargetKind target, float value, bool rejudge, bool removedAsNeighbours = true, float ceiling = 0f)
         {

@@ -32,7 +32,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         public readonly int TrianglesAfter;
         public readonly int HiddenRemoved;
         public readonly int HiddenRestored;
-        /// <summary>The error the cut reached, in metres, before the renderer's weight.</summary>
+        /// <summary>The error the cut reached, in metres, before the renderer's protection weights it.</summary>
         public readonly float Error;
         public readonly SkipReason Skip;
 

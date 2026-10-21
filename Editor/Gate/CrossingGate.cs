@@ -64,6 +64,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         }
     }
 
+    /// <summary>What <see cref="CrossingGate.Measure"/> found: every configuration it measured, every pair in each, and what it could not measure.</summary>
     internal sealed class CrossingReport
     {
         public readonly IReadOnlyList<string> Configurations;

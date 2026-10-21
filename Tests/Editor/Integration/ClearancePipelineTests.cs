@@ -152,10 +152,8 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         }
 
         // On the path a build takes, re-judging writes back body the cut garment drew away from, at its source corners, and
-        // what occlusion kept is kept clear of. A triangle written back was a neighbour, so it comes back clear: 110 are
-        // written back, crossed along 0, and the garment keeps 1,292 triangles. What the switch off costs: a triangle
-        // written back was never a neighbour, so the garment crosses it, and only it: 130 are written back, crossed along
-        // about 7.4 cm, and the garment keeps 492.
+        // what occlusion kept is kept clear of. A triangle written back was a neighbour, so it comes back clear. What the
+        // switch off costs: a triangle written back was never a neighbour, so the garment crosses it, and only it.
         [TestCase(true)]
         [TestCase(false)]
         public void BodyWrittenBackByReJudging_IsTheOnlyBodyTheGarmentCrosses(bool removedAsNeighbours)

@@ -235,7 +235,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 
         // ------------------------------------------------------------------------------------------------
         // A surface is seen from the side its geometry faces, whatever its shading normals say; toon meshes
-        // often carry authored normals tilted well off the surface. coverage.py casts about Blender's vertex
+        // often carry authored normals tilted well off the surface. vrc-blender-tools' coverage.py casts about Blender's vertex
         // normal, which is the geometry's and ignores custom normals.
 
         // A closed double-sided box about the origin, 1 cm over and under it and 3 cm to each side, with a
@@ -370,7 +370,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
 
         // ------------------------------------------------------------------------------------------------
         // The cone stops at ConeDegrees. A surface can be seen from outside it, at a grazing angle, and the rule
-        // accepts that: coverage.py reports such triangles but never keeps one for it.
+        // accepts that: vrc-blender-tools' coverage.py reports such triangles but never keeps one for it.
 
         [Test]
         public void GrazingView_PastTheCone_DoesNotKeepATriangle()

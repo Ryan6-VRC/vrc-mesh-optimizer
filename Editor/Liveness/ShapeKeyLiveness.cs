@@ -7,7 +7,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 {
     internal enum ShapeKeyState : byte
     {
-        /// <summary>Zero on the renderer and driven by nothing: it never deforms the mesh at runtime.</summary>
+        /// <summary>Zero on the renderer, within <see cref="ShapeKeyClassifier.HoldTolerance"/>, and driven by nothing: it never deforms the mesh at runtime.</summary>
         Dead,
         /// <summary>Nonzero on the renderer and driven by nothing: it holds <see cref="ShapeKeyLiveness.HeldWeight"/> forever.</summary>
         Frozen,
@@ -170,6 +170,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         }
     }
 
+    /// <summary>Decides each shape key's <see cref="ShapeKeyState"/> from the curves and drivers that reach it.</summary>
     internal static class ShapeKeyClassifier
     {
         /// <summary>

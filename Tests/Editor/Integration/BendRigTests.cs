@@ -10,7 +10,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 {
     public class BendRigTests
     {
-        // Settings handed to builds from outside hold for the scope that hands them and no longer, however it ends.
+        // Settings handed to builds from outside hold for the scope that hands them and not past it, however it ends.
         [Test]
         public void SettingsHandedToBuilds_HoldForTheirScope_AndAreRestoredWhenItThrows()
         {

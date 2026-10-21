@@ -70,7 +70,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         static LinkedKey[][] Linked(params SkinnedMeshRenderer[] renderers) => new[] { renderers.Select(r => new LinkedKey(r, 0)).ToArray() };
 
         // ------------------------------------------------------------------------------------------------
-        // The defect: with both keys on, body and tights sink inside the boot and nothing covers it, though with either
+        // What a link guards: with both keys on, body and tights sink inside the boot and nothing covers it, though with either
         // key on alone the other layer still does.
 
         [TestCase(true, TestName = "BootExposedOnlyWithBothLinkedKeysOn_IsKept")]

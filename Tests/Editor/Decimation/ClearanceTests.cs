@@ -72,7 +72,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             TestContext.WriteLine($"triangles at 1 mm: {trisOff} without, {trisOn} with");
 
             Assert.That(off[(0.002f, 0.002f)], Is.GreaterThan(0.01f), "without the rule the layers cross");
-            // The price, bounded so it cannot creep: at the gap's own error level the rule costs about a third more
+            // The price, bounded so it cannot creep: at the gap's own error level the rule may cost at most 40% more
             // triangles here, and a rule that asked more of a triangle than the gap where it approaches would cost more.
             Assert.That(trisOn, Is.LessThanOrEqualTo(trisOff * 1.4f), "the rule's price at 1 mm");
             foreach (var kv in on)
@@ -111,13 +111,13 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
                 Assert.That(kv.Value, Is.Zero, $"with the rule, skin cut at {kv.Key.Item1 * 1000} mm and the layer at {kv.Key.Item2 * 1000} mm");
         }
 
-        // The stated limit, on record: two layers 3 mm apart, each with a nearer layer on its far side (tights 0.2 mm over
+        // The stated limit: two layers 3 mm apart, each with a nearer layer on its far side (tights 0.2 mm over
         // the skin; a lining with its outer 0.5 mm over it). Each is held to a share of its 0.2 or 0.5 mm, not of the 3 mm
         // between the pair, and the two cut against each other cross. The limit bounds how deep: by no more than the sum of
         // the two cuts' errors. The gate's reading, the length of new crossing line, is no depth and has no bound in the
-        // errors: the line runs round the tube wherever the two cuts pass through each other, 16.6, 46.2, 201 and 397 mm
-        // at 2/2, 2/4, 4/2 and 4/4 mm cuts, against depths of 0.14, 0.62, 0.80 and 1.00 mm under sums of 3.9 to 7.8 mm. So
-        // the test bounds the depth, and pins the length above zero as the case the rule leaves open, under Burst and as
+        // errors: the line runs round the tube wherever the two cuts pass through each other, and the test output prints
+        // it beside each depth and sum of errors. So the test bounds the depth, and pins the length above zero as the
+        // case the rule leaves open, under Burst and as
         // managed code alike. A rule that reads the gap between the pair closes it (the length reads 0), and turns that
         // assertion round.
         [TestCase(false, TestName = "{m}(under Burst)")]
@@ -326,10 +326,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         // both reach the other's source there, and meet each other.
         // Both scenes meet at under 1 degree, below the 6 degrees CrossingDrift's guarantee is stated for, and there a
         // collapse that shortens a crossing may still move it along its own source, within the drift, past the gate's 5 mm.
-        // The ring does: one skin collapse that shortens its fan's crossing reads 0.63 to 0.65 mm of new crossing against
-        // the layer cut at 0.5 mm, at skin cuts from 4 to 8 mm under Burst and as managed code, one collapse's worth that
-        // does not grow with the cut. It read 0 at these cuts only on the one collapse order Burst's rounding chose, and
-        // that order reaches the same at an 8 mm cut, so the ring is held to under a millimetre. The edge reads 0 on both.
+        // The ring does: one skin collapse that shortens its fan's crossing reads as new crossing against the layer cut at
+        // 0.5 mm, one collapse's worth that does not grow with the cut and that only some collapse orders avoid, so the ring
+        // is held to under a millimetre under Burst and as managed code alike. The edge reads 0.
         [TestCase(-0.0015f, 0.0015f, 0.001f, TestName = "{m}(crossing along a ring)")]
         [TestCase(0f, 0.002f, 0f, TestName = "{m}(touching along an edge)")]
         public void LayersThatAlreadyCrossOrTouch_GainNoNewCrossingNearTheLine(float from, float to, float bound)
@@ -381,10 +380,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
         // Two fine layers crossing along a ring at about 7 degrees, both cut. The gate reads one cut against the other, and
         // each cut may stand CrossingDrift off its own source where it crosses the other's, so the two drifts add: by the
         // drift alone the crossing may move about 8 mm here, past the gate's 5 mm, which it holds from about 11.5 degrees.
-        // Read at every pair of cuts from 0.5 to 4 mm, under Burst and as managed code alike, it moves under 4 mm: the new
-        // crossing is 0 at the gate's 5 mm and at 4 mm, and at most 1.2 mm of it lies more than 3 mm from the source's.
-        // The drift is not what holds it: the same readings come with CrossingDrift at 4 mm, so this case shows the
-        // combined case within the gate here and does not test the drift's bound.
+        // At every pair of cuts, under Burst and as managed code alike, the pair must gain no new crossing. The drift is not what
+        // holds it: the case holds with CrossingDrift at 4 mm too, so it shows the combined case within the gate here and
+        // does not test the drift's bound.
         [Test]
         public void TwoFineLayersCrossingAtAbout7Degrees_BothCut_GainNoNewCrossing()
         {

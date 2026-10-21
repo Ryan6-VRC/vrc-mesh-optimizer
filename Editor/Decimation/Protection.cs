@@ -114,8 +114,8 @@ namespace Ryan6Vrc.MeshOptimizer.Decimation
         }
 
         /// <summary>
-        /// Per vertex, nonzero for a locked vertex, which no collapse removes: one with weight on a finger, or any weight on
-        /// a bone that stands at zero scale and a clip grows (<see cref="UnstableBones.Growth"/>). Geometry there has no size
+        /// Per vertex, nonzero for a locked vertex, which no collapse removes: one with at least the finger weight on the
+        /// fingers, or any weight on a bone that stands at zero scale and a clip grows (<see cref="UnstableBones.Growth"/>). Geometry there has no size
         /// as the avatar stands, so every collapse on it reads as free, and no factor makes that error what is shown; however
         /// small the weight, the vertex moves with the bone. Null when the mesh has none. <paramref name="count"/> is every
         /// locked vertex, <paramref name="fromZeroScale"/> those locked for a bone grown from zero.

@@ -11,6 +11,7 @@ using UnityEngine;
 
 namespace Ryan6Vrc.MeshOptimizer.Gate
 {
+    /// <summary>The kinds of state the geometric gate bakes a renderer in, in the order it measures them.</summary>
     internal enum ConfigurationKind : byte
     {
         /// <summary>
@@ -33,6 +34,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         Pose,
     }
 
+    /// <summary>One state the geometric gate baked a renderer in.</summary>
     internal readonly struct GateConfiguration
     {
         public readonly ConfigurationKind Kind;
@@ -78,6 +80,7 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         }
     }
 
+    /// <summary>A configuration a gate was asked for and did not measure, with why.</summary>
     internal readonly struct SkippedConfiguration
     {
         public readonly string Name;
@@ -96,9 +99,11 @@ namespace Ryan6Vrc.MeshOptimizer.Gate
         SourceToOptimized,
         /// <summary>Sampled on the optimized mesh: a spike or fold it added.</summary>
         OptimizedToSource,
+        /// <summary>Both directions' samples pooled by area.</summary>
         Combined,
     }
 
+    /// <summary>What <see cref="GeometryGate.Measure"/> found on one renderer: the distance in each configuration, and what it skipped.</summary>
     internal sealed class GeometryReport
     {
         public readonly Renderer Renderer;

@@ -174,8 +174,9 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Decimation
             Assert.Throws<ArgumentException>(() => BudgetAllocator.ForBudget(Weighted, Total / 2, ceiling));
         }
 
-        // With no ceiling the merge is the one before the ceiling existed, held here as the oracle: over a sweep of budgets,
-        // with floors, weights and entries that tie, every cut, the level to the bit, the total and the verdict are its.
+        // With no ceiling, by default or at 0, the allocator's merge is the plain one in WithoutACeiling, held here as the
+        // oracle: over a sweep of budgets, with floors, weights and entries that tie, every cut, the level to the bit, the
+        // total and the verdict are its, and the ceiling never holds.
         [Test]
         public void TheDefaultCeiling_ReproducesTheAllocationWithout_StepForStep()
         {

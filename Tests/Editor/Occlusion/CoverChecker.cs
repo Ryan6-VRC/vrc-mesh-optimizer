@@ -9,18 +9,17 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Occlusion
     /// <summary>
     /// An independent statement of what the solver owes: every triangle it marks hidden is covered, at rest
     /// and in each configuration of the avatar, by faces that are kept. A configuration is one frame alone, or
-    /// every frame that carries one nonzero configuration id, each on its own mesh, moved together. Brute force in double precision against
-    /// every kept occluder face, with nothing of the solver's but its input types and the rule's definition:
-    /// no tree, no witness record, no risk filter, no deletion bookkeeping, and its own cone, kin walk,
-    /// face share, culling and alpha footprint.
+    /// every frame that carries one nonzero configuration id, each on its own mesh, moved together. Brute force in
+    /// double precision against every kept occluder face, with nothing of the solver's but its input types and the
+    /// rule's definition: no tree, no witness record, no risk filter, no deletion bookkeeping, and its own cone, kin
+    /// walk, face share, culling and alpha footprint.
     ///
     /// The rule it applies, per sample of a hidden triangle (its corners, and the lattice the rule samples
     /// inside a large one): the sample is weighted, and every ray of the cone about its geometric normal, on
-    /// the side it renders, is
-    /// blocked by a kept face of another always-on renderer, one its mesh lets block, that holds the share on the sample's kin bones
-    /// and renders opaque where the ray meets it. A triangle whose material renders its back is owed cover on
-    /// that side too. It is lenient in the solver's favour only by float noise (<see cref="EdgeSlack"/>), so
-    /// two implementations' rounding never reads as a failure.
+    /// the side it renders, is blocked by a kept face of another always-on renderer, one its mesh lets block,
+    /// that holds the share on the sample's kin bones and renders opaque where the ray meets it. A triangle
+    /// whose material renders its back is owed cover on that side too. It is lenient in the solver's favour
+    /// only by float noise (<see cref="EdgeSlack"/>), so two implementations' rounding never reads as a failure.
     /// </summary>
     internal static class CoverChecker
     {

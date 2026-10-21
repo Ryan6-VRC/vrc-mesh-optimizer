@@ -10,9 +10,9 @@
   provision a venue there; left out, it is TestEditor-MeshOpt under the workspace root.
 
   The venue, its provisioner and the runner belong to the Atelier workspace this repo is developed
-  in (https://github.com/Ryan6-VRC/atelier), and have no version to ship, so the gate reaches up for them through -AtelierRoot and refuses
-  by name when the workspace is absent. Outside that workspace, run the suite from Unity's Test
-  Runner window instead.
+  in (https://github.com/Ryan6-VRC/atelier), and have no version to ship, so the gate reaches up for
+  them through -AtelierRoot and refuses by name when the workspace is absent. Outside that
+  workspace, run the suite from Unity's Test Runner window instead.
 
   This folder ends in "~" so Unity never imports it into a project that mounts the package.
 #>
@@ -95,8 +95,8 @@ $runArgs = @('-NoProfile', '-File', $runner, '-Project', $Venue, '-Assemblies', 
 # Unity's runner runs [Explicit] tests in an unfiltered run, so a whole run excludes the measurement
 # fixtures by name instead: a leading "!" makes a -testFilter regex exclude what it matches, and this
 # one matches the methods of a fixture whose name ends in Benchmark, not a method so named.
-# Under an exclusion an [Explicit] test is no longer run, so one not named *Benchmark is a skip, and
-# fails here.
+# Under an exclusion an [Explicit] test is not run, so one not named *Benchmark is a skip, and fails
+# here.
 if (-not $Filter) { $Filter = '!Benchmark\.\w+(\(|$)'; Write-Host "[gate] whole run: fixtures named *Benchmark left out" }
 $runArgs += @('-Filter', $Filter)
 & pwsh @runArgs 2>&1 | Tee-Object -Variable out | Out-Host
