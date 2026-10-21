@@ -98,8 +98,15 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         public bool excludeFromDecimation;
         /// <summary>
         /// How many times over this renderer's error counts against the target, a budget or a tolerance alike. 1 is
-        /// neutral; higher keeps more of it.
+        /// neutral; higher keeps more of it. Floored at <see cref="ProtectionLimit.Min"/>: below that the renderer's error limit
+        /// is effectively gone, and it can be cut almost to nothing whatever the target.
         /// </summary>
-        [Min(0)] public float protection = 1f;
+        [Min(ProtectionLimit.Min)] public float protection = 1f;
+    }
+
+    /// <summary>The lowest protection the inspector accepts and the cut honors; a lower saved value cuts as this does.</summary>
+    public static class ProtectionLimit
+    {
+        public const float Min = 0.1f;
     }
 }

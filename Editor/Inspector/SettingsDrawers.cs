@@ -61,7 +61,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             var protection = property.FindPropertyRelative(nameof(RendererSettings.protection));
             EditorGUI.BeginChangeCheck();
             EditorGUI.DelayedFloatField(columns[2], protection, new GUIContent(string.Empty, L10n.Tooltip(Protection)));
-            if (EditorGUI.EndChangeCheck() && !(protection.floatValue >= 0f)) protection.floatValue = 0f;
+            if (EditorGUI.EndChangeCheck() && !(protection.floatValue >= ProtectionLimit.Min)) protection.floatValue = ProtectionLimit.Min;
         }
     }
 
