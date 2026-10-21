@@ -162,7 +162,7 @@ msgid "RendererSettings:protection"
 msgstr "Protection"
 
 msgid "RendererSettings:protection:tooltip"
-msgstr "How much detail this renderer keeps. Its error counts this many times over against the target, so 1 is neutral and higher keeps more."
+msgstr "How much detail this renderer keeps. Its error counts this many times over against the target, so 1 is neutral and higher keeps more. The lowest value is 0.1: below that the renderer would have no error limit and could be cut almost to nothing."
 
 msgid "MeshOptimizer:faceFloor"
 msgstr "Face keeps at least"

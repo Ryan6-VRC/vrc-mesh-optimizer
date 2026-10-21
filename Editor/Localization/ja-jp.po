@@ -162,7 +162,7 @@ msgid "RendererSettings:protection"
 msgstr "保護の強さ"
 
 msgid "RendererSettings:protection:tooltip"
-msgstr "このレンダラーの細部をどれだけ残すかです。目標と比べるときに誤差をこの倍率で数えるので、1が標準で、大きくするほど細部が残ります。"
+msgstr "このレンダラーの細部をどれだけ残すかです。目標と比べるときに誤差をこの倍率で数えるので、1が標準で、大きくするほど細部が残ります。下限は0.1で、それより小さいと誤差の上限がなくなり、ほとんど削られてしまうためです。"
 
 msgid "MeshOptimizer:faceFloor"
 msgstr "顔に残す割合"

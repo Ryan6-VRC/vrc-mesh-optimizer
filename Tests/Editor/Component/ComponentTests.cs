@@ -196,5 +196,31 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
             Assert.That(build.Rejudge, Is.True, "re-judging");
         }
+
+        // A protection of 0 would remove a renderer's error limit, so a saved value below the floor cuts as the floor does.
+        [Test]
+        public void ProtectionBelowTheFloor_WeighsAsTheFloor()
+        {
+            var go = new GameObject("Floor", typeof(MeshRenderer));
+            var other = new GameObject("Other", typeof(MeshRenderer));
+            try
+            {
+                var c = go.AddComponent<AvatarMeshOptimizer>();
+                var r = go.GetComponent<Renderer>();
+                var job = new PreparedRenderer { Renderer = r };
+                Assert.That(OptimizerPipeline.WeightOf(job, c), Is.EqualTo(1f), "no entry is neutral");
+                var entry = new RendererSettings { renderer = r, protection = 0f };
+                c.renderers.Add(entry);
+                Assert.That(OptimizerPipeline.WeightOf(job, c), Is.EqualTo(ProtectionLimit.Min));
+                Assert.That(ProtectionLimit.Min, Is.EqualTo(0.1f));
+                entry.protection = 0.5f;
+                Assert.That(OptimizerPipeline.WeightOf(job, c), Is.EqualTo(0.5f), "above the floor is untouched");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(other);
+            }
+        }
     }
 }

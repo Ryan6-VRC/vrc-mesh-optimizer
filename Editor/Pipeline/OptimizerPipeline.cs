@@ -31,20 +31,17 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// </summary>
     internal static partial class OptimizerPipeline
     {
-        /// <summary>A renderer's protection maps to an allocation weight no lower than this, which the allocator needs above 0.</summary>
-        const float MinWeight = 1e-3f;
-
         /// <summary>
         /// A renderer's allocation weight: its protection as the component holds it when a cut asks, 1 with no entry. Read
         /// by the cut and not kept by preparing, so a changed protection needs a new cut and no new recording.
         /// </summary>
-        static float WeightOf(PreparedRenderer job, AvatarMeshOptimizer settings)
+        internal static float WeightOf(PreparedRenderer job, AvatarMeshOptimizer settings)
         {
             var protection = 1f;
             // The last entry naming a renderer is the one that counts, as for its exclusion.
             foreach (var s in settings.renderers)
                 if (s != null && s.renderer != null && s.renderer == job.Renderer) protection = s.protection;
-            return Mathf.Max(protection, MinWeight);
+            return Mathf.Max(protection, ProtectionLimit.Min);
         }
 
         /// <summary>
