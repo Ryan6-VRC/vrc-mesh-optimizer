@@ -84,7 +84,7 @@ msgid "OcclusionMode:Automatic"
 msgstr "Automatic"
 
 msgid "OcclusionMode:Automatic:tooltip"
-msgstr "Opaque if its render queue and render type say so. Otherwise its texture's alpha decides."
+msgstr "Opaque if its render queue and render type say so. Otherwise its texture's alpha decides, and a material whose alpha cannot be read counts as see-through."
 
 msgid "OcclusionMode:ForceOpaque"
 msgstr "Opaque"

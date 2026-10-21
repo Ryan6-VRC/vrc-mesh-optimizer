@@ -223,7 +223,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
         // than 5 mm, naming the ceiling; at 0 the ceiling is off and they are cut as deep as the sequences go, past 5 mm,
         // with the budget reported not met.
         [Test]
-        public void ABudgetItCannotReach_StopsAtTheDefaultFiveMillimetres_AndAtZeroIsCutAsBefore()
+        public void ABudgetItCannotReach_StopsAtTheDefaultFiveMillimetres_AndZeroSetsNoErrorLimit_SoItIsCutToTheCount()
         {
             var one = Ball("One", new Vector3(1, 0, 0));
             var two = Ball("Two", new Vector3(2, 0, 0));

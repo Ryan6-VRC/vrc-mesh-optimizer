@@ -84,7 +84,7 @@ msgid "OcclusionMode:Automatic"
 msgstr "自動"
 
 msgid "OcclusionMode:Automatic:tooltip"
-msgstr "Render QueueとRenderTypeが不透明を示していれば不透明として扱い、そうでなければテクスチャのアルファで判定します。"
+msgstr "Render QueueとRenderTypeが不透明を示していれば不透明として扱い、そうでなければテクスチャのアルファで判定します。アルファを読み取れないマテリアルは透過として扱います。"
 
 msgid "OcclusionMode:ForceOpaque"
 msgstr "不透明"
