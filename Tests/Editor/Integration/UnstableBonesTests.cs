@@ -1,6 +1,4 @@
-using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Ryan6Vrc.MeshOptimizer.Core.Model;
 using Ryan6Vrc.MeshOptimizer.Extraction;
@@ -141,21 +139,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(curves.Select(c => c.Target).Distinct(), Is.EqualTo(new[] { bone }));
             Assert.That(curves.Single(c => c.Axis == 0).Values, Has.Some.NaN);
             Assert.That(curves.Where(c => c.Axis != 0).Select(c => UnstableBones.Moves(1f, c.Values)), Has.All.False);
-        }
-
-        static string Po(string file) => File.ReadAllText(Path.GetFullPath("Packages/com.ryan6vrc.mesh-optimizer/Editor/Localization/" + file));
-
-        // Every problem the pass can raise reads in both languages, with its detail and its fix.
-        [Test]
-        public void EveryDiagnosticKey_HasATitle_Description_AndHint_InBothLanguages()
-        {
-            foreach (var file in new[] { "en-us.po", "ja-jp.po" })
-            {
-                var text = Po(file);
-                foreach (var key in DiagnosticKeys.All)
-                foreach (var suffix in new[] { "", ":description", ":hint" })
-                    Assert.That(Regex.IsMatch(text, "msgid \"" + Regex.Escape(key + suffix) + "\"\\s*\\nmsgstr \"[^\"]+\""), $"{file} lacks {key}{suffix}");
-            }
         }
     }
 }

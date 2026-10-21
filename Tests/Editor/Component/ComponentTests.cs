@@ -58,13 +58,13 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
-        // Outlines take no part in hidden-triangle removal unless the user turns them on. A saved component that holds no
-        // value for the setting, as the fixture holds none, loads with the field's own default, off.
+        // Outlines take no part in hidden-triangle removal unless the user turns them on. A serialized component that holds
+        // no value for the setting, as the fixture holds none, loads with the field's own default, off.
         [Test]
-        public void OutlinesShowInside_IsOff_FreshAndForAComponentSavedBeforeIt()
+        public void OutlinesShowInside_IsOff_FreshAndWhenTheSavedComponentHoldsNoValue()
         {
             Assert.That(System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture)), Does.Not.Contain("outlinesShowInside"),
-                "the fixture stands for a component saved before the setting");
+                "the fixture is a serialized component with the setting absent");
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Fixture);
             Assert.That(prefab.GetComponent<AvatarMeshOptimizer>().outlinesShowInside, Is.False);
 
@@ -79,14 +79,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
-        // A budget stops at 5 mm of error unless the user sets the ceiling otherwise. A saved component that holds no value
-        // for the field, as the fixture holds none, reads the same 5: the field's initializer stands where the saved data
-        // holds nothing, so a saved budget stops at the ceiling too.
+        // A budget stops at 5 mm of error unless the user sets the ceiling otherwise. A serialized component that holds no
+        // value for the field, as the fixture holds none, reads the same 5: the field's initializer stands where the saved
+        // data holds nothing, so a saved budget stops at the ceiling too.
         [Test]
-        public void MaxError_IsFiveMillimetres_FreshAndForAComponentSavedBeforeIt()
+        public void MaxError_IsFiveMillimetres_FreshAndWhenTheSavedComponentHoldsNoValue()
         {
             Assert.That(System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture)), Does.Not.Contain("maxError"),
-                "the fixture stands for a component saved before the field");
+                "the fixture is a serialized component with the field absent");
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Fixture);
             Assert.That(prefab.GetComponent<AvatarMeshOptimizer>().maxError, Is.EqualTo(5f));
 
@@ -102,14 +102,14 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
         }
 
         // The protect settings' defaults: the face keeps half its triangles, fingers are locked, and a vertex with a
-        // hundredth of its weight on a finger is a finger vertex. A saved component that holds none of the fields, as the
-        // fixture holds none, reads those same values.
+        // hundredth of its weight on a finger is a finger vertex. A serialized component that holds none of the fields, as
+        // the fixture holds none, reads those same values.
         [Test]
-        public void TheProtectSettings_ReadTheFormerConstants_FreshAndForAComponentSavedBeforeThem()
+        public void TheProtectSettings_ReadTheirDefaults_FreshAndWhenTheSavedComponentHoldsNoValue()
         {
             var text = System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture));
             foreach (var field in new[] { "faceFloor", "lockFingers", "fingerWeight" })
-                Assert.That(text, Does.Not.Contain(field), "the fixture stands for a component saved before the fields");
+                Assert.That(text, Does.Not.Contain(field), "the fixture is a serialized component with the fields absent");
             var fresh = new GameObject("Fresh");
             try
             {
@@ -202,7 +202,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
         public void ProtectionBelowTheFloor_WeighsAsTheFloor()
         {
             var go = new GameObject("Floor", typeof(MeshRenderer));
-            var other = new GameObject("Other", typeof(MeshRenderer));
             try
             {
                 var c = go.AddComponent<AvatarMeshOptimizer>();
@@ -219,7 +218,6 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             finally
             {
                 Object.DestroyImmediate(go);
-                Object.DestroyImmediate(other);
             }
         }
     }

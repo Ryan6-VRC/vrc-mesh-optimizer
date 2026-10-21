@@ -114,5 +114,20 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Localization
             Assert.That(ja.GetLocalizedString("MeshOptimizer:decimate"), Is.EqualTo("ポリゴンを削減する"));
             Assert.That(en.GetLocalizedString("MeshOptimizer:decimate"), Is.EqualTo("Decimate"));
         }
+
+        static string Po(string file) => File.ReadAllText(Path.GetFullPath("Packages/com.ryan6vrc.mesh-optimizer/Editor/Localization/" + file));
+
+        // Every problem the pass can raise reads in both languages, with its detail and its fix.
+        [Test]
+        public void EveryDiagnosticKey_HasATitle_Description_AndHint_InBothLanguages()
+        {
+            foreach (var file in new[] { "en-us.po", "ja-jp.po" })
+            {
+                var text = Po(file);
+                foreach (var key in DiagnosticKeys.All)
+                foreach (var suffix in new[] { "", ":description", ":hint" })
+                    Assert.That(Regex.IsMatch(text, "msgid \"" + Regex.Escape(key + suffix) + "\"\\s*\\nmsgstr \"[^\"]+\""), $"{file} lacks {key}{suffix}");
+            }
+        }
     }
 }
