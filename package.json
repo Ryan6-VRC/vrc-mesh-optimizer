@@ -8,12 +8,12 @@
   "license": "MIT",
   "keywords": ["vrchat", "avatar", "ndmf", "mesh", "optimization", "decimation"],
   "dependencies": {
-    "com.unity.burst": "1.8.21",
-    "com.unity.collections": "2.5.7",
-    "com.unity.mathematics": "1.3.2"
+    "com.unity.burst": "1.8.7",
+    "com.unity.collections": "2.1.4",
+    "com.unity.mathematics": "1.2.6"
   },
   "vpmDependencies": {
-    "nadena.dev.ndmf": ">=1.8.0",
+    "nadena.dev.ndmf": ">=1.14.8",
     "com.vrchat.avatars": ">=3.10.0"
   }
 }
