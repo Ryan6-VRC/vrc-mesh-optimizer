@@ -25,6 +25,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public int Occ;
     }
 
+    /// <summary>How <see cref="Bvh.Build"/> splits a node. The default settings use <see cref="Sah"/>; <see cref="Midpoint"/> exists for benchmarks to compare against.</summary>
     internal enum BvhSplit : byte
     {
         /// <summary>Binned surface-area heuristic.</summary>

@@ -159,12 +159,15 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
     }
 
+    /// <summary>Limits and helpers the vertex and interior sample jobs share.</summary>
     internal static class Samples
     {
+        /// <summary>The most bones one sample keeps, heaviest first; lighter influences past it are dropped.</summary>
         public const int MaxBones = 8;
         /// <summary>Lattice steps per edge at most. A triangle that needs more at the spacing is kept, never sampled coarser.</summary>
         public const int MaxSubdivision = 16;
 
+        /// <summary><paramref name="n"/> normalised, else <paramref name="fallback"/> normalised, else up with <paramref name="ok"/> false.</summary>
         public static float3 UsableNormal(float3 n, float3 fallback, out bool ok)
         {
             ok = true;
@@ -324,6 +327,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         }
     }
 
+    /// <summary>One sample to re-cast in a configuration, where the configuration places it.</summary>
     internal struct FrameWork
     {
         public int Sample;

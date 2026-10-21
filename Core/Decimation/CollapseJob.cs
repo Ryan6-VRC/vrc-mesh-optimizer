@@ -63,7 +63,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
 
         public NativeList<CollapseStep> Steps;
         public NativeList<int2> Records;
-        /// <summary>[0] peak frame-quadric pool entries, [1] clusters left blocked by validity, [2] collapses the clearance rule refused.</summary>
+        /// <summary>[0] peak frame-quadric pool entries, [1] pops whose every candidate failed validity, [2] collapses the clearance rule refused.</summary>
         public NativeArray<long> Stats;
 
         public void Execute()
@@ -73,15 +73,22 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         }
     }
 
+    /// <summary>One collapse on offer: U1 onto V1, and for a seam or border pair U2 onto V2 with it (-1 when alone).</summary>
     internal struct Candidate
     {
         public int U1, V1, U2, V2;
         public float Cost;
+        /// <summary>The heap order: <see cref="Cost"/> plus a tie-break that prefers the shorter edge.</summary>
         public float Key;
         /// <summary>The largest error in any bend, in metres; 0 without bends.</summary>
         public float Bend;
     }
 
+    /// <summary>
+    /// The collapse loop's working state and every step of it, in sections in this order: setup and the loop
+    /// (<see cref="Run"/>); candidates and cost; bends; fans (adjacency over a vertex's live triangles); validity; clearance;
+    /// topology and flip checks; applying; heap.
+    /// </summary>
     internal struct CollapseEngine
     {
         /// <summary>
@@ -148,6 +155,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
         /// off their sources and the two add, so this bound alone holds the 5 mm from about 11.5 degrees.
         /// </summary>
         const float CrossingDrift = 0.0005f;
+
+        // ---------------------------------------------------------------- setup and the loop
 
         public CollapseEngine(ref CollapseJob job)
         {
@@ -771,6 +780,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             return after <= before * (1f + CrossingSlack) + _in.Settings.Clearance.CrossingAllowance;
         }
 
+        // ---------------------------------------------------------------- topology and flip checks
+
         /// <summary>
         /// False when the collapse would leave v with no triangle at all: u and v then share every triangle
         /// either has, and removing them deletes the last of a connected piece, which decimation never does.
@@ -1139,6 +1150,8 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Decimation
             _in.SparseCount[v] = n;
             _shapeCount[v] = shapes;
             _wasted += _sparseCap[u];
+            // Apply marks u dead only after this returns, so the compaction below still sees u as live: it skips u, and
+            // leaves u's entries out of the compacted pool, only because u's count and capacity are zeroed first.
             _in.SparseCount[u] = 0;
             _shapeCount[u] = 0;
             _sparseCap[u] = 0;

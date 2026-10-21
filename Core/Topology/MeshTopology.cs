@@ -22,6 +22,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         Locked = 3,
     }
 
+    /// <summary>When two wedges count as one surface, and when a delta counts as moving its vertex.</summary>
     internal struct TopologySettings
     {
         /// <summary>Two wedges' influences agree when every bone's weight differs by at most this.</summary>
@@ -74,6 +75,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Topology
         public int LiveTriangleCount;
         public int WorkingVertexCount => Origin.Length;
 
+        /// <summary>Bytes the topology holds, for benchmarks to report; nothing in the pipeline reads it.</summary>
         public long ByteSize =>
             (long)Origin.Length * 4 * 5 + Kind.Length + (long)Triangles.Length * 13 +
             (long)DeltaStart.Length * 4 + (long)DeltaFrame.Length * 16;

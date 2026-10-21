@@ -6,6 +6,7 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Gate
 {
+    /// <summary>What counts as a crossing between two surfaces, and when a crossing after the optimizer is one that was there before.</summary>
     internal struct CrossingSettings
     {
         /// <summary>
@@ -60,6 +61,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public bool SameFacing;
     }
 
+    /// <summary>Totals over the segments one measurement found.</summary>
     internal struct CrossingStats
     {
         /// <summary>Metres of crossing line.</summary>

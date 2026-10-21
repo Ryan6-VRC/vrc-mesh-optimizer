@@ -4,6 +4,7 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
 {
+    /// <summary>A sample's verdict: Covered, or why not, as <see cref="DeclineCounts"/> tallies it.</summary>
     internal static class Reason
     {
         public const byte Covered = 0;
@@ -25,6 +26,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public float3 RiskMax;
     }
 
+    /// <summary>One submesh's <see cref="OccluderSubmesh"/> as the jobs read it; <see cref="Alpha"/> indexes the solve's alpha maps, -1 for none.</summary>
     internal struct OccMaterial
     {
         public OccluderMode Mode;
@@ -34,6 +36,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Occlusion
         public bool DrawsBack;
     }
 
+    /// <summary>One <see cref="AlphaMap"/> as the jobs read it: its texels run from <see cref="Offset"/> in the shared texel array.</summary>
     internal struct AlphaInfo
     {
         public int Width;

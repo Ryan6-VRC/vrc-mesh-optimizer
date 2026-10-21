@@ -6,6 +6,7 @@ using Unity.Mathematics;
 
 namespace Ryan6Vrc.MeshOptimizer.Core.Gate
 {
+    /// <summary>How densely <see cref="SurfaceDistance.Measure"/> samples a surface, and which triangles a sample may match.</summary>
     internal struct SurfaceDistanceSettings
     {
         /// <summary>
@@ -53,6 +54,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public NativeArray<bool> Excluded;
     }
 
+    /// <summary>One field of <see cref="DistanceStats"/>, as <see cref="DistanceStats.Get"/> reads it.</summary>
     internal enum Statistic
     {
         Mean,
@@ -126,6 +128,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public float Step;
     }
 
+    /// <summary>Both directions of one comparison, and the two pooled.</summary>
     internal struct SurfaceDistanceResult
     {
         /// <summary>Sampled on A, measured to B: what B lost of A.</summary>
@@ -381,6 +384,7 @@ namespace Ryan6Vrc.MeshOptimizer.Core.Gate
         public float Step;
     }
 
+    /// <summary>One lattice point: where it is, the area it stands for, and the sampled triangle it lies on.</summary>
     internal struct Sample
     {
         public float3 Position;
