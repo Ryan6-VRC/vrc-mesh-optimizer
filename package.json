@@ -1,7 +1,7 @@
 {
   "name": "com.ryan6vrc.mesh-optimizer",
   "displayName": "Mesh Optimizer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "unity": "2022.3",
   "description": "Non-destructive NDMF mesh optimizer for VRChat avatars: deformation-aware decimation and removal of triangles that are guaranteed hidden, robust to toggled meshes, transparent garments and shape-key-dense faces.",
   "author": { "name": "Ryan6-VRC" },
