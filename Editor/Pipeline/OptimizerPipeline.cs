@@ -97,7 +97,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         static PreparedRenderer Survey(Renderer renderer, PipelineInput input, PreparedAvatar prepared)
         {
             var root = input.Root;
-            var mesh = RendererExtraction.MeshOf(renderer);
+            var mesh = RendererExtraction.MeshOf(input.DrawnBy(renderer));
             var r = new PreparedRenderer
             {
                 Renderer = renderer,
@@ -258,7 +258,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             try
             {
                 input.BeforeStage?.Invoke(job.Renderer, PipelineStage.Extraction);
-                job.Eval = RendererExtraction.Extract(job.Renderer, bones, job.Liveness, job.Linked, Allocator.Persistent, out _);
+                job.Eval = RendererExtraction.Extract(job.Renderer, bones, job.Liveness, job.Linked, Allocator.Persistent, out _, job.Source);
                 job.Extracted = true;
                 job.Mirrored = RendererExtraction.DrawsMirrored(job.Renderer);
             }
@@ -468,7 +468,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             try
             {
                 var liveness = job.Renderer is SkinnedMeshRenderer skinned ? LivenessOf(skinned, input) : null;
-                eval = RendererExtraction.Extract(job.Renderer, bones, liveness, Allocator.Persistent, out _);
+                eval = RendererExtraction.Extract(job.Renderer, bones, liveness, null, Allocator.Persistent, out _, job.Source);
                 return true;
             }
             catch (Exception)
@@ -518,7 +518,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 var hidden = HiddenMask(job);
                 if (hidden.IsCreated) recording.Owned.Add(hidden);
 
-                var vertexProtection = protection.For(job.Renderer, job.Source.subMeshCount, eval, job.Hidden, recording.Owned,
+                var vertexProtection = protection.For(input.DrawnBy(job.Renderer), job.Source.subMeshCount, eval, job.Hidden, recording.Owned,
                     out var lockedCount, out var fromZeroScale, out var lockedForFur, out var grownCount);
                 job.LockedVertices = lockedCount;
                 job.LockedFromZeroScale = fromZeroScale;

@@ -231,6 +231,7 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             anew = DecimationPreview.PreparedOf(third);
             third.Dispose();
             one.sharedMesh = a.Sphere(0.1f, 20, 30, name: "swapped");
+            ((SkinnedMeshRenderer)pairs[0].Item2).sharedMesh = one.sharedMesh;
             var fourth = filter.Instantiate(group, pairs, Context()).Result;
             Assert.That(DecimationPreview.PreparedOf(fourth), Is.Not.SameAs(anew), "a swapped mesh prepares anew");
             Assert.That(anew.Disposed, Is.True);
@@ -267,6 +268,39 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(DecimationPreview.PreparedOf(third), Is.Not.SameAs(prepared), "the weight it was prepared at has changed");
             Assert.That(prepared.Disposed, Is.True);
             third.Dispose();
+        }
+
+        // An earlier preview filter's mesh on the proxy, as Modular Avatar's deletion leaves it, is what the preview prepares
+        // and cuts, and not the scene renderer's own: geometry deleted upstream stays deleted. A new mesh on the proxy while
+        // no node shows the avatar prepares it anew.
+        [Test]
+        public void AnEarlierFiltersMeshOnTheProxy_IsWhatThePreviewCuts()
+        {
+            var pairs = TwoBalls(out var one, out var two);
+            var c = a.Optimizer(decimate: true);
+            c.target = TargetKind.Tolerance;
+            c.tolerance = 1f;
+            var upstream = Deleted(one.sharedMesh, "upstream");
+            var proxy = (SkinnedMeshRenderer)pairs[0].Item2;
+            proxy.sharedMesh = upstream;
+            var group = RenderGroup.For(pairs.Select(p => p.Item1));
+            var filter = new DecimationPreview();
+
+            var first = filter.Instantiate(group, pairs, Context()).Result;
+            var status = PreviewStatus.Of(c);
+            Assert.That(status.Failure, Is.Null);
+            Assert.That(status.TrianglesBefore, Is.EqualTo(Triangles(upstream) + Triangles(two.sharedMesh)), "it counts what the proxy carries");
+            Assert.That(Triangles(upstream), Is.LessThan(Triangles(one.sharedMesh)));
+            Assert.That(Triangles(Shown(first, pairs[0])), Is.LessThanOrEqualTo(Triangles(upstream)), "the deleted half is not brought back");
+            Assert.That(Shown(first, pairs[1]), Is.Not.Null.And.Not.SameAs(two.sharedMesh), "the other renderer is still cut");
+            var prepared = DecimationPreview.PreparedOf(first);
+            first.Dispose();
+
+            proxy.sharedMesh = Deleted(upstream, "upstream again");
+            var second = filter.Instantiate(group, pairs, Context()).Result;
+            Assert.That(DecimationPreview.PreparedOf(second), Is.Not.SameAs(prepared), "a new mesh upstream prepares anew");
+            Assert.That(PreviewStatus.Of(c).TrianglesBefore, Is.EqualTo(Triangles(proxy.sharedMesh) + Triangles(two.sharedMesh)));
+            second.Dispose();
         }
 
         // A protection change is a re-cut, as a target change is, and an entry that changes nothing is no change at all; an
@@ -334,12 +368,25 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
 
         static ComputeContext Context() => new ComputeContext("preview test");
 
-        /// <summary>Each renderer with a stand-in for the proxy NDMF would hand the filter.</summary>
+        /// <summary>Each renderer with a stand-in for the proxy NDMF would hand the filter, carrying the renderer's mesh and bones as NDMF's copy does.</summary>
         List<(Renderer, Renderer)> Pairs(params SkinnedMeshRenderer[] renderers) => renderers.Select(r =>
         {
             var proxy = a.Made(new GameObject(r.name + " proxy")).AddComponent<SkinnedMeshRenderer>();
+            proxy.sharedMesh = r.sharedMesh;
+            proxy.bones = r.bones;
+            proxy.rootBone = r.rootBone != null ? r.rootBone : r.transform;
             return ((Renderer)r, (Renderer)proxy);
         }).ToList();
+
+        /// <summary>A copy of the mesh with the second half of its triangles deleted and its vertices kept, as Modular Avatar's deletion makes it.</summary>
+        Mesh Deleted(Mesh mesh, string name)
+        {
+            var copy = a.Made(UnityEngine.Object.Instantiate(mesh));
+            copy.name = name;
+            var triangles = copy.triangles;
+            copy.triangles = triangles.Take(triangles.Length / 6 * 3).ToArray();
+            return copy;
+        }
 
         List<(Renderer, Renderer)> TwoBalls(out SkinnedMeshRenderer one, out SkinnedMeshRenderer two)
         {
@@ -349,11 +396,18 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             return Pairs(one, two);
         }
 
-        /// <summary>The mesh a node puts on a renderer's proxy.</summary>
+        /// <summary>
+        /// The mesh a node puts on a renderer's proxy. The proxy is given back the mesh it carried, as NDMF's copy from the
+        /// original and the earlier filters give it back before the next frame or the next node.
+        /// </summary>
         static Mesh Shown(IRenderFilterNode node, (Renderer, Renderer) pair)
         {
-            node.OnFrame(pair.Item1, pair.Item2);
-            return ((SkinnedMeshRenderer)pair.Item2).sharedMesh;
+            var proxy = (SkinnedMeshRenderer)pair.Item2;
+            var carried = proxy.sharedMesh;
+            node.OnFrame(pair.Item1, proxy);
+            var shown = proxy.sharedMesh;
+            proxy.sharedMesh = carried;
+            return shown;
         }
 
         /// <summary>Each renderer's triangles after one cut of a prepared avatar at the component's settings as they stand.</summary>

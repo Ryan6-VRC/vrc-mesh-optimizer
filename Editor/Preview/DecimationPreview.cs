@@ -148,12 +148,12 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             var root = context.GetAvatarRoot(group.Renderers[0].gameObject).transform;
             var component = root.GetComponentsInChildren<AvatarMeshOptimizer>(true).First();
             // Refresh is handed the same originals in the same order, so both observe one list.
-            var originals = proxyPairs.Select(p => p.Item1).ToList();
-            var key = Keys.Observe(context, component, originals);
+            var pairs = proxyPairs.ToList();
+            var key = Keys.Observe(context, component, pairs);
             Shared shared;
             try
             {
-                shared = PreparedFor(root, component, key.Settings, originals.Count);
+                shared = PreparedFor(root, component, key.Settings, Proxies(pairs));
             }
             catch (Exception e)
             {
@@ -173,16 +173,30 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
         /// </summary>
         static readonly Dictionary<AvatarMeshOptimizer, Shared> Kept = new Dictionary<AvatarMeshOptimizer, Shared>();
 
+        /// <summary>
+        /// Each original's proxy. NDMF hands a filter each proxy as the filters before it in the pipeline left it, so its
+        /// mesh and materials carry what they made of the renderer (a Modular Avatar deletion, say). Its bones are the
+        /// original's, which NDMF copies onto it, unless such a filter swapped in bones of its own outside the avatar, as
+        /// Modular Avatar's scale adjuster does; so preparing reads only the mesh and materials from it.
+        /// </summary>
+        static Dictionary<Renderer, Renderer> Proxies(IEnumerable<(Renderer, Renderer)> pairs)
+        {
+            var proxies = new Dictionary<Renderer, Renderer>();
+            foreach (var (original, proxy) in pairs)
+                if (original != null && proxy != null) proxies[original] = proxy;
+            return proxies;
+        }
+
         /// <summary>The avatar's kept prepared avatar where nothing it read has changed, otherwise a new one, kept in its place.</summary>
-        static Shared PreparedFor(Transform root, AvatarMeshOptimizer component, string settings, int renderers)
+        static Shared PreparedFor(Transform root, AvatarMeshOptimizer component, string settings, Dictionary<Renderer, Renderer> proxies)
         {
             foreach (var gone in Kept.Keys.Where(c => c == null).ToList()) Forget(gone);
-            var meshes = MeshesUnder(root);
+            var meshes = MeshesUnder(root, proxies);
             if (Kept.TryGetValue(component, out var kept) && kept.Fresh(settings, meshes)) return kept;
             Forget(component);
             // Watched from before preparing reads anything, so a change made while it records is not missed.
-            var watch = Watch(root);
-            return Kept[component] = new Shared(Prepare(root, component, renderers, out var liveness), liveness, settings, meshes, watch);
+            var watch = Watch(root, proxies);
+            return Kept[component] = new Shared(Prepare(root, component, proxies, out var liveness), liveness, settings, meshes, watch);
         }
 
         static void Forget(AvatarMeshOptimizer component)
@@ -192,31 +206,38 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             kept.Release();
         }
 
-        /// <summary>Every mesh preparing reads under the root, in hierarchy order, as one comparable value.</summary>
-        static string MeshesUnder(Transform root) => string.Join(",", root.GetComponentsInChildren<Renderer>(true).Where(IsMesh).Select(r =>
-        {
-            var mesh = RendererMesh(r);
-            return mesh != null ? mesh.GetInstanceID() : 0;
-        }));
+        /// <summary>
+        /// Every mesh and material preparing reads under the root, from the proxies, in hierarchy order, as one comparable
+        /// value: a proxy's are an earlier filter's, whose change NDMF reports to no node of this filter while it is off.
+        /// </summary>
+        static string MeshesUnder(Transform root, IReadOnlyDictionary<Renderer, Renderer> proxies) =>
+            string.Join(",", root.GetComponentsInChildren<Renderer>(true).Where(IsMesh).Select(r =>
+            {
+                var drawn = PipelineInput.DrawnBy(proxies, r);
+                var mesh = RendererMesh(drawn);
+                return (mesh != null ? mesh.GetInstanceID() : 0) + ":" + string.Join(":", drawn.sharedMaterials.Select(m => m != null ? m.GetInstanceID() : 0));
+            }));
 
         static Mesh RendererMesh(Renderer renderer) => renderer is SkinnedMeshRenderer skinned ? skinned.sharedMesh
             : renderer.TryGetComponent<MeshFilter>(out var filter) ? filter.sharedMesh : null;
 
         /// <summary>
         /// A context NDMF invalidates when anything preparing read is changed: which renderers the avatar has, any of them
-        /// (its shape-key weights, bones and materials), its mesh or a material, and the avatar descriptor the preview takes
-        /// shape-key liveness from. It is what tells a kept prepared avatar from a stale one while no node is watching.
+        /// (its shape-key weights, bones and materials), the mesh or a material read from its proxy, and the avatar
+        /// descriptor the preview takes shape-key liveness from. It is what tells a kept prepared avatar from a stale one
+        /// while no node is watching. The proxy itself is not watched, since NDMF writes it every frame.
         /// </summary>
-        static ComputeContext Watch(Transform root)
+        static ComputeContext Watch(Transform root, IReadOnlyDictionary<Renderer, Renderer> proxies)
         {
             var watch = new ComputeContext("Mesh Optimizer prepared avatar of " + root.name);
             foreach (var renderer in watch.GetComponentsInChildren<Renderer>(root.gameObject, true).Where(IsMesh))
             {
                 watch.Observe(renderer);
                 if (renderer.TryGetComponent<MeshFilter>(out var filter)) watch.Observe(filter);
-                var mesh = RendererMesh(renderer);
+                var drawn = PipelineInput.DrawnBy(proxies, renderer);
+                var mesh = RendererMesh(drawn);
                 if (mesh != null) watch.Observe(mesh);
-                foreach (var material in renderer.sharedMaterials)
+                foreach (var material in drawn.sharedMaterials)
                     if (material != null) watch.Observe(material);
             }
             if (root.TryGetComponent<VRCAvatarDescriptor>(out var descriptor)) watch.Observe(descriptor);
@@ -224,14 +245,15 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
         }
 
         /// <summary>Prepares the scene avatar as the preview reads it, behind a progress bar, since this is the step that holds the Editor.</summary>
-        static PreparedAvatar Prepare(Transform root, AvatarMeshOptimizer component, int renderers, out PreviewLiveness liveness)
+        static PreparedAvatar Prepare(Transform root, AvatarMeshOptimizer component, IReadOnlyDictionary<Renderer, Renderer> proxies, out PreviewLiveness liveness)
         {
             var title = L10n.Tr(InspectorKeys.PreviewProgress);
             PipelineInput input = null;
             try
             {
                 EditorUtility.DisplayProgressBar(title, root.name, 0f);
-                input = PreviewInput.For(root, component, out liveness);
+                input = PreviewInput.For(root, component, out liveness, proxies);
+                var renderers = proxies.Count;
                 var stages = 0;
                 input.BeforeStage = (renderer, stage) =>
                     EditorUtility.DisplayProgressBar(title, string.Format(L10n.Tr(InspectorKeys.PreviewProgressInfo), renderer.name),
@@ -293,6 +315,8 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
         /// <summary>
         /// What a node was made from, observed through the compute context so a change to any invalidates it: the settings
         /// preparing reads, each renderer's mesh, and what a cut reads (the target, its values and each renderer's protection).
+        /// The mesh recorded is the proxy's, which is what preparing reads, and the original's is the one observed: NDMF
+        /// writes the proxy every frame, and reports an earlier filter's change to it as a changed aspect instead.
         /// </summary>
         readonly struct Keys
         {
@@ -307,14 +331,18 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 Cutting = cutting;
             }
 
-            public static Keys Observe(ComputeContext context, AvatarMeshOptimizer component, IEnumerable<Renderer> renderers)
+            public static Keys Observe(ComputeContext context, AvatarMeshOptimizer component, IEnumerable<(Renderer, Renderer)> pairs)
             {
                 var settings = context.Observe(component, c => string.Join("|",
                     c.decimate, F(c.faceFloor), c.lockFingers, F(c.fingerWeight), PerRenderer(c, s => s.excludeFromDecimation ? "x" : null)));
-                var meshes = string.Join(",", renderers.Select(r => r is SkinnedMeshRenderer skinned
-                    ? context.Observe(skinned, s => s.sharedMesh)
-                    : r.TryGetComponent<MeshFilter>(out var filter) ? context.Observe(filter, f => f.sharedMesh) : null)
-                    .Select(m => m != null ? m.GetInstanceID() : 0));
+                var meshes = string.Join(",", pairs.Select(p =>
+                {
+                    var (r, proxy) = p;
+                    if (r is SkinnedMeshRenderer skinned) context.Observe(skinned, s => s.sharedMesh);
+                    else if (r.TryGetComponent<MeshFilter>(out var filter)) context.Observe(filter, f => f.sharedMesh);
+                    var mesh = RendererMesh(proxy != null ? proxy : r);
+                    return mesh != null ? mesh.GetInstanceID() : 0;
+                }));
                 var cutting = context.Observe(component, c => (c.target, c.tolerance, c.triangleBudget, c.maxError,
                     PerRenderer(c, s => s.protection != 1f ? F(s.protection) : null)));
                 return new Keys(settings, meshes, cutting);
@@ -425,7 +453,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                     _shared.Spoil();
                     return Task.FromResult<IRenderFilterNode>(null);
                 }
-                var keys = Keys.Observe(context, _component, proxyPairs.Select(p => p.Item1).ToList());
+                var keys = Keys.Observe(context, _component, proxyPairs.ToList());
                 if (keys.Settings != _keys.Settings || keys.Meshes != _keys.Meshes) return Task.FromResult<IRenderFilterNode>(null);
                 if (keys.Cutting.Equals(_keys.Cutting)) return Task.FromResult<IRenderFilterNode>(this);
                 return Task.FromResult<IRenderFilterNode>(Cut(_component, _shared.Hold(), keys));
