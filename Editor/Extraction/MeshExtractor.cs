@@ -18,6 +18,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         public readonly int[] BoneIds;
         /// <summary>The renderer's own local-to-avatar-root matrix, which places every vertex when there are no bones.</summary>
         public readonly Matrix4x4 RendererToRoot;
+        /// <summary>The renderer's own transform's avatar-wide id, the influence of a vertex with no usable bone weight.</summary>
         public readonly int RendererBoneId;
 
         public SkinningPose(Matrix4x4[] boneToRoot, int[] boneIds, Matrix4x4 rendererToRoot, int rendererBoneId)
@@ -38,6 +39,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
     /// </summary>
     internal readonly struct LiveFrame : IEquatable<LiveFrame>
     {
+        /// <summary>The id of the configuration the frame belongs to (<see cref="Pipeline.ConfigurationReport.Id"/>); zero for a key moved alone.</summary>
         public readonly int Configuration;
         /// <summary>The keys the frame moves; one for a key moved alone.</summary>
         public readonly int[] Keys;
@@ -92,6 +94,10 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         }
     }
 
+    /// <summary>
+    /// Builds a renderer's evaluation mesh, the one form of a mesh every later stage reads: posed in avatar-root space,
+    /// influenced by avatar-wide bone ids, with each live shape key as sparse frames.
+    /// </summary>
     internal static class MeshExtractor
     {
         /// <summary>A delta shorter than a micrometre moves nothing anyone can see, so it is left out of the sparse set.</summary>
@@ -255,6 +261,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// </summary>
         static float Snap(float end, float held) => Math.Abs(end - held) <= ShapeKeyClassifier.HoldTolerance ? held : end;
 
+        /// <summary>Adds each triangle's area-weighted normal to its corners, for a mesh that carries no normals; skinning normalizes them.</summary>
         static void FaceNormals(Vector3[] positions, int3[] triangles, Vector3[] normals)
         {
             foreach (var t in triangles)

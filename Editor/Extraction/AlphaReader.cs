@@ -134,6 +134,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
         /// <summary>The largest side of a stored map; a larger texture is shrunk keeping each block's least alpha.</summary>
         public const int MaxResolution = 1024;
 
+        /// <summary>Whether a material may draw see-through: from the AlphaTest queue on, or with a RenderType tag other than Opaque.</summary>
         public static bool CanBeSeeThrough(int renderQueue, string renderType) =>
             renderQueue >= AlphaTestQueue || !(string.IsNullOrEmpty(renderType) || renderType == "Opaque");
 
@@ -164,6 +165,11 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             };
         }
 
+        /// <summary>
+        /// What a material does to a ray, under the component's override <paramref name="mode"/>: clear for a never-occludes
+        /// override or a missing material, solid for a forced-opaque or an opaque one, otherwise its alpha map, or clear
+        /// where this reader cannot compute it.
+        /// </summary>
         public static OccluderSurface Read(Material material, OcclusionMode mode)
         {
             if (mode == OcclusionMode.NeverOccludes || material == null) return OccluderSurface.Clear;
@@ -282,7 +288,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             Vector(m, "_DistanceFade").z != 0f && m.HasProperty("_DistanceFadeColor") && m.GetColor("_DistanceFadeColor").a < 1f ||
             On(m, "_UseDither");
 
-        /// <summary>lilToon's alpha modes: 1 replace, 2 multiply, 3 add, 4 subtract. Only adding never lowers.</summary>
+        /// <summary>lilToon's alpha modes: 0 leaves alpha as it is, 1 replace, 2 multiply, 3 add, 4 subtract. Only 0 and add never lower it.</summary>
         static bool ModeLowers(float mode) => mode != 0f && mode != 3f;
 
         /// <summary>
@@ -335,6 +341,7 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
 
         static bool On(Material m, string name) => Float(m, name, 0f) != 0f;
 
+        /// <summary>Whether one map over the main texture's UV square holds the material's alpha: 2D textures, nothing animated, the mask in that square.</summary>
         static bool Supported(Material m, in AlphaInputs p, Vector4 mainST, Texture main, Texture mask)
         {
             if (main != null && main.dimension != UnityEngine.Rendering.TextureDimension.Tex2D) return false;

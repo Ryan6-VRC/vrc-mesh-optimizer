@@ -25,15 +25,22 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
     /// only on what can be seen. It reads the hierarchy and returns new meshes in a report; it assigns nothing and
     /// never touches a source mesh. <see cref="Apply"/> puts the meshes on the renderers.
     ///
-    /// It runs as two calls. <see cref="Prepare"/> does everything up to a recorded collapse sequence per renderer, which
-    /// is the costly part; <see cref="Cut"/> spends the target over those sequences and writes, and can be called again on
-    /// the same <see cref="PreparedAvatar"/>.
+    /// It runs as two calls. <see cref="Prepare"/> does the costly part, in this order: it surveys every mesh and skinned
+    /// renderer (<see cref="Survey"/>), turns shape-key links into avatar-wide configurations (<see cref="Configure"/>),
+    /// extracts each renderer's evaluation mesh (<see cref="Extract"/>), removes hidden triangles
+    /// (<see cref="RemoveHidden"/>), and builds the clearance surface and records each decimated renderer's collapse
+    /// sequence (<see cref="Record"/>). <see cref="Cut"/>, in OptimizerPipeline.Cut.cs, allocates the target over those
+    /// sequences (<see cref="Allocate"/>), keeps each renderer's triangles at its step (<see cref="CutAt"/>), judges the
+    /// removals again against what the cut keeps (<see cref="Rejudge"/>), writes the meshes (<see cref="Write"/>) and
+    /// reports; it can be called again on the same <see cref="PreparedAvatar"/>. <see cref="MeasureGate"/> runs after
+    /// <see cref="Apply"/>, when the input asks for it.
     /// </summary>
     internal static partial class OptimizerPipeline
     {
         /// <summary>
-        /// A renderer's allocation weight: its protection as the component holds it when a cut asks, 1 with no entry. Read
-        /// by the cut and not kept by preparing, so a changed protection needs a new cut and no new recording.
+        /// A renderer's allocation weight: its protection as the component holds it when a cut asks, 1 with no entry,
+        /// floored at <see cref="ProtectionLimit.Min"/>. Read by the cut and not kept by preparing, so a changed protection
+        /// needs a new cut and no new recording.
         /// </summary>
         internal static float WeightOf(PreparedRenderer job, AvatarMeshOptimizer settings)
         {
@@ -94,6 +101,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             return prepared;
         }
 
+        /// <summary>
+        /// One renderer's entry: the mesh it draws (<see cref="PipelineInput.DrawnBy(Renderer)"/>), its path and triangle
+        /// count, its shape-key liveness, and why the pass leaves it as it was when it does, named where the user can act on it.
+        /// </summary>
         static PreparedRenderer Survey(Renderer renderer, PipelineInput input, PreparedAvatar prepared)
         {
             var root = input.Root;
@@ -184,7 +195,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// gives each member alone, so each member is evaluated at every corner of its own path; configurations come only
         /// from links, never from a product of them. Each renderer takes one frame per configuration it has a member in.
         /// A member the pass does not evaluate as live, or on a renderer it does not extract, is left out; a link left with
-        /// fewer than two members, or whose members no longer stand at one normalised weight, moves its keys alone.
+        /// fewer than two members, or whose members are held at different normalised weights, moves its keys alone.
         /// </summary>
         static void Configure(List<PreparedRenderer> jobs, PipelineInput input, PreparedAvatar prepared)
         {
@@ -253,6 +264,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>
+        /// Extracts one surveyed renderer's evaluation mesh from the mesh it draws, posed by its own bones. A mesh with a
+        /// non-finite value is skipped and named; any other failure leaves the renderer as it was.
+        /// </summary>
         static void Extract(PreparedRenderer job, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             try
@@ -277,6 +292,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             }
         }
 
+        /// <summary>
+        /// Marks as occluders the always-on renderers that are on as the avatar loads, solves occlusion over every extracted
+        /// renderer, and keeps on each its hidden triangles and what covered the rest. Does nothing when no always-on
+        /// renderer is on; a failure removes nothing from any renderer.
+        /// </summary>
         static void RemoveHidden(List<PreparedRenderer> jobs, PipelineInput input, AvatarBones bones, PreparedAvatar prepared)
         {
             var alwaysOn = new HashSet<Renderer>(input.Settings.alwaysOn.Where(r => r != null));
@@ -459,7 +479,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
 
         /// <summary>
         /// A renderer the pass leaves as it was, extracted only to stand in the clearance surface. False, with nothing to
-        /// dispose, when its mesh cannot be extracted, which leaves it out: as before, it constrains nothing, and its
+        /// dispose, when its mesh cannot be extracted, which leaves it out of the surface, so it constrains nothing, and its
         /// <see cref="PreparedRenderer.SkipDetail"/> says so.
         /// </summary>
         static bool TryExtractUnchanged(PreparedRenderer job, PipelineInput input, AvatarBones bones, out EvalMesh eval)

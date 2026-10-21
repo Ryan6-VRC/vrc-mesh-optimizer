@@ -33,6 +33,10 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
     /// </summary>
     internal static class PreviewInput
     {
+        /// <summary>
+        /// The preview's input for the avatar at <paramref name="root"/>, with <paramref name="source"/> naming where its
+        /// liveness came from and <paramref name="proxies"/> mapping each original renderer to its proxy.
+        /// </summary>
         public static PipelineInput For(Transform root, AvatarMeshOptimizer settings, out PreviewLiveness source,
             IReadOnlyDictionary<Renderer, Renderer> proxies = null)
         {

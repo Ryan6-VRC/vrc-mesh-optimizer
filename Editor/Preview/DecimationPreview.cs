@@ -53,7 +53,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
     /// once. The first preview of an avatar prepares it (extraction, clearance and recording, without occlusion;
     /// <see cref="PreviewInput"/>), which is what costs. The prepared avatar is then kept (<see cref="Kept"/>), so
     /// switching the preview off and on, or a change to the target or to a renderer's protection, only cuts it again.
-    /// Any other change to the component, to a renderer or to its mesh prepares it anew. NDMF calls a filter only to
+    /// A change to any other setting preparing reads (<see cref="Keys"/>), to a renderer or to its mesh prepares it anew. NDMF calls a filter only to
     /// preview, so none of this runs in a build.
     /// </summary>
     internal sealed class DecimationPreview : IRenderFilter
@@ -97,12 +97,14 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             FreeKept();
         }
 
+        /// <summary>Forgets every kept prepared avatar; each is freed once no node holds it.</summary>
         static void FreeKept()
         {
             foreach (var component in Kept.Keys.ToList()) Forget(component);
         }
 
         /// <summary>
+        /// Resets the preview (<see cref="Reset"/>) when any scene but NDMF's preview scene opens, and as play mode starts.
         /// NDMF reopens its own hidden preview scene around play mode and reloads, which raises the same event; it learns
         /// that scene only once opening returns, so the check waits a tick to tell the two apart. Play mode resets too:
         /// where it starts without a reload the switch would otherwise still be on at the return to edit mode.
@@ -199,6 +201,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             return Kept[component] = new Shared(Prepare(root, component, proxies, out var liveness), liveness, settings, meshes, watch);
         }
 
+        /// <summary>Drops the component's kept prepared avatar, freeing it once no node holds it.</summary>
         static void Forget(AvatarMeshOptimizer component)
         {
             if (!Kept.TryGetValue(component, out var kept)) return;
@@ -218,6 +221,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 return (mesh != null ? mesh.GetInstanceID() : 0) + ":" + string.Join(":", drawn.sharedMaterials.Select(m => m != null ? m.GetInstanceID() : 0));
             }));
 
+        /// <summary>The mesh a renderer draws, as <see cref="Extraction.RendererExtraction.MeshOf"/> reads it.</summary>
         static Mesh RendererMesh(Renderer renderer) => renderer is SkinnedMeshRenderer skinned ? skinned.sharedMesh
             : renderer.TryGetComponent<MeshFilter>(out var filter) ? filter.sharedMesh : null;
 
@@ -298,12 +302,14 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             /// <summary>Marks it stale, for a change NDMF reported to a node cut from it.</summary>
             public void Spoil() => _spoiled = true;
 
+            /// <summary>Adds a holder; each hold is let go by one <see cref="Release"/>.</summary>
             public Shared Hold()
             {
                 _holders++;
                 return this;
             }
 
+            /// <summary>Lets go of one hold, disposing the prepared avatar and its watch with the last.</summary>
             public void Release()
             {
                 if (--_holders != 0) return;
@@ -443,7 +449,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
             /// <summary>
             /// A change to the target or to a protection cuts the same prepared avatar again. Anything NDMF reports changed
             /// on a renderer (its mesh, materials, textures, shape-key weights or bones) was read by preparing, as was every
-            /// other setting, so either prepares the avatar anew.
+            /// setting in <see cref="Keys.Settings"/>, so either prepares the avatar anew.
             /// </summary>
             public Task<IRenderFilterNode> Refresh(IEnumerable<(Renderer, Renderer)> proxyPairs, ComputeContext context, RenderAspects updatedAspects)
             {
@@ -459,6 +465,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 return Task.FromResult<IRenderFilterNode>(Cut(_component, _shared.Hold(), keys));
             }
 
+            /// <summary>Puts the cut mesh of <paramref name="original"/> on its proxy, which NDMF resets every frame.</summary>
             public void OnFrame(Renderer original, Renderer proxy)
             {
                 if (!_meshes.TryGetValue(original, out var mesh)) return;
