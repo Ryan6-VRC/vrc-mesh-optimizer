@@ -26,6 +26,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public IReadOnlyList<(LinkedKey key, LinkRefusal reason)> Unlinked;
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
+        /// <summary>
+        /// Per renderer, the one whose mesh and materials are read in its place: the edit-mode preview's proxies, which carry
+        /// what an earlier preview filter made of the renderer. Its bones, transforms, shape-key weights and settings are
+        /// still read from the renderer itself. Null, or a renderer missing from it, reads the renderer itself.
+        /// </summary>
+        public IReadOnlyDictionary<Renderer, Renderer> Drawn;
         public OcclusionSettings Occlusion = OcclusionSettings.Default;
         /// <summary>
         /// Whether <see cref="OptimizerPipeline.Prepare"/> removes hidden triangles when the component asks it to. On for a
@@ -65,6 +71,13 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// can be blamed for would.
         /// </summary>
         public Action<AvatarStep> BeforeStep;
+
+        /// <summary>The renderer whose mesh and materials are read for <paramref name="renderer"/> (<see cref="Drawn"/>).</summary>
+        public Renderer DrawnBy(Renderer renderer) => DrawnBy(Drawn, renderer);
+
+        /// <summary>As the instance method, from a map that is not yet on an input.</summary>
+        public static Renderer DrawnBy(IReadOnlyDictionary<Renderer, Renderer> drawn, Renderer renderer) =>
+            drawn != null && renderer != null && drawn.TryGetValue(renderer, out var proxy) && proxy != null ? proxy : renderer;
     }
 
     /// <summary>The steps taken for the whole avatar at once, as <see cref="PipelineInput.BeforeStep"/> names them.</summary>

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Ryan6Vrc.MeshOptimizer.Animators;
 using Ryan6Vrc.MeshOptimizer.Liveness;
@@ -25,13 +26,17 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
     /// What the preview hands the pipeline in place of a build's: the one seam where a preview's input differs from a
     /// build's. A build classifies shape keys and finds scale curves through NDMF's animator services, which exist only
     /// inside a build; the preview reads what the avatar descriptor holds, as authored, and removes no hidden triangles.
-    /// Nothing another tool adds at build is read, so the preview's counts are an estimate and the build's report is exact.
+    /// Each renderer's mesh and materials are read from its proxy, as <see cref="For"/> is handed them (original to proxy), which
+    /// carries what an earlier preview filter made of it, such as a Modular Avatar deletion; everything else is read from
+    /// the scene avatar. Nothing another tool adds only at build is read, so the preview's counts are an estimate and the
+    /// build's report is exact.
     /// </summary>
     internal static class PreviewInput
     {
-        public static PipelineInput For(Transform root, AvatarMeshOptimizer settings, out PreviewLiveness source)
+        public static PipelineInput For(Transform root, AvatarMeshOptimizer settings, out PreviewLiveness source,
+            IReadOnlyDictionary<Renderer, Renderer> proxies = null)
         {
-            var input = new PipelineInput { Root = root, Settings = settings, Occlude = false };
+            var input = new PipelineInput { Root = root, Settings = settings, Occlude = false, Drawn = proxies };
             var scaleCurves = UnstableBones.FromLegacyAnimations(root);
             if (!root.TryGetComponent<VRCAvatarDescriptor>(out var descriptor))
             {

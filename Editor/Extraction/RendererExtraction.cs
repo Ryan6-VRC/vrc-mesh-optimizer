@@ -51,11 +51,14 @@ namespace Ryan6Vrc.MeshOptimizer.Extraction
             Allocator allocator, out LiveFrame[] liveFrames) =>
             Extract(renderer, bones, liveness, null, allocator, out liveFrames);
 
-        /// <summary>As the overload without it, with the keys of <paramref name="linked"/> moved together (see <see cref="MeshExtractor"/>).</summary>
+        /// <summary>
+        /// As the overload without it, with the keys of <paramref name="linked"/> moved together (see <see cref="MeshExtractor"/>).
+        /// <paramref name="drawn"/>, when given, is read in place of the renderer's own mesh, posed by the renderer's bones.
+        /// </summary>
         public static EvalMesh Extract(Renderer renderer, AvatarBones bones, IReadOnlyList<ShapeKeyLiveness> liveness,
-            IReadOnlyList<LiveFrame> linked, Allocator allocator, out LiveFrame[] liveFrames)
+            IReadOnlyList<LiveFrame> linked, Allocator allocator, out LiveFrame[] liveFrames, Mesh drawn = null)
         {
-            var mesh = MeshOf(renderer);
+            var mesh = drawn != null ? drawn : MeshOf(renderer);
             if (mesh == null) throw new ArgumentException($"{renderer.name} draws no mesh", nameof(renderer));
 
             var worldToRoot = WorldToRoot(bones.Root);
