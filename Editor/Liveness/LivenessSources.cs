@@ -130,26 +130,50 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             // Face tracking drives a mapped name on every Face Tracking Mesh that has it. A set counts at any weight
             // and whether or not face tracking is enabled, as the eyelids do: a parameter can raise a set at runtime.
             if (descriptor.faceTrackingMeshes == null) yield break;
-            var names = new HashSet<string>();
+            // Each name's reach, in fractions of full scale. A set slot drives its name from 0 to its multiplier, which the
+            // SDK allows up to 10, at a set weight up to 1; an Apply to Blendshape behavior from 0 to 1, from -1 for a Custom
+            // expression (clamped to [-1, 1]) and to its input count for an Add. How the runtime combines several mappings of
+            // one name is not on disk, so their reaches are summed, the bound that holds however they combine.
+            var reach = new Dictionary<string, (float Low, float High)>();
+            void Add(string name, float low, float high)
+            {
+                if (string.IsNullOrEmpty(name)) return;
+                reach[name] = reach.TryGetValue(name, out var r) ? (r.Low + low, r.High + high) : (low, high);
+            }
+            void Slots(string[] names, float[] multipliers)
+            {
+                if (names == null) return;
+                for (var i = 0; i < names.Length; i++)
+                    Add(names[i], 0f, Mathf.Max(0f, multipliers != null && i < multipliers.Length ? multipliers[i] : 1f));
+            }
             if (descriptor.faceTrackingBlendshapesSetList != null)
                 foreach (var set in descriptor.faceTrackingBlendshapesSetList)
-                {
-                    if (set == null) continue;
-                    if (set.faceTrackingBlendshapeNames != null) names.UnionWith(set.faceTrackingBlendshapeNames);
-                    if (set.visemeBlendshapeNames != null) names.UnionWith(set.visemeBlendshapeNames);
-                }
+                    if (set != null)
+                    {
+                        Slots(set.faceTrackingBlendshapeNames, set.faceTrackingBlendshapeMultipliers);
+                        Slots(set.visemeBlendshapeNames, set.visemeBlendshapeMultipliers);
+                    }
             if (descriptor.faceTrackingParameterBehaviors != null)
                 foreach (var behavior in descriptor.faceTrackingParameterBehaviors)
-                    if (behavior != null && (behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.ApplyToBlendshape
-                        || behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMax
-                        || behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMin))
-                        names.Add(behavior.targetBlendshapeName);
-            names.RemoveWhere(string.IsNullOrEmpty);
+                {
+                    if (behavior == null) continue;
+                    if (behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.ApplyToBlendshape)
+                    {
+                        if (behavior.combineMode == VRCAvatarDescriptor.ParameterBehaviorCombineMode.Custom) Add(behavior.targetBlendshapeName, -1f, 1f);
+                        else if (behavior.combineMode == VRCAvatarDescriptor.ParameterBehaviorCombineMode.Add)
+                            Add(behavior.targetBlendshapeName, 0f, Mathf.Max(1f, behavior.inputTrackingKeys?.Length ?? 0));
+                        else Add(behavior.targetBlendshapeName, 0f, 1f);
+                    }
+                    // A limit only bounds what another mapping drives, but its target counts live so it is never judged unused.
+                    else if (behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMax
+                        || behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMin)
+                        Add(behavior.targetBlendshapeName, 0f, 0f);
+                }
             foreach (var face in descriptor.faceTrackingMeshes)
             {
                 if (face == null) continue;
                 var path = PathOf(root, face.transform);
-                foreach (var name in names) yield return new DrivenKey(path, name, face.transform);
+                foreach (var name in reach) yield return new DrivenKey(path, name.Key, face.transform, name.Value.Low, Mathf.Max(1f, name.Value.High));
             }
 #endif
         }

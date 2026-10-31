@@ -69,6 +69,37 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Liveness
             }), "jaw, tongue, puff, other");
             Assert.That(result[outfit][0].State, Is.EqualTo(ShapeKeyState.Dead), "the outfit is not a Face Tracking Mesh");
         }
+
+        // A key is judged at every weight face tracking can set it to: "jaw", mapped at multiplier 2 in one set and 1 in
+        // another, up to three times full; "puff", the target of a Custom expression, down to minus full; "tongue", mapped
+        // once at the default multiplier, to full.
+        [Test]
+        public void FaceTrackedShapes_ReachTheirMultipliersAndNegativeExpressions()
+        {
+            var face = Renderer("Face", "jaw", "puff", "tongue");
+            var first = Set(1f);
+            first.faceTrackingBlendshapeNames[0] = "jaw";
+            first.faceTrackingBlendshapeMultipliers = Enumerable.Repeat(1f, first.faceTrackingBlendshapeNames.Length).ToArray();
+            first.faceTrackingBlendshapeMultipliers[0] = 2f;
+            first.visemeBlendshapeNames[(int)VRC_AvatarDescriptor.Viseme.aa] = "tongue";
+            var second = Set(0f);
+            second.faceTrackingBlendshapeNames[1] = "jaw";
+            var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
+            descriptor.faceTrackingMeshes = new List<SkinnedMeshRenderer> { face };
+            descriptor.faceTrackingBlendshapesSetList = new List<VRCAvatarDescriptor.FaceTrackingBlendshapesSet> { first, second };
+            descriptor.faceTrackingParameterBehaviors = new List<VRCAvatarDescriptor.FaceTrackingParameterBehavior>
+            {
+                new VRCAvatarDescriptor.FaceTrackingParameterBehavior
+                {
+                    targetMode = TargetMode.ApplyToBlendshape, combineMode = VRCAvatarDescriptor.ParameterBehaviorCombineMode.Custom,
+                    targetBlendshapeName = "puff",
+                },
+            };
+
+            var keys = LivenessSources.Classify(a.Root.transform, new[] { face }, new List<ShapeKeyBinding>(), out _, out _)[face];
+
+            Assert.That(keys.Select(k => (k.DrivenMin, k.DrivenMax)), Is.EqualTo(new[] { (0f, 3f), (-1f, 1f), (0f, 1f) }), "jaw, puff, tongue");
+        }
     }
 }
 #endif

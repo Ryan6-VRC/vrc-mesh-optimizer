@@ -152,8 +152,8 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     }
 
     /// <summary>
-    /// A shape key something outside the animators drives to its full weight: the descriptor's visemes,
-    /// jaw flap, eyelids and face tracking, or a world's MMD dance.
+    /// A shape key something outside the animators drives: the descriptor's visemes, jaw flap, eyelids and face tracking,
+    /// or a world's MMD dance. Most drive it to its full weight; face tracking can drive it past full or below zero.
     /// </summary>
     internal readonly struct DrivenKey
     {
@@ -161,12 +161,16 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
         public readonly string Key;
         /// <summary>The renderer's transform the driver names; null when not known.</summary>
         public readonly Transform Target;
+        /// <summary>The lowest and highest weights the driver sets, as fractions of the key's full scale; 1 and 1 for a driver to full weight.</summary>
+        public readonly float Low, High;
 
-        public DrivenKey(string path, string key, Transform target = null)
+        public DrivenKey(string path, string key, Transform target = null, float low = 1f, float high = 1f)
         {
             Path = path;
             Key = key;
             Target = target;
+            Low = low;
+            High = high;
         }
     }
 
@@ -216,25 +220,34 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                     // A curve counts only on the renderer its path binds (RendererShapeKeys.IsBoundBy).
                     byKey.TryGetValue((renderer.Path, keys[k].Name), out var found);
                     var curves = found?.Where(b => renderer.IsBoundBy(b.Path, b.Target)).Select(b => b.Values).ToList();
-                    var drives = drivenByKey.TryGetValue((renderer.Path, keys[k].Name), out var drivers) && drivers.Any(d => renderer.IsBoundBy(d.Path, d.Target));
-                    row[k] = ClassifyKey(keys[k], curves, drives);
+                    var drives = drivenByKey.TryGetValue((renderer.Path, keys[k].Name), out var drivers)
+                        ? drivers.Where(d => renderer.IsBoundBy(d.Path, d.Target)).ToList() : null;
+                    row[k] = drives == null || drives.Count == 0 ? ClassifyKey(keys[k], curves, false)
+                        : ClassifyKey(keys[k], curves, (drives.Min(d => d.Low), drives.Max(d => d.High)));
                 }
             }
             return result;
         }
 
-        public static ShapeKeyLiveness ClassifyKey(ShapeKeyInput key, IEnumerable<float[]> curves, bool drivenToFull)
+        public static ShapeKeyLiveness ClassifyKey(ShapeKeyInput key, IEnumerable<float[]> curves, bool drivenToFull) =>
+            ClassifyKey(key, curves, drivenToFull ? (1f, 1f) : ((float, float)?)null);
+
+        /// <summary>
+        /// Classifies one key from its curves and, when something outside the animators drives it, the lowest and highest
+        /// weights that driver sets, as fractions of the key's full scale.
+        /// </summary>
+        public static ShapeKeyLiveness ClassifyKey(ShapeKeyInput key, IEnumerable<float[]> curves, (float Low, float High)? driven)
         {
             var full = FullScale(key.FullWeight);
             // The key's reachable weights: where the renderer holds it, and everywhere anything drives it.
             var lo = key.Weight;
             var hi = key.Weight;
             var live = false;
-            if (drivenToFull)
+            if (driven is { } reach)
             {
                 live = true;
-                lo = Mathf.Min(lo, full);
-                hi = Mathf.Max(hi, full);
+                lo = Mathf.Min(lo, reach.Low * full);
+                hi = Mathf.Max(hi, reach.High * full);
             }
             if (curves != null)
             {
