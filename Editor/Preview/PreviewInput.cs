@@ -52,7 +52,7 @@ namespace Ryan6Vrc.MeshOptimizer.Preview
                 source = PreviewLiveness.Descriptor;
                 var controllers = AuthoredControllers.Of(descriptor);
                 var skinned = root.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null).ToList();
-                // The classifier adds the descriptor's visemes and eyelids (LivenessSources.FromDescriptor), as a build's does.
+                // The classifier adds the descriptor's visemes, eyelids and face tracking (LivenessSources.FromDescriptor), as a build's does.
                 var bindings = LivenessSources.FromControllers(controllers, root).Concat(LivenessSources.FromLegacyAnimations(root)).ToList();
                 input.Liveness = LivenessSources.Classify(root, skinned, bindings, out var links, out var unlinked);
                 input.Links = links;

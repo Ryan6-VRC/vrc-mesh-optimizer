@@ -95,7 +95,9 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
             new ShapeKeyBinding(PathOf(root, c.Target), c.Binding.propertyName.Substring(BlendShapePrefix.Length),
                 AnimatedCurves.CurveValues(c.Curve), c.Curve.keys.Select(k => k.time).ToArray(), c.Clip, c.Layer, c.Order, c.Masked, c.Target);
 
-        /// <summary>The descriptor's visemes, jaw flap and eyelids, which VRChat drives without a clip.</summary>
+        /// <summary>
+        /// The descriptor's visemes, jaw flap, eyelids and native face tracking, which VRChat drives without a clip.
+        /// </summary>
         public static IEnumerable<DrivenKey> FromDescriptor(Transform root)
         {
             var descriptor = root.GetComponent<VRCAvatarDescriptor>();
@@ -123,6 +125,33 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
                 foreach (var index in eyes.eyelidsBlendshapes)
                     if (index >= 0 && index < mesh.blendShapeCount) yield return new DrivenKey(path, mesh.GetBlendShapeName(index), eyelids.transform);
             }
+
+#if VRC_FT_SETS_PRESENT
+            // Face tracking drives a mapped name on every Face Tracking Mesh that has it. A set counts at any weight
+            // and whether or not face tracking is enabled, as the eyelids do: a parameter can raise a set at runtime.
+            if (descriptor.faceTrackingMeshes == null) yield break;
+            var names = new HashSet<string>();
+            if (descriptor.faceTrackingBlendshapesSetList != null)
+                foreach (var set in descriptor.faceTrackingBlendshapesSetList)
+                {
+                    if (set == null) continue;
+                    if (set.faceTrackingBlendshapeNames != null) names.UnionWith(set.faceTrackingBlendshapeNames);
+                    if (set.visemeBlendshapeNames != null) names.UnionWith(set.visemeBlendshapeNames);
+                }
+            if (descriptor.faceTrackingParameterBehaviors != null)
+                foreach (var behavior in descriptor.faceTrackingParameterBehaviors)
+                    if (behavior != null && (behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.ApplyToBlendshape
+                        || behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMax
+                        || behavior.targetMode == VRCAvatarDescriptor.ParameterBehaviorTargetMode.LimitBlendshapeMin))
+                        names.Add(behavior.targetBlendshapeName);
+            names.RemoveWhere(string.IsNullOrEmpty);
+            foreach (var face in descriptor.faceTrackingMeshes)
+            {
+                if (face == null) continue;
+                var path = PathOf(root, face.transform);
+                foreach (var name in names) yield return new DrivenKey(path, name, face.transform);
+            }
+#endif
         }
 
         /// <summary>

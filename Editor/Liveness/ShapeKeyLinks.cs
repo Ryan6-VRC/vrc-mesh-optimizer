@@ -25,7 +25,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     /// </summary>
     internal enum LinkRefusal
     {
-        /// <summary>The descriptor (visemes, jaw flap, eyelids) or an MMD world drives it without a clip.</summary>
+        /// <summary>The descriptor (visemes, jaw flap, eyelids, face tracking) or an MMD world drives it without a clip.</summary>
         DrivenOutsideClips,
         /// <summary>A curve on it is in a clip that cannot be told apart from others.</summary>
         UnknownClip,
@@ -88,7 +88,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
     /// The defaults Modular Avatar and VRCFury write for every animated key sit in layers before the layers that drive it,
     /// or hold every member alike inside them.
     ///
-    /// A key driven by anything outside the clips (the descriptor's visemes, jaw flap and eyelids, the MMD names) never
+    /// A key driven by anything outside the clips (the descriptor's visemes, jaw flap, eyelids and face tracking, the MMD names) never
     /// links, nor does one bound by a curve of unknown clip or through a layer whose avatar mask may keep the curve from
     /// it, one a clip binds with two different curves, or one on a renderer whose path another renderer shares when the curve does not say which transform it binds; a curve counts only on the renderer its path binds (<see cref="RendererShapeKeys.IsBoundBy"/>). A wrong
     /// link evaluates a state the avatar can leave, so every doubt keeps keys apart.

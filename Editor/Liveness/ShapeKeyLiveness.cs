@@ -153,7 +153,7 @@ namespace Ryan6Vrc.MeshOptimizer.Liveness
 
     /// <summary>
     /// A shape key something outside the animators drives to its full weight: the descriptor's visemes,
-    /// jaw flap and eyelids, or a world's MMD dance.
+    /// jaw flap, eyelids and face tracking, or a world's MMD dance.
     /// </summary>
     internal readonly struct DrivenKey
     {
