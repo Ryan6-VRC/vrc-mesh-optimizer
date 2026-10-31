@@ -29,6 +29,8 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        { "name": "com.vrchat.avatars", "expression": "3.10.6", "define": "VRC_FT_SETS_PRESENT" }
+    ],
     "noEngineReferences": false
 }
