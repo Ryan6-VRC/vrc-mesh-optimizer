@@ -78,8 +78,11 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                     var liveness = LivenessSources.Classify(context, skinned, out var links, out var unlinked);
                     var scaleCurves = UnstableBones.FromAnimatorServices(services, root)
                         .Concat(UnstableBones.FromLegacyAnimations(root)).ToList();
-                    var neverShown = new NeverShown(AnimatedCurves.FromAnimatorServices(services, root, NeverShown.Switches)
-                        .Concat(AnimatedCurves.FromLegacyAnimations(root, NeverShown.Switches)));
+                    // Read only when the setting can use it; null counts every renderer.
+                    var neverShown = settings.unusedRenderersDeleted
+                        ? new NeverShown(AnimatedCurves.FromAnimatorServices(services, root, NeverShown.Switches)
+                            .Concat(AnimatedCurves.FromLegacyAnimations(root, NeverShown.Switches)))
+                        : null;
                     var livenessMs = watch.Elapsed.TotalMilliseconds;
 
                     input = new PipelineInput

@@ -114,7 +114,7 @@ Building the same avatar with the same package commit writes the same meshes on 
 - The preview reads shape-key weights and bones from the scene avatar, so a weight an earlier preview filter changes only in its preview is not reflected in the preview's error estimate.
 - The preview does not show hidden-triangle removal, and its counts are estimates.
 - A renderer with a Unity Cloth component is left unchanged, neither decimated nor trimmed of hidden triangles, because Cloth addresses vertices by index.
-- A renderer counts as unused when it starts off, disabled or under an inactive GameObject, and no animation switches it or that GameObject on. An optimizer that deletes unused renderers can still keep one of these, such as one listed in d4rk Avatar Optimizer's exclusions or one another component depends on; it then ships uncounted.
+- A renderer counts as unused when it starts off, disabled or under an inactive GameObject, and no animation switches it or that GameObject on. An optimizer that deletes unused renderers can still keep one of these, such as one listed in d4rk Avatar Optimizer's exclusions, a skinned renderer d4rk keeps because another shares its mesh while **Allow Mesh Data Duplication** is off, or one another component depends on; it then ships uncounted.
 - A triangle-count target is not guaranteed to be reachable. The face floor, locked vertices, exclusions, skipped meshes, layer clearance and Max error can stop the reduction first.
 - A mesh that cannot be read in Play mode is left unchanged there. An upload build can read it even when the model's Read/Write option is off.
 
