@@ -163,6 +163,84 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Integration
             Assert.That(OptimizationReports.Latest.UnstableBones.Any(p => p.EndsWith("Skirt")), Is.EqualTo(!covers));
         }
 
+        public enum Spare { InactiveObject, InactiveParent, DisabledRenderer, ClipShowsTheObject, ClipShowsTheParent, ClipShowsTheChildOnly, ClipEnablesTheRenderer, SettingOff }
+
+        // A budget the visible body meets on its own. A spare renderer no FX clip can show is left out of the count and
+        // unchanged, so the body keeps every triangle; one a clip can show, through the GameObject's or the renderer's own
+        // switch, still counts, and the body is cut to pay for it. A clip that shows the child of an inactive parent shows
+        // nothing, since the parent keeps it off. With the setting off every renderer counts.
+        [TestCase(Spare.InactiveObject, false)]
+        [TestCase(Spare.InactiveParent, false)]
+        [TestCase(Spare.DisabledRenderer, false)]
+        [TestCase(Spare.ClipShowsTheChildOnly, false)]
+        [TestCase(Spare.ClipShowsTheObject, true)]
+        [TestCase(Spare.ClipShowsTheParent, true)]
+        [TestCase(Spare.ClipEnablesTheRenderer, true)]
+        [TestCase(Spare.SettingOff, true)]
+        public void ARendererNoClipCanShow_IsLeftOutOfTheBudget(Spare spare, bool counted)
+        {
+            var descriptor = a.Root.AddComponent<VRCAvatarDescriptor>();
+            var source = a.Sphere(0.1f, 16, 32, name: "body");
+            var body = a.Skinned("Body", source, new[] { a.Bone("Armature/Hips/Chest") });
+            var box = new GameObject("Box").transform;
+            box.SetParent(a.Root.transform, false);
+            var bone = a.Bone("Armature/Hips/Spare");
+            bone.localPosition = new Vector3(1, 0, 0);
+            var spareSource = a.Sphere(0.1f, 16, 32, name: "spare");
+            var renderer = a.Skinned("Spare", spareSource, new[] { bone }, parent: box);
+            var c = a.Optimizer(decimate: true, removeHidden: false);
+            c.target = TargetKind.TriangleBudget;
+            c.triangleBudget = Triangles(source);
+            c.maxError = 0f;
+
+            var parentOff = spare == Spare.InactiveParent || spare == Spare.ClipShowsTheParent || spare == Spare.ClipShowsTheChildOnly;
+            (parentOff ? box.gameObject : renderer.gameObject).SetActive(false);
+            if (spare == Spare.DisabledRenderer || spare == Spare.ClipEnablesTheRenderer)
+            {
+                renderer.gameObject.SetActive(true);
+                renderer.enabled = false;
+            }
+            if (spare == Spare.SettingOff) c.unusedRenderersDeleted = false;
+
+            var clip = a.Made(new AnimationClip { name = "spare on" });
+            var on = AnimationCurve.Constant(0, 1, 1);
+            if (spare == Spare.ClipShowsTheObject || spare == Spare.ClipShowsTheChildOnly) clip.SetCurve("Box/Spare", typeof(GameObject), "m_IsActive", on);
+            if (spare == Spare.ClipShowsTheParent) clip.SetCurve("Box", typeof(GameObject), "m_IsActive", on);
+            if (spare == Spare.ClipEnablesTheRenderer) clip.SetCurve("Box/Spare", typeof(SkinnedMeshRenderer), "m_Enabled", on);
+            var controller = a.Made(new UnityEditor.Animations.AnimatorController { name = "fx" });
+            controller.AddLayer("spare");
+            controller.layers[0].stateMachine.AddState("on").motion = clip;
+            descriptor.customizeAnimationLayers = true;
+            descriptor.baseAnimationLayers = new[]
+            {
+                new VRCAvatarDescriptor.CustomAnimLayer { type = VRCAvatarDescriptor.AnimLayerType.FX, animatorController = controller, isDefault = false },
+            };
+            descriptor.specialAnimationLayers = new VRCAvatarDescriptor.CustomAnimLayer[0];
+
+            Process();
+
+            Assert.That(errors, Is.Empty, "the build logs no error");
+            var report = OptimizationReports.Latest;
+            var s = report.Renderers.Single(r => r.Renderer == renderer);
+            Assert.That(report.TargetMet, Is.True);
+            if (counted)
+            {
+                Assert.That(s.Skip, Is.Not.EqualTo(SkipReason.NeverShown));
+                Assert.That(report.LeftOut, Is.Empty);
+                Assert.That(Triangles(body.sharedMesh), Is.LessThan(Triangles(source)), "the body pays for the spare");
+            }
+            else
+            {
+                Assert.That(s.Skip, Is.EqualTo(SkipReason.NeverShown));
+                Assert.That(report.LeftOut.Single().Renderer, Is.SameAs(renderer));
+                Assert.That(renderer.sharedMesh, Is.SameAs(spareSource), "the spare is left as it was");
+                Assert.That(Triangles(body.sharedMesh), Is.EqualTo(Triangles(source)), "the budget is the body's alone");
+                Assert.That(report.TrianglesBefore, Is.EqualTo(Triangles(source)));
+                Assert.That(log.Any(l => l.StartsWith("[Mesh Optimizer] " + a.Root.name) && l.Contains($"\n  {Triangles(spareSource)} triangles on 1 renderers no animation can show")),
+                    "the summary names what it left out");
+            }
+        }
+
         public enum Second { None, DrivesAfter, HoldsBefore, HoldsAfter, HoldsInGesture, DriverInGestureHoldInFx, SyncedHoldAfter, MaskOmitsOne, MaskHasBoth, FirstLayerMaskOmitsOne, HumanoidMask }
 
         // Links read the merged layers through NDMF's animator services, by clip object and by the order layers play in:

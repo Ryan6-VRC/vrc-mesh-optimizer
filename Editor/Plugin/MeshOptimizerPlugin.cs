@@ -4,6 +4,7 @@ using System.Linq;
 using nadena.dev.ndmf;
 using nadena.dev.ndmf.animator;
 using nadena.dev.ndmf.runtime;
+using Ryan6Vrc.MeshOptimizer.Animators;
 using Ryan6Vrc.MeshOptimizer.Liveness;
 using Ryan6Vrc.MeshOptimizer.Localization;
 using Ryan6Vrc.MeshOptimizer.Occlusion;
@@ -77,6 +78,11 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                     var liveness = LivenessSources.Classify(context, skinned, out var links, out var unlinked);
                     var scaleCurves = UnstableBones.FromAnimatorServices(services, root)
                         .Concat(UnstableBones.FromLegacyAnimations(root)).ToList();
+                    // Read only when the setting can use it; null counts every renderer.
+                    var neverShown = settings.unusedRenderersDeleted
+                        ? new NeverShown(AnimatedCurves.FromAnimatorServices(services, root, NeverShown.Switches)
+                            .Concat(AnimatedCurves.FromLegacyAnimations(root, NeverShown.Switches)))
+                        : null;
                     var livenessMs = watch.Elapsed.TotalMilliseconds;
 
                     input = new PipelineInput
@@ -87,6 +93,7 @@ namespace Ryan6Vrc.MeshOptimizer.Plugin
                         Links = links,
                         Unlinked = unlinked,
                         ScaleCurves = scaleCurves,
+                        NeverShown = neverShown,
                         LivenessMs = livenessMs,
                     };
                     using (var prepared = OptimizerPipeline.Prepare(input)) report = OptimizerPipeline.Cut(prepared);

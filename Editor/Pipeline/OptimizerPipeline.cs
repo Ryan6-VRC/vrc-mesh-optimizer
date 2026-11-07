@@ -104,6 +104,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>
         /// One renderer's entry: the mesh it draws (<see cref="PipelineInput.DrawnBy(Renderer)"/>), its path and triangle
         /// count, its shape-key liveness, and why the pass leaves it as it was when it does, named where the user can act on it.
+        /// A renderer no animation can show is left out when the component says a later optimizer deletes it.
         /// </summary>
         static PreparedRenderer Survey(Renderer renderer, PipelineInput input, PreparedAvatar prepared)
         {
@@ -121,7 +122,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 return r;
             }
             r.TrianglesBefore = MeshTriangles.Count(mesh);
-            if (renderer.GetComponent<Cloth>() != null)
+            // Left out before anything else is asked of it: the build deletes it later, whatever would have kept it whole.
+            if (input.Settings.unusedRenderersDeleted && input.NeverShown != null && input.NeverShown.Of(renderer, root))
+            {
+                r.Skip = SkipReason.NeverShown;
+            }
+            else if (renderer.GetComponent<Cloth>() != null)
             {
                 r.Skip = SkipReason.Cloth;
                 prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.Cloth, true, renderer));
@@ -305,6 +311,10 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
             foreach (var r in alwaysOn)
                 if (!r.transform.IsChildOf(input.Root))
                     prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.AlwaysOnOutsideAvatar, false, r, input.Root.name));
+            // Left out because nothing can show it, so it covers nothing either.
+            foreach (var job in prepared.Renderers)
+                if (job.Skip == SkipReason.NeverShown && alwaysOn.Contains(job.Renderer))
+                    prepared.Diagnostics.Add(new Diagnostic(DiagnosticKeys.AlwaysOnIsOff, false, job.Renderer));
             var materials = new OccluderMaterials(input.Settings.materials);
             var outlines = input.Settings.outlinesShowInside;
             foreach (var job in jobs)
@@ -460,7 +470,7 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 }
                 foreach (var job in all)
                 {
-                    if (job.Extracted || job.Source == null || job.TrianglesBefore == 0 || !CanRead(job.Source, Application.isPlaying)) continue;
+                    if (job.Extracted || job.Skip == SkipReason.NeverShown || job.Source == null || job.TrianglesBefore == 0 || !CanRead(job.Source, Application.isPlaying)) continue;
                     if (!TryExtractUnchanged(job, input, bones, out var eval)) continue;
                     owned.Add(eval);
                     var layers = Layers.Pieces(eval.Positions, eval.Triangles, Allocator.Persistent, out var pieces);

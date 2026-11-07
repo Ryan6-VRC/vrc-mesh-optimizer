@@ -27,7 +27,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
         const string AdvancedOpen = "Ryan6Vrc.MeshOptimizer.Inspector.AdvancedOpen";
 
         SerializedProperty _decimate, _removeHidden, _target, _budget, _maxError, _tolerance, _alwaysOn, _outlines,
-            _materials, _renderers, _faceFloor, _lockFingers, _fingerWeight;
+            _materials, _renderers, _faceFloor, _lockFingers, _fingerWeight, _unusedDeleted;
 
         ReorderableList _rendererList, _alwaysOnList, _materialList;
         Drop _rendererDrop, _alwaysOnDrop, _materialDrop;
@@ -47,6 +47,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             _faceFloor = serializedObject.FindProperty(nameof(AvatarMeshOptimizer.faceFloor));
             _lockFingers = serializedObject.FindProperty(nameof(AvatarMeshOptimizer.lockFingers));
             _fingerWeight = serializedObject.FindProperty(nameof(AvatarMeshOptimizer.fingerWeight));
+            _unusedDeleted = serializedObject.FindProperty(nameof(AvatarMeshOptimizer.unusedRenderersDeleted));
 
             _rendererList = List(_renderers, rect =>
             {
@@ -252,7 +253,8 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
 
         /// <summary>
         /// The settings most avatars leave alone, last and below a rule, collapsed by default; the one group drawn indented.
-        /// It holds only the fields of the features that are on, and is not drawn when both are off.
+        /// It holds whether a later optimizer deletes unused renderers, which either feature reads, then only the fields of the
+        /// features that are on, and is not drawn when both are off.
         /// </summary>
         void DrawAdvanced(bool decimate, bool removeHidden)
         {
@@ -263,7 +265,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             SessionState.SetBool(AdvancedOpen, open);
             if (!open) return;
 
-            var fields = new List<SerializedProperty>();
+            var fields = new List<SerializedProperty> { _unusedDeleted };
             if (decimate) fields.AddRange(new[] { _faceFloor, _lockFingers, _fingerWeight });
             if (removeHidden) fields.Add(_outlines);
 
@@ -272,6 +274,7 @@ namespace Ryan6Vrc.MeshOptimizer.Inspector
             var labelWidth = EditorGUIUtility.labelWidth;
             var needed = fields.Max(p => EditorStyles.label.CalcSize(Label(p)).x) + 15f * EditorGUI.indentLevel + 8f;
             EditorGUIUtility.labelWidth = Mathf.Max(labelWidth, Mathf.Min(needed, EditorGUIUtility.currentViewWidth * 0.55f));
+            Field(_unusedDeleted);
             if (decimate)
             {
                 Percent(_faceFloor);

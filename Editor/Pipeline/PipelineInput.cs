@@ -29,6 +29,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         /// <summary>Scale curves any clip can play, for <see cref="UnstableBones"/>. Null reads as none.</summary>
         public IEnumerable<ScaleCurve> ScaleCurves;
         /// <summary>
+        /// Which renderers no animation can show, for <see cref="AvatarMeshOptimizer.unusedRenderersDeleted"/>. Null reads as
+        /// not known: every renderer is counted, as the edit-mode preview counts them, since a toggle another tool makes only
+        /// at build has no curve before it.
+        /// </summary>
+        public NeverShown NeverShown;
+        /// <summary>
         /// Per renderer, the one whose mesh and materials are read in its place: the edit-mode preview's proxies, which carry
         /// what an earlier preview filter made of the renderer. Its bones, transforms, shape-key weights and settings are
         /// still read from the renderer itself. Null, or a renderer missing from it, reads the renderer itself.

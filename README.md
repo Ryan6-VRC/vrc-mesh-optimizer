@@ -56,6 +56,7 @@ An **always-on renderer** is one that no animation ever hides or fades. Only ren
 | Face keeps at least | 50% | The share of the lip-sync face renderer's triangles kept whatever the target. |
 | Lock fingers | On | Keeps every vertex on a finger, found through the humanoid mapping. |
 | Finger weight | 0.01 | A vertex with at least this skin weight on a finger bone counts as a finger vertex. Lower locks more of the hand. |
+| Unused renderers are deleted later | On | Leaves out of the triangle count, and unchanged, every renderer that starts off and that no animation turns on, for an optimizer later in the build such as d4rk Avatar Optimizer or Avatar Optimizer's Trace and Optimize to delete. Turn it off if nothing deletes them: the performance rank counts every renderer that is uploaded. |
 | **Per material** | | |
 | Material overrides | None | A material whose automatic occlusion decision needs changing. |
 | Treat as | Automatic | Automatic reads the render queue and render type first, then samples texture alpha when needed. Opaque always hides what is behind it. See-through never does. |
@@ -72,7 +73,7 @@ An outline never counts as cover. **Outlines show the inside** only decides whet
 
 ## What the report tells you
 
-After each build, Mesh Optimizer writes a summary to the Unity Console: triangles before and after, how many hidden triangles were removed and how many decimation removed, whether a triangle-count target was met or the tolerance used, the error level reached, and the time taken.
+After each build, Mesh Optimizer writes a summary to the Unity Console: triangles before and after, how many hidden triangles were removed and how many decimation removed, whether a triangle-count target was met or the tolerance used, the error level reached, and the time taken. When **Unused renderers are deleted later** left renderers out of the count, a second line gives their triangles, which the performance rank still counts if nothing deletes them.
 
 Anything that needs your attention appears in NDMF's Error Report window: an unmet triangle target, a target stopped by Max error, an always-on entry that is not under the avatar, a skipped mesh, a See-through material override that matched nothing, and any failure during processing, with the full exception also written to the Console.
 
@@ -88,7 +89,7 @@ The first preview processes every mesh on the avatar and can take a few seconds.
 
 The preview composes with the NDMF preview filters that run before it, such as a Modular Avatar Shape Changer: each renderer is read as those filters left it, so geometry they delete stays deleted.
 
-The inspector shows the estimated triangle count before and after decimation and the error level reached. The counts are estimated from the avatar descriptor; the build report has the exact values. If the avatar root has no descriptor, the preview treats every shape key as animated.
+The inspector shows the estimated triangle count before and after decimation and the error level reached. The counts are estimated from the avatar descriptor; the build report has the exact values. If the avatar root has no descriptor, the preview treats every shape key as animated. The preview counts every renderer, including those **Unused renderers are deleted later** leaves out at build, because a toggle another tool adds only at build has no animation before it.
 
 The preview shows decimation only. Hidden triangles are removed at build. The preview turns off when a scene opens or Play mode starts.
 
@@ -113,6 +114,7 @@ Building the same avatar with the same package commit writes the same meshes on 
 - The preview reads shape-key weights and bones from the scene avatar, so a weight an earlier preview filter changes only in its preview is not reflected in the preview's error estimate.
 - The preview does not show hidden-triangle removal, and its counts are estimates.
 - A renderer with a Unity Cloth component is left unchanged, neither decimated nor trimmed of hidden triangles, because Cloth addresses vertices by index.
+- A renderer counts as unused when it starts off, disabled or under an inactive GameObject, and no animation switches it or that GameObject on. An optimizer that deletes unused renderers can still keep one of these, such as one listed in d4rk Avatar Optimizer's exclusions, a skinned renderer d4rk keeps because another shares its mesh while **Allow Mesh Data Duplication** is off, or one another component depends on; it then ships uncounted.
 - A triangle-count target is not guaranteed to be reachable. The face floor, locked vertices, exclusions, skipped meshes, layer clearance and Max error can stop the reduction first.
 - A mesh that cannot be read in Play mode is left unchanged there. An upload build can read it even when the model's Read/Write option is off.
 

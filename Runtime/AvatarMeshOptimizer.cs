@@ -66,6 +66,14 @@ namespace Ryan6Vrc.MeshOptimizer.Runtime
         /// above 0, where every vertex would count.
         /// </summary>
         [Range(0.001f, 1f)] public float fingerWeight = 0.01f;
+
+        /// <summary>
+        /// Whether an optimizer later in the build, such as d4rk Avatar Optimizer or Avatar Optimizer's Trace and Optimize,
+        /// deletes the renderers no animation can show. On, the build leaves those renderers out of the triangle count and
+        /// unchanged; off, it counts and optimizes them like any other, since the performance rank counts a renderer that
+        /// ships whether or not it is shown. On by default; a saved component that holds no value loads on.
+        /// </summary>
+        public bool unusedRenderersDeleted = true;
     }
 
     /// <summary>What decimation aims for. A saved component holds this as a number, so a member's number never changes.</summary>
