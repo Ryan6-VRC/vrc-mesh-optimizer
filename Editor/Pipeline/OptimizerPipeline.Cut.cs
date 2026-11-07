@@ -126,11 +126,12 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 return n;
             }
 
-            /// <summary>The triangles the avatar draws after this pass, every write succeeding.</summary>
+            /// <summary>The triangles the counted renderers draw after this pass, every write succeeding.</summary>
             public int TrianglesAfter(List<PreparedRenderer> jobs)
             {
                 var n = 0;
-                for (var i = 0; i < jobs.Count; i++) n += Kept[i] != null ? Kept[i].Triangles.Length + RestoredOn(i) : jobs[i].TrianglesBefore;
+                for (var i = 0; i < jobs.Count; i++)
+                    if (jobs[i].Skip != SkipReason.NeverShown) n += Kept[i] != null ? Kept[i].Triangles.Length + RestoredOn(i) : jobs[i].TrianglesBefore;
                 return n;
             }
 
@@ -436,8 +437,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         {
             ceilingHeld = false;
             var decimated = all.Where(j => j.Decimated).ToList();
-            // The budget is the avatar's: whatever is not decimated costs its triangles in full.
-            var fixedTriangles = all.Where(j => !j.Decimated).Sum(j => j.TrianglesBefore - j.HiddenCount);
+            // The budget is the avatar's: whatever is not decimated costs its triangles in full, but for a renderer left out
+            // because a later optimizer deletes it.
+            var fixedTriangles = all.Where(j => !j.Decimated && j.Skip != SkipReason.NeverShown).Sum(j => j.TrianglesBefore - j.HiddenCount);
             // A triangle that repeats a vertex is outside the collapse sequence, yet a renderer left uncut still draws
             // it; counting it as fixed keeps the budget, at the cost of cutting that many more where a cut drops it.
             fixedTriangles += decimated.Sum(j => j.Eval.TriangleCount - j.HiddenCount - j.Sequence.InitialTriangleCount);

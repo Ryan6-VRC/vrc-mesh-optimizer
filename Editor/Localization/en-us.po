@@ -65,6 +65,12 @@ msgstr "Outlines show the inside"
 msgid "MeshOptimizer:outlinesShowInside:tooltip"
 msgstr "Keep covered triangles whose material's outline draws their back side. Turn this on for a garment whose inside you can see through its outline. Leaving it off removes more, mostly skin under clothing."
 
+msgid "MeshOptimizer:unusedRenderersDeleted"
+msgstr "Unused renderers are deleted later"
+
+msgid "MeshOptimizer:unusedRenderersDeleted:tooltip"
+msgstr "Leave this on when d4rk Avatar Optimizer, Avatar Optimizer's Trace and Optimize, or another optimizer later in the build deletes renderers that start off and that no animation turns on. Those renderers are then left out of the triangle count and left unchanged. Turn it off if nothing deletes them, because the performance rank counts every renderer that is uploaded, whether or not it is ever shown."
+
 msgid "MeshOptimizer:materials"
 msgstr "Material overrides"
 
@@ -400,3 +406,6 @@ msgstr "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} deci
 
 msgid "MeshOptimizer:summary:tolerance"
 msgstr "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Tolerance {5} mm, error level {6} mm, {7} ms."
+
+msgid "MeshOptimizer:summary:left-out"
+msgstr "{0} triangles on {1} renderers no animation can show are not counted above. The performance rank counts them unless an optimizer later in the build deletes them."

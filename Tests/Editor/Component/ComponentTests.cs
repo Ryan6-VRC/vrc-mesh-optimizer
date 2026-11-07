@@ -58,6 +58,28 @@ namespace Ryan6Vrc.MeshOptimizer.Tests.Component
             }
         }
 
+        // Renderers no animation can show are left out of the count unless the user says nothing deletes them. A serialized
+        // component that holds no value for the setting, as one saved before it existed does, loads with the field's own
+        // default, on.
+        [Test]
+        public void UnusedRenderersDeleted_IsOn_FreshAndWhenTheSavedComponentHoldsNoValue()
+        {
+            Assert.That(System.IO.File.ReadAllText(System.IO.Path.GetFullPath(Fixture)), Does.Not.Contain("unusedRenderersDeleted"),
+                "the fixture is a serialized component with the setting absent");
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Fixture);
+            Assert.That(prefab.GetComponent<AvatarMeshOptimizer>().unusedRenderersDeleted, Is.True);
+
+            var fresh = new GameObject("Fresh");
+            try
+            {
+                Assert.That(fresh.AddComponent<AvatarMeshOptimizer>().unusedRenderersDeleted, Is.True);
+            }
+            finally
+            {
+                Object.DestroyImmediate(fresh);
+            }
+        }
+
         // Outlines take no part in hidden-triangle removal unless the user turns them on. A serialized component that holds
         // no value for the setting, as the fixture holds none, loads with the field's own default, off.
         [Test]

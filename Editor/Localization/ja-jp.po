@@ -65,6 +65,12 @@ msgstr "アウトラインで内側が見える"
 msgid "MeshOptimizer:outlinesShowInside:tooltip"
 msgstr "マテリアルのアウトラインが裏面を描くポリゴンは、覆われていても残します。アウトライン越しに内側が見える衣装ではオンにしてください。オフのままの方が多く削除でき、その大半は衣装の下の肌です。"
 
+msgid "MeshOptimizer:unusedRenderersDeleted"
+msgstr "未使用のレンダラーは後で削除される"
+
+msgid "MeshOptimizer:unusedRenderersDeleted:tooltip"
+msgstr "d4rk Avatar Optimizer、Avatar Optimizer の Trace and Optimize など、ビルドの後段で動く最適化ツールが、最初からオフでどのアニメーションもオンにしないレンダラーを削除する場合は、オンのままにしてください。そのレンダラーはポリゴン数に数えず、変更もしません。削除するツールがない場合はオフにしてください。パフォーマンスランクは、表示されるかどうかに関わらず、アップロードされるすべてのレンダラーを数えます。"
+
 msgid "MeshOptimizer:materials"
 msgstr "マテリアルの上書き"
 
@@ -400,3 +406,6 @@ msgstr "[Mesh Optimizer] {0}: ポリゴン数 {1} → {2}（隠れたポリゴ�
 
 msgid "MeshOptimizer:summary:tolerance"
 msgstr "[Mesh Optimizer] {0}: ポリゴン数 {1} → {2}（隠れたポリゴンの削除 {3}、ポリゴン削減 {4}）。許容差 {5} mm、誤差レベル {6} mm、{7} ms。"
+
+msgid "MeshOptimizer:summary:left-out"
+msgstr "どのアニメーションでも表示されないレンダラー {1} 個のポリゴン {0} は、上の数に含まれていません。ビルドの後段の最適化ツールが削除しない限り、パフォーマンスランクには数えられます。"

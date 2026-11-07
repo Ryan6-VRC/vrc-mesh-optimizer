@@ -36,6 +36,11 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         NonFinite,
         /// <summary>Two shape keys share a name, and Unity addresses a key by name, so the mesh cannot be written back with both.</summary>
         DuplicateShapeKey,
+        /// <summary>
+        /// No animation can show the renderer and the component says an optimizer later in the build deletes such renderers
+        /// (<see cref="AvatarMeshOptimizer.unusedRenderersDeleted"/>), so it is left out of the triangle count and unchanged.
+        /// </summary>
+        NeverShown,
     }
 
     /// <summary>
@@ -238,8 +243,15 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         public bool RemovedAsNeighbours { get; internal set; }
         public bool OutlinesShowInside { get; internal set; }
 
-        public int TrianglesBefore => Renderers.Sum(r => r.TrianglesBefore);
-        public int TrianglesAfter => Renderers.Sum(r => r.TrianglesAfter);
+        /// <summary>The triangles the counted renderers draw before the pass: every renderer but those <see cref="LeftOut"/>.</summary>
+        public int TrianglesBefore => Renderers.Where(r => r.Skip != SkipReason.NeverShown).Sum(r => r.TrianglesBefore);
+        /// <summary>The triangles the counted renderers draw after the pass, which a budget is met against.</summary>
+        public int TrianglesAfter => Renderers.Where(r => r.Skip != SkipReason.NeverShown).Sum(r => r.TrianglesAfter);
+        /// <summary>
+        /// Renderers no animation can show, left out of the count and unchanged because the component says a later optimizer
+        /// deletes them (<see cref="SkipReason.NeverShown"/>). The performance rank still counts any that ship.
+        /// </summary>
+        public IEnumerable<RendererReport> LeftOut => Renderers.Where(r => r.Skip == SkipReason.NeverShown);
         /// <summary>Hidden triangles the written meshes leave out (<see cref="RendererReport.HiddenRemoved"/>).</summary>
         public int HiddenRemoved => Renderers.Sum(r => r.HiddenRemoved);
         /// <summary>Removed triangles written back because the cut took their cover (<see cref="RendererReport.HiddenRestored"/>).</summary>
@@ -310,13 +322,16 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
         internal const string SummaryBudgetMet = "MeshOptimizer:summary:budget-met";
         internal const string SummaryBudgetNotMet = "MeshOptimizer:summary:budget-not-met";
         internal const string SummaryTolerance = "MeshOptimizer:summary:tolerance";
+        /// <summary>The line after the first when renderers were left out: {0} their triangles, {1} how many renderers.</summary>
+        internal const string SummaryLeftOut = "MeshOptimizer:summary:left-out";
 
-        /// <summary>Each first-line key's English, which the line falls back to when the localizer has no string for it.</summary>
+        /// <summary>Each summary key's English, which its line falls back to when the localizer has no string for it.</summary>
         internal static readonly Dictionary<string, string> SummaryEnglish = new Dictionary<string, string>
         {
             [SummaryBudgetMet] = "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Budget {5} met, error level {6} mm, {7} ms.",
             [SummaryBudgetNotMet] = "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Budget {5} NOT met, error level {6} mm, {7} ms.",
             [SummaryTolerance] = "[Mesh Optimizer] {0}: {1} -> {2} triangles ({3} hidden removed, {4} decimated). Tolerance {5} mm, error level {6} mm, {7} ms.",
+            [SummaryLeftOut] = "{0} triangles on {1} renderers no animation can show are not counted above. The performance rank counts them unless an optimizer later in the build deletes them.",
         };
 
         /// <summary>
@@ -332,6 +347,9 @@ namespace Ryan6Vrc.MeshOptimizer.Pipeline
                 TrianglesBefore - HiddenRemoved - TrianglesAfter,
                 Target == TargetKind.TriangleBudget ? TriangleBudget.ToString(c) : Tolerance.ToString("0.###", c),
                 (ErrorLevel * 1000f).ToString("0.###", c), Times.Total.ToString("0", c)));
+            var leftOut = LeftOut.ToList();
+            if (leftOut.Count > 0)
+                sb.Append("\n  ").Append(string.Format(c, L10n.Tr(SummaryLeftOut, SummaryEnglish[SummaryLeftOut]), leftOut.Sum(r => r.TrianglesBefore), leftOut.Count));
             if (HiddenRestored > 0)
                 sb.Append($"\n  {HiddenRestored} hidden triangles kept because decimation took their cover.");
             var refused = Renderers.Sum(r => r.ClearanceRefused);
